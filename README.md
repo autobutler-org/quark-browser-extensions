@@ -11,6 +11,8 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
   in the Quark app, and it auto-locks on the Quark's schedule.
 - **Fill**: on a page with a password field, a Quark button appears in the field when the vault has a login for that
   site. The toolbar icon shows how many. Pick one, or press **Fill** in the popup.
+- **Shortcut and right-click**: `Ctrl+Shift+L` (`⌘⇧L` on macOS) fills the only match or opens the picker; right-click a field
+  for **Quark Vault › Fill …**. Rebind it at `chrome://extensions/shortcuts`.
 - **Copy and generate**: copy any entry's password from the popup, or generate a new one.
 - **Other password managers**: offers to turn off Chrome's own password saving and extensions like Proton Pass or
   Bitwarden, so only one manager tries to fill each form.
@@ -25,7 +27,7 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 | Which site gets a login  | Top frame only, host must equal the entry's host or be a subdomain of it, checked twice (worker and page) |
 | Plain `http://` pages    | Refused, unless the entry itself was saved with an `http://` URL (a router admin page, say)    |
 | Page scripts             | Can't message the extension; the picker lives in a closed shadow root                          |
-| Permissions              | `storage`, `activeTab`; `privacy` and `management` are optional and requested only when used   |
+| Permissions              | `storage`, `activeTab`, `idle`, `contextMenus`; `privacy` and `management` are optional and requested only when used |
 
 Listing entries (`GET /api/v0/vault/entries`) returns names and hosts only, so the match count works while the vault
 is locked.

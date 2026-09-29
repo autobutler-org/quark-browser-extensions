@@ -14,7 +14,8 @@ export type Request =
   | Readonly<{ type: "generate" }>
   | Readonly<{ type: "settings" }>
   | Readonly<{ type: "saveSettings"; settings: Settings }>
-  | Readonly<{ type: "hello" }>;
+  | Readonly<{ type: "hello" }>
+  | Readonly<{ type: "fieldFocused" }>;
 
 export type Hello = Readonly<{
   settings: Settings;
@@ -36,15 +37,18 @@ export type Responses = {
   settings: Settings;
   saveSettings: Settings;
   hello: Hello;
+  fieldFocused: null;
 };
 
-export type PageCommand = Readonly<{
+export type FillCommand = Readonly<{
   type: "fill";
   credentials: Credentials;
   entryUrl: string;
   entryHost: string;
   autoSubmit: boolean;
 }>;
+
+export type PageCommand = FillCommand | Readonly<{ type: "openPicker" }>;
 
 export type PageReply = Result<null>;
 

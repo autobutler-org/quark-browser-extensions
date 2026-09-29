@@ -17,6 +17,7 @@ type Model = Readonly<{
   generated: string;
   notice: string;
   showOthers: boolean;
+  shortcut: string;
 }>;
 
 const root = document.getElementById("app") as HTMLElement;
@@ -32,6 +33,7 @@ let model: Model = {
   generated: "",
   notice: "",
   showOthers: false,
+  shortcut: "",
 };
 
 const update = (patch: Partial<Model>): void => {
@@ -285,7 +287,7 @@ const entriesView = (state: VaultState): HTMLElement => {
           ),
       list,
     ),
-    h("footer", { className: "status" }, h("span", { className: "dot" }), h("span", { className: "grow" }, autoLockText(state)), h("span", { className: "mono" }, hostOf(serverOf(state)))),
+    h("footer", { className: "status" }, h("span", { className: "dot" }), h("span", { className: "grow" }, autoLockText(state)), h("span", { className: "mono", title: model.shortcut === "" ? "" : "Fill shortcut" }, model.shortcut === "" ? hostOf(serverOf(state)) : model.shortcut)),
   );
 };
 
@@ -345,7 +347,10 @@ const refresh = async (): Promise<void> => {
 };
 
 render();
-void currentTab().then((tab) => {
-  model = { ...model, tab };
+const fillShortcut = async (): Promise<string> =>
+  (await chrome.commands.getAll()).find((command) => command.name === "fill-login")?.shortcut ?? "";
+
+void Promise.all([currentTab(), fillShortcut()]).then(([tab, shortcut]) => {
+  model = { ...model, tab, shortcut };
   return refresh();
 });
