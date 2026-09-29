@@ -56,6 +56,24 @@ const lockingSection = (settings: Settings): HTMLElement =>
     idleMinutesSelect(settings),
   );
 
+const shortcutSection = (shortcut: string): HTMLElement =>
+  h(
+    "section",
+    { className: "card" },
+    h("h2", {}, "Shortcut"),
+    h(
+      "div",
+      { className: "toggle" },
+      h(
+        "div",
+        { className: "grow" },
+        h("div", {}, "Fill a login"),
+        h("div", { className: "muted small" }, "One match fills right away; several open the picker. Right-click a field for the same list. Change it at chrome://extensions/shortcuts."),
+      ),
+      h("span", { className: "mono" }, shortcut === "" ? "Not set" : shortcut),
+    ),
+  );
+
 const connection = (state: VaultState): HTMLElement => {
   const signedIn = state.kind !== "disconnected" && state.kind !== "signedOut";
   return h(
@@ -79,7 +97,8 @@ const connection = (state: VaultState): HTMLElement => {
 };
 
 const render = async (): Promise<void> => {
-  const [state, settings] = await Promise.all([ask({ type: "state" }), ask({ type: "settings" })]);
+  const [state, settings, commands] = await Promise.all([ask({ type: "state" }), ask({ type: "settings" }), chrome.commands.getAll()]);
+  const shortcut = commands.find((command) => command.name === "fill-login")?.shortcut ?? "";
   root.replaceChildren(
     h(
       "main",
@@ -95,6 +114,7 @@ const render = async (): Promise<void> => {
         toggle(settings, "autoSubmit", "Submit the form after filling", "Off by default. Some sites need a second look first."),
       ),
       lockingSection(settings),
+      shortcutSection(shortcut),
       others,
       h("p", { className: "muted small" }, "The vault also auto-locks on the schedule set on your Quark."),
     ),

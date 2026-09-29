@@ -13,7 +13,8 @@
   "permissions": [
     "storage",
     "activeTab",
-    "idle"
+    "idle",
+    "contextMenus"
   ],
   "optional_permissions": [
     "privacy",
@@ -47,5 +48,14 @@
   "options_page": "options.html",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'"
+  },
+  "commands": {
+    "fill-login": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+L",
+        "mac": "Command+Shift+L"
+      },
+      "description": "Fill a login from Quark Vault"
+    }
   }
 }
