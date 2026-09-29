@@ -43,23 +43,38 @@ is locked.
 ## Install (sideload)
 
 1. Download the `quark-vault-extension` artifact from the latest CI run, or run `npm ci && npm run package`.
-2. Unzip it.
+2. Unzip `quark-vault-chrome.zip`.
 3. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick the unzipped folder.
 4. Click the Quark Vault toolbar button and connect to your Quark (for example `https://quark.local`).
 
 If your Quark uses a self-signed certificate, open its address in Chrome once and accept the certificate. The
 extension can't reach a server Chrome doesn't trust.
 
+## Firefox
+
+`npm run package` also builds `quark-vault-firefox.zip` (Firefox 128+). To try it, open `about:debugging` › This Firefox
+› **Load Temporary Add-on** and pick `dist/firefox/manifest.json`. Differences from Chrome:
+
+- If Firefox hasn't granted access to websites, the popup shows **Allow** so the extension can fill logins there.
+- The other-password-managers check can turn off Firefox's own password saving, but not other add-ons: Firefox
+  doesn't allow that, so it points you to `about:addons`.
+- Logins inside iframes don't fill yet: Firefox lacks `location.ancestorOrigins`, which the in-frame safety check
+  needs, so it refuses rather than guess.
+
+CI lints the Firefox build with `web-ext lint`; the end-to-end test runs in Chromium only. Before a Firefox release,
+check by hand: connect, unlock, fill from the popup and the in-field button, a one-time code, save a new login, and
+the shortcut.
+
 ## Develop
 
 ```sh
 npm ci
-npm run watch          # rebuild dist/ on change; load dist/ unpacked, then hit reload in chrome://extensions
+npm run watch          # rebuild dist/chrome and dist/firefox on change; load one unpacked, then reload it
 npm run check          # typecheck + unit tests
 CHROME_PATH=/path/to/chromium npm run test:e2e   # loads dist/ into Chromium against a mock Quark
 ```
 
-`test:e2e` needs Chromium or Chrome for Testing: branded Chrome ignores `--load-extension`. Set `E2E_SCREENSHOTS` to
+`test:e2e` builds `dist/chrome` and needs Chromium or Chrome for Testing: branded Chrome ignores `--load-extension`. Set `E2E_SCREENSHOTS` to
 a folder to save screenshots of each screen.
 
 ```text
@@ -73,5 +88,5 @@ static/           manifest, HTML, CSS, icons
 
 ## Not yet
 
-- Firefox and Safari
+- Safari
 - Importing from other managers happens on the Quark: autobutler-org/quark#2543

@@ -3,6 +3,7 @@ import { errorText, stateText } from "../shared/errors";
 import { hostOf, searchEntries } from "../shared/host";
 import { ask } from "../shared/messages";
 import type { SaveAction, SaveOffer } from "../background/save";
+import { currentBrowser, siteOrigins } from "../shared/platform";
 import { saveBarCopy } from "../shared/saveCopy";
 import type { ApiError, EntrySummary, Result, VaultState } from "../shared/types";
 
@@ -21,6 +22,7 @@ type Model = Readonly<{
   showOthers: boolean;
   shortcut: string;
   saveOffer: SaveOffer | null;
+  needsSiteAccess: boolean;
 }>;
 
 const root = document.getElementById("app") as HTMLElement;
@@ -38,6 +40,7 @@ let model: Model = {
   showOthers: false,
   shortcut: "",
   saveOffer: null,
+  needsSiteAccess: false,
 };
 
 const update = (patch: Partial<Model>): void => {
@@ -259,6 +262,21 @@ const saveBanner = (): HTMLElement | null => {
   );
 };
 
+const allowSites = async (): Promise<void> => {
+  const granted = await chrome.permissions.request({ origins: [...siteOrigins] });
+  update({ needsSiteAccess: !granted });
+};
+
+const siteAccessBanner = (): HTMLElement | null =>
+  model.needsSiteAccess
+    ? h(
+        "div",
+        { className: "banner save", role: "status" },
+        h("div", { className: "grow" }, "Allow Quark Vault on websites so it can fill logins there."),
+        h("button", { className: "link", type: "button", onclick: (() => void allowSites()) as EventListener }, "Allow"),
+      )
+    : null;
+
 const othersBanner = (): HTMLElement | null =>
   model.showOthers
     ? h(
@@ -318,6 +336,7 @@ const entriesView = (state: VaultState): HTMLElement => {
     { className: "screen" },
     header([iconButton("Generate password", icons.key, () => void generate()), iconButton("Lock vault", icons.lock, () => void lock())]),
     h("div", { className: "search" }, icon(document, icons.search, 16), h("label", { for: "search", className: "visually-hidden" }, "Search the vault"), search),
+    siteAccessBanner(),
     saveBanner(),
     othersBanner(),
     model.notice === "" ? null : h("div", { className: "notice", role: "status" }, model.notice),
@@ -398,7 +417,10 @@ render();
 const fillShortcut = async (): Promise<string> =>
   (await chrome.commands.getAll()).find((command) => command.name === "fill-login")?.shortcut ?? "";
 
-void Promise.all([currentTab(), fillShortcut()]).then(([tab, shortcut]) => {
-  model = { ...model, tab, shortcut };
+const needsSiteAccess = async (): Promise<boolean> =>
+  currentBrowser() === "firefox" && !(await chrome.permissions.contains({ origins: [...siteOrigins] }));
+
+void Promise.all([currentTab(), fillShortcut(), needsSiteAccess()]).then(([tab, shortcut, siteAccess]) => {
+  model = { ...model, tab, shortcut, needsSiteAccess: siteAccess };
   return refresh();
 });
