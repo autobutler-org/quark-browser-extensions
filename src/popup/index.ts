@@ -167,6 +167,16 @@ const copy = async (entry: EntrySummary): Promise<void> => {
   update({ notice: `Copied the password for ${entry.name}`, error: "" });
 };
 
+const copyCode = async (entry: EntrySummary): Promise<void> => {
+  const result = await ask({ type: "otp", entryId: entry.id });
+  if (!result.ok) {
+    handleError(result.error);
+    return;
+  }
+  await navigator.clipboard.writeText(result.value.code);
+  update({ notice: `Copied the code for ${entry.name}. It changes in ${result.value.secondsLeft}s.`, error: "" });
+};
+
 const fillEntry = async (entry: EntrySummary): Promise<void> => {
   if (model.tab.id === null) {
     return;
@@ -232,6 +242,7 @@ const matchCard = (entry: EntrySummary, index: number): HTMLElement =>
     { className: index === 0 ? "match first" : "match" },
     h("div", { className: "avatar", "aria-hidden": "true" }, initial(entry.name)),
     h("div", { className: "grow" }, h("div", { className: "name" }, entry.name), h("div", { className: "mono muted small" }, entry.urlHost)),
+    iconButton(`Copy one-time code for ${entry.name}`, icons.clock, () => void copyCode(entry)),
     h("button", { className: index === 0 ? "fill primary" : "fill", type: "button", onclick: (() => void fillEntry(entry)) as EventListener }, "Fill"),
   );
 

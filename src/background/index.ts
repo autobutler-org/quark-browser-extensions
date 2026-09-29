@@ -2,6 +2,7 @@ import { createApi } from "../shared/api";
 import { hostOf, matchEntries, mayFill, normalizeServer } from "../shared/host";
 import type { Hello, PageCommand, PageReply, Request, Responses } from "../shared/messages";
 import { err, ok, type Connection, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
+import { parseOtpSecret, totp } from "../shared/totp";
 import { entryIdFromMenu, menuItems, menuRoot, shortcutPlan } from "../shared/menu";
 import { detectionIntervalSeconds, idleAction, type IdleState } from "./idle";
 import { createCache, deriveState, stateFromError } from "./state";
@@ -87,6 +88,18 @@ const fillFromPage = async (
     return refused("This login doesn't belong to this site.");
   }
   return ok({ username: entry.value.username, password: entry.value.password, autoSubmit: settings.autoSubmit });
+};
+
+const otpFor = async (entryId: number, pageUrl: string | null): Promise<Responses["otp"]> => {
+  const entry = await withConnection((conn) => api.getEntry(conn, entryId));
+  if (!entry.ok) {
+    return entry;
+  }
+  if (pageUrl !== null && !mayFill(pageUrl, entry.value.url, entry.value.urlHost)) {
+    return refused("This login doesn't belong to this site.");
+  }
+  const params = parseOtpSecret(entry.value.totpSecret);
+  return params === null ? refused("This login has no one-time code saved.") : ok(await totp(params, Date.now()));
 };
 
 const fillInTab = async (tabId: number, entryId: number): Promise<Responses["fillInTab"]> => {
@@ -239,6 +252,8 @@ const forExtensionPages: Handler = (request, sender) => {
       );
     case "generate":
       return withConnection((conn) => api.generate(conn));
+    case "otp":
+      return otpFor(request.entryId, null);
     case "settings":
       return loadSettings();
     case "saveSettings":
@@ -246,6 +261,7 @@ const forExtensionPages: Handler = (request, sender) => {
     case "hello":
     case "fillFromPage":
     case "fieldFocused":
+    case "otpFromPage":
       return null;
   }
 };
@@ -259,6 +275,8 @@ const forContentScripts: Handler = (request, sender) => {
       return hello(sender);
     case "fieldFocused":
       return rebuildMenu(sender.url ?? "").then(() => null);
+    case "otpFromPage":
+      return otpFor(request.entryId, sender.url ?? "");
     case "matches":
       return matchesFor(sender.url ?? "");
     case "fillFromPage":

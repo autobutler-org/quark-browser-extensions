@@ -1,3 +1,4 @@
+import type { OtpCode } from "./totp";
 import type { Credentials, EntrySummary, Result, Settings, VaultState } from "./types";
 
 export type Request =
@@ -15,7 +16,9 @@ export type Request =
   | Readonly<{ type: "settings" }>
   | Readonly<{ type: "saveSettings"; settings: Settings }>
   | Readonly<{ type: "hello" }>
-  | Readonly<{ type: "fieldFocused" }>;
+  | Readonly<{ type: "fieldFocused" }>
+  | Readonly<{ type: "otpFromPage"; entryId: number }>
+  | Readonly<{ type: "otp"; entryId: number }>;
 
 export type Hello = Readonly<{
   settings: Settings;
@@ -38,6 +41,8 @@ export type Responses = {
   saveSettings: Settings;
   hello: Hello;
   fieldFocused: null;
+  otpFromPage: Result<OtpCode>;
+  otp: Result<OtpCode>;
 };
 
 export type FillCommand = Readonly<{
