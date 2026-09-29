@@ -1,17 +1,28 @@
 import { createApi } from "../shared/api";
-import { hostOf, matchEntries, mayFill, normalizeServer } from "../shared/host";
+import { hostMatches, hostOf, matchEntries, mayFill, normalizeHost, normalizeServer } from "../shared/host";
 import type { Hello, PageCommand, PageReply, Request, Responses } from "../shared/messages";
 import { err, ok, type Connection, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
 import { parseOtpSecret, totp } from "../shared/totp";
 import { entryIdFromMenu, generateMenuId, menuItems, menuRoot, shortcutPlan } from "../shared/menu";
 import { detectionIntervalSeconds, idleAction, type IdleState } from "./idle";
+import {
+  decideOffer,
+  isFresh,
+  isNeverSaved,
+  newEntryFor,
+  type Pending,
+  type SaveAction,
+  type SaveOffer,
+} from "./save";
 import { createCache, deriveState, stateFromError } from "./state";
 import {
   clearConnection,
   loadConnection,
   loadServer,
+  loadNeverSave,
   loadSettings,
   saveConnection,
+  saveNeverSave,
   saveSettings,
 } from "./storage";
 
@@ -131,6 +142,87 @@ const setBadge = async (tabId: number, count: number, enabled: boolean): Promise
 };
 
 let menuHost: string | null = null;
+
+const pendings = new Map<number, Pending>();
+
+const freshPending = (tabId: number): Pending | null => {
+  const pending = pendings.get(tabId);
+  if (pending === undefined || !isFresh(pending, Date.now())) {
+    pendings.delete(tabId);
+    return null;
+  }
+  return pending;
+};
+
+const offerFor = async (tabId: number): Promise<SaveOffer | null> => {
+  const pending = freshPending(tabId);
+  const connection = await loadConnection();
+  if (pending === null || connection === null) {
+    return null;
+  }
+  const [status, matches] = await Promise.all([api.status(connection), matchesFor(pending.pageUrl)]);
+  return decideOffer({
+    pageUrl: pending.pageUrl,
+    credentials: pending.credentials,
+    matches: matches.ok ? matches.value : [],
+    locked: !status.ok || status.value.locked,
+    loadDetail: (id) => api.getEntry(connection, id),
+  });
+};
+
+const captured = async (sender: Sender, username: string, password: string): Promise<SaveOffer | null> => {
+  const tabId = sender.tab?.id;
+  const pageUrl = sender.url ?? "";
+  if (tabId === undefined || isNeverSaved(await loadNeverSave(), pageUrl)) {
+    return null;
+  }
+  pendings.set(tabId, { pageUrl, credentials: { username, password }, at: Date.now() });
+  return offerFor(tabId);
+};
+
+const relatedHosts = (a: string, b: string): boolean => hostMatches(a, b) || hostMatches(b, a);
+
+const myOffer = async (sender: Sender): Promise<SaveOffer | null> => {
+  const tabId = sender.tab?.id;
+  const pending = tabId === undefined ? null : freshPending(tabId);
+  return tabId !== undefined && pending !== null && relatedHosts(hostOf(pending.pageUrl), hostOf(sender.url ?? ""))
+    ? offerFor(tabId)
+    : null;
+};
+
+const resolveSave = async (tabId: number, action: SaveAction): Promise<Result<null>> => {
+  const pending = freshPending(tabId);
+  if (pending === null) {
+    return refused("That login is no longer waiting to be saved.");
+  }
+  const finish = <T>(result: Result<T>): Result<null> => {
+    if (result.ok) {
+      pendings.delete(tabId);
+      entriesCache.clear();
+      menuHost = null;
+      return ok(null);
+    }
+    return result;
+  };
+  switch (action) {
+    case "dismiss":
+      return finish(ok(null));
+    case "never":
+      return finish(ok(await saveNeverSave([...(await loadNeverSave()), normalizeHost(hostOf(pending.pageUrl))])));
+    case "unlock":
+      await openPopup();
+      return ok(null);
+    case "save":
+      return finish(await withConnection((conn) => api.createEntry(conn, newEntryFor(pending.pageUrl, pending.credentials))));
+    case "update": {
+      const offer = await offerFor(tabId);
+      if (offer?.kind !== "update") {
+        return refused("There's nothing to update for this login.");
+      }
+      return finish(await withConnection((conn) => api.replacePassword(conn, offer.entryId, pending.credentials.password)));
+    }
+  }
+};
 
 const rebuildMenu = async (pageUrl: string): Promise<void> => {
   const host = hostOf(pageUrl);
@@ -256,6 +348,14 @@ const forExtensionPages: Handler = (request, sender) => {
       return withConnection((conn) => api.generate(conn));
     case "otp":
       return otpFor(request.entryId, null);
+    case "pendingOffer":
+      return offerFor(request.tabId);
+    case "resolveSave":
+      return request.tabId === undefined ? Promise.resolve(refused("No tab to save from.")) : resolveSave(request.tabId, request.action);
+    case "neverSaveList":
+      return loadNeverSave();
+    case "removeNeverSave":
+      return loadNeverSave().then((hosts) => saveNeverSave(hosts.filter((host) => host !== request.host)));
     case "settings":
       return loadSettings();
     case "saveSettings":
@@ -265,6 +365,8 @@ const forExtensionPages: Handler = (request, sender) => {
     case "fieldFocused":
     case "otpFromPage":
     case "generateForPage":
+    case "captured":
+    case "myOffer":
       return null;
   }
 };
@@ -282,6 +384,12 @@ const forContentScripts: Handler = (request, sender) => {
       return otpFor(request.entryId, sender.url ?? "");
     case "generateForPage":
       return withConnection((conn) => api.generate(conn, Math.max(12, Math.min(64, request.length))));
+    case "captured":
+      return captured(sender, request.username, request.password);
+    case "myOffer":
+      return myOffer(sender);
+    case "resolveSave":
+      return sender.tab?.id === undefined ? null : resolveSave(sender.tab.id, request.action);
     case "matches":
       return matchesFor(sender.url ?? "");
     case "fillFromPage":
@@ -326,6 +434,16 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (entryId !== null && tab?.id !== undefined) {
     void fillInTab(tab.id, entryId);
   }
+});
+
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.status === "complete" && freshPending(tabId) !== null) {
+    void chrome.tabs.sendMessage(tabId, { type: "offerCheck" }, { frameId: 0 }).catch(() => undefined);
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  pendings.delete(tabId);
 });
 
 chrome.idle.onStateChanged.addListener((state) => void onIdleState(state as IdleState));

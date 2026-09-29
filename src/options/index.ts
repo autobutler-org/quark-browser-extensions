@@ -74,6 +74,23 @@ const shortcutSection = (shortcut: string): HTMLElement =>
     ),
   );
 
+const neverSaveSection = (hosts: readonly string[]): HTMLElement =>
+  h(
+    "section",
+    { className: "card" },
+    h("h2", {}, "Never save on these sites"),
+    ...(hosts.length === 0
+      ? [h("p", { className: "muted small" }, "None yet. Choose \"Never for this site\" when Quark Vault offers to save a login.")]
+      : hosts.map((host) =>
+          h(
+            "div",
+            { className: "toggle" },
+            h("div", { className: "grow mono" }, host),
+            h("button", { className: "secondary", type: "button", onclick: (() => void ask({ type: "removeNeverSave", host }).then(render)) as EventListener }, "Remove"),
+          ),
+        )),
+  );
+
 const connection = (state: VaultState): HTMLElement => {
   const signedIn = state.kind !== "disconnected" && state.kind !== "signedOut";
   return h(
@@ -97,7 +114,12 @@ const connection = (state: VaultState): HTMLElement => {
 };
 
 const render = async (): Promise<void> => {
-  const [state, settings, commands] = await Promise.all([ask({ type: "state" }), ask({ type: "settings" }), chrome.commands.getAll()]);
+  const [state, settings, commands, neverSave] = await Promise.all([
+    ask({ type: "state" }),
+    ask({ type: "settings" }),
+    chrome.commands.getAll(),
+    ask({ type: "neverSaveList" }),
+  ]);
   const shortcut = commands.find((command) => command.name === "fill-login")?.shortcut ?? "";
   root.replaceChildren(
     h(
@@ -115,6 +137,7 @@ const render = async (): Promise<void> => {
       ),
       lockingSection(settings),
       shortcutSection(shortcut),
+      neverSaveSection(neverSave),
       others,
       h("p", { className: "muted small" }, "The vault also auto-locks on the schedule set on your Quark."),
     ),

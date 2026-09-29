@@ -1,3 +1,4 @@
+import type { SaveAction, SaveOffer } from "../background/save";
 import type { OtpCode } from "./totp";
 import type { Credentials, EntrySummary, Result, Settings, VaultState } from "./types";
 
@@ -19,7 +20,13 @@ export type Request =
   | Readonly<{ type: "fieldFocused" }>
   | Readonly<{ type: "otpFromPage"; entryId: number }>
   | Readonly<{ type: "otp"; entryId: number }>
-  | Readonly<{ type: "generateForPage"; length: number }>;
+  | Readonly<{ type: "generateForPage"; length: number }>
+  | Readonly<{ type: "captured"; username: string; password: string }>
+  | Readonly<{ type: "myOffer" }>
+  | Readonly<{ type: "pendingOffer"; tabId: number }>
+  | Readonly<{ type: "resolveSave"; action: SaveAction; tabId?: number }>
+  | Readonly<{ type: "neverSaveList" }>
+  | Readonly<{ type: "removeNeverSave"; host: string }>;
 
 export type Hello = Readonly<{
   settings: Settings;
@@ -46,6 +53,12 @@ export type Responses = {
   otpFromPage: Result<OtpCode>;
   otp: Result<OtpCode>;
   generateForPage: Result<string>;
+  captured: SaveOffer | null;
+  myOffer: SaveOffer | null;
+  pendingOffer: SaveOffer | null;
+  resolveSave: Result<null>;
+  neverSaveList: readonly string[];
+  removeNeverSave: readonly string[];
 };
 
 export type FillCommand = Readonly<{
@@ -59,7 +72,8 @@ export type FillCommand = Readonly<{
 export type PageCommand =
   | FillCommand
   | Readonly<{ type: "openPicker" }>
-  | Readonly<{ type: "fillGenerated"; password: string }>;
+  | Readonly<{ type: "fillGenerated"; password: string }>
+  | Readonly<{ type: "offerCheck" }>;
 
 export type PageReply = Result<null>;
 

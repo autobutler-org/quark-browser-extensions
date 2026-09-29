@@ -2,6 +2,8 @@ import { h, icon, icons } from "../shared/dom";
 import { errorText, stateText } from "../shared/errors";
 import { hostOf, searchEntries } from "../shared/host";
 import { ask } from "../shared/messages";
+import type { SaveAction, SaveOffer } from "../background/save";
+import { saveBarCopy } from "../shared/saveCopy";
 import type { ApiError, EntrySummary, Result, VaultState } from "../shared/types";
 
 type Tab = Readonly<{ id: number | null; url: string }>;
@@ -18,6 +20,7 @@ type Model = Readonly<{
   notice: string;
   showOthers: boolean;
   shortcut: string;
+  saveOffer: SaveOffer | null;
 }>;
 
 const root = document.getElementById("app") as HTMLElement;
@@ -34,6 +37,7 @@ let model: Model = {
   notice: "",
   showOthers: false,
   shortcut: "",
+  saveOffer: null,
 };
 
 const update = (patch: Partial<Model>): void => {
@@ -66,16 +70,18 @@ const errorBox = (): HTMLElement | null => (model.error === "" ? null : h("div",
 const serverOf = (state: VaultState | null): string => (state !== null && "server" in state ? state.server : "");
 
 const loadEntries = async (): Promise<void> => {
-  const [entries, matches, settings] = await Promise.all([
+  const [entries, matches, settings, saveOffer] = await Promise.all([
     ask({ type: "entries" }),
     ask({ type: "matches", pageUrl: model.tab.url }),
     ask({ type: "settings" }),
+    model.tab.id === null ? Promise.resolve(null) : ask({ type: "pendingOffer", tabId: model.tab.id }),
   ]);
   update({
     entries: entries.ok ? entries.value : [],
     matches: matches.ok ? matches.value : [],
     error: text(entries),
     showOthers: !settings.othersReviewed,
+    saveOffer,
   });
 };
 
@@ -223,6 +229,36 @@ const dismissOthers = async (): Promise<void> => {
   update({ showOthers: false });
 };
 
+const resolveSave = async (action: SaveAction): Promise<void> => {
+  if (model.tab.id === null) {
+    return;
+  }
+  const result = await ask({ type: "resolveSave", action, tabId: model.tab.id });
+  if (!result.ok) {
+    handleError(result.error);
+    return;
+  }
+  update({ saveOffer: null, notice: action === "save" ? "Saved the login" : action === "update" ? "Updated the password" : "" });
+  await loadEntries();
+};
+
+const saveBanner = (): HTMLElement | null => {
+  if (model.saveOffer === null || model.saveOffer.kind === "unlock") {
+    return null;
+  }
+  const copy = saveBarCopy(model.saveOffer);
+  return h(
+    "div",
+    { className: "banner save", role: "status" },
+    h("div", { className: "grow" }, h("div", { className: "name" }, copy.title), h("div", { className: "muted small" }, copy.sub)),
+    ...copy.actions
+      .filter(([action]) => action !== "never")
+      .map(([action, label]) =>
+        h("button", { className: action === "dismiss" ? "link muted" : "link", type: "button", onclick: (() => void resolveSave(action)) as EventListener }, label),
+      ),
+  );
+};
+
 const othersBanner = (): HTMLElement | null =>
   model.showOthers
     ? h(
@@ -282,6 +318,7 @@ const entriesView = (state: VaultState): HTMLElement => {
     { className: "screen" },
     header([iconButton("Generate password", icons.key, () => void generate()), iconButton("Lock vault", icons.lock, () => void lock())]),
     h("div", { className: "search" }, icon(document, icons.search, 16), h("label", { for: "search", className: "visually-hidden" }, "Search the vault"), search),
+    saveBanner(),
     othersBanner(),
     model.notice === "" ? null : h("div", { className: "notice", role: "status" }, model.notice),
     errorBox(),
