@@ -27,11 +27,14 @@ describe("login", () => {
     expect(await api.login("https://quark.local", "b", "x")).toEqual({ ok: false, error: { kind: "badCredentials" } });
   });
 
-  it("maps 403 to a refused account with its status", async () => {
-    const { api } = respond(403, { error: "pending" });
+  it.each([
+    ["pending", "your account request is waiting for approval"],
+    ["disabled", "this account has been disabled"],
+  ])("maps a 403 for a %s account from the refusal's status field", async (status, message) => {
+    const { api } = respond(403, { error: message, status });
     expect(await api.login("https://quark.local", "b", "x")).toEqual({
       ok: false,
-      error: { kind: "accountRefused", status: "pending" },
+      error: { kind: "accountRefused", status },
     });
   });
 });
