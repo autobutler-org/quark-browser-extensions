@@ -1,4 +1,5 @@
 import { h$, icon, icons } from "../shared/dom";
+import { adoptStyles } from "./styles";
 import type { EntrySummary } from "../shared/types";
 
 const css = `
@@ -56,9 +57,7 @@ export const attachPicker = (
   const view = doc.defaultView ?? window;
   const host = h$(doc, "div");
   const shadow = host.attachShadow({ mode: "closed" });
-  const sheet = new view.CSSStyleSheet();
-  sheet.replaceSync(css);
-  shadow.adoptedStyleSheets = [sheet];
+  adoptStyles(shadow, css);
 
   const anchor = h$(doc, "div", { className: "anchor" });
   const trigger = h$(doc, "button", {
