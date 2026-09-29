@@ -1,0 +1,273 @@
+body {
+  width: 360px;
+  height: 580px;
+  overflow: hidden;
+}
+
+#app,
+.screen {
+  height: 100%;
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+}
+
+.bar {
+  height: 56px;
+  flex-shrink: 0;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.body {
+  flex-grow: 1;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.intro p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.spacer {
+  flex-grow: 1;
+}
+
+.lock-mark {
+  align-self: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.search {
+  margin: 12px 16px 8px;
+  height: 40px;
+  padding: 0 12px;
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search input {
+  flex-grow: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.search input:focus-visible {
+  outline: none;
+}
+
+.notice {
+  margin: 0 16px 8px;
+  font-size: 12px;
+  color: var(--success);
+}
+
+.screen > .error-box {
+  margin: 0 16px 8px;
+}
+
+.scroll {
+  flex-grow: 1;
+  overflow-y: auto;
+}
+
+.matches {
+  padding: 8px 16px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.match {
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.match.first {
+  border-color: var(--mark);
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+
+.name {
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fill {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fill.primary {
+  border: none;
+  background: var(--primary);
+}
+
+.list {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.list .section-label {
+  padding-bottom: 4px;
+}
+
+.row {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row .icon-button {
+  border: none;
+  background: transparent;
+}
+
+.status {
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--success);
+}
+
+.banner {
+  margin: 0 16px 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.link {
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.link.muted {
+  color: var(--muted);
+}
