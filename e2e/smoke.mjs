@@ -79,6 +79,12 @@ const api = http.createServer(async (req, res) => {
 
 const site = http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/html" });
+  if (req.url === "/framed" || req.url === "/cross") {
+    return res.end(`<!doctype html><html><body style="font-family:sans-serif;padding:40px">
+<h1>${req.url === "/framed" ? "Same-site frame" : "Cross-site frame"}</h1>
+<iframe id="login" src="http://localhost:${SITE}/" style="width:520px;height:360px;border:1px solid #ccc"></iframe>
+</body></html>`);
+  }
   if (req.url === "/signup") {
     return res.end(`<!doctype html><html><body style="font-family:sans-serif;padding:40px">
 <h1>Create account</h1>
@@ -248,6 +254,30 @@ try {
     updated.ok && put?.id === 1 && put.body.password === "n3w-pass" && put.body.notes === "keep me" && put.body.totpSecret !== "" && put.body.folderId === 3 && put.body.customFields?.[0]?.value === "1234",
     JSON.stringify(put),
   );
+
+  const pickInFrame = async (page) => {
+    await page.waitForTimeout(1800);
+    const frame = page.frameLocator("#login");
+    const box = await frame.locator("#pw").boundingBox();
+    await page.mouse.click(box.x + box.width - 17, box.y + box.height / 2);
+    await page.waitForTimeout(300);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(900);
+    return [await frame.locator("#user").inputValue(), await frame.locator("#pw").inputValue()];
+  };
+
+  const framed = await context.newPage();
+  await framed.goto(`http://localhost:${SITE}/framed`);
+  const framedValues = await pickInFrame(framed);
+  check("same-site frame fills", framedValues[0] === "alice" && framedValues[1] === "s3cret", JSON.stringify(framedValues));
+  await framed.close();
+
+  const cross = await context.newPage();
+  await cross.goto(`http://127.0.0.1:${SITE}/cross`);
+  const crossValues = await pickInFrame(cross);
+  if (shots) await cross.screenshot({ path: `${shots}/cross-frame.png` });
+  check("cross-site frame refuses to fill", crossValues[0] === "" && crossValues[1] === "", JSON.stringify(crossValues));
+  await cross.close();
 
   const signup = await context.newPage();
   await signup.goto(`http://localhost:${SITE}/signup`);

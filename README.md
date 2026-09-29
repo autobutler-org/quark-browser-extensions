@@ -32,7 +32,7 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 | Session token            | `chrome.storage.session` (memory, gone when Chrome quits); `local` only if "stay signed in"    |
 | Decrypted entries        | Fetched one at a time on a click, passed straight to the page, never stored or cached          |
 | Captured sign-ins        | Held in service-worker memory per tab for at most two minutes, then dropped                    |
-| Which site gets a login  | Top frame only, host must equal the entry's host or be a subdomain of it, checked twice (worker and page) |
+| Which site gets a login  | Page host must equal the entry's host or be a subdomain of it, checked in the worker and again in the page. A login inside an iframe fills only when the top page is that site too |
 | Plain `http://` pages    | Refused, unless the entry itself was saved with an `http://` URL (a router admin page, say)    |
 | Page scripts             | Can't message the extension; the picker lives in a closed shadow root                          |
 | Permissions              | `storage`, `activeTab`, `idle`, `contextMenus`; `privacy` and `management` are optional and requested only when used |

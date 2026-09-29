@@ -73,7 +73,8 @@ export type PageCommand =
   | FillCommand
   | Readonly<{ type: "openPicker" }>
   | Readonly<{ type: "fillGenerated"; password: string }>
-  | Readonly<{ type: "offerCheck" }>;
+  | Readonly<{ type: "offerCheck" }>
+  | Readonly<{ type: "whereAmI" }>;
 
 export type PageReply = Result<null>;
 

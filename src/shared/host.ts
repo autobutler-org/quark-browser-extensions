@@ -57,6 +57,9 @@ export const mayFill = (pageUrl: string, entryUrl: string, entryHost: string): b
   return hostMatches(entryHost, hostOf(pageUrl)) && (isSecurePage(pageUrl) || insecureAllowed);
 };
 
+export const frameMayFill = (frameUrl: string, topUrl: string, entryUrl: string, entryHost: string): boolean =>
+  mayFill(frameUrl, entryUrl, entryHost) && hostMatches(entryHost, hostOf(topUrl));
+
 export const normalizeServer = (input: string): string => {
   const trimmed = input.trim();
   if (trimmed === "") {
