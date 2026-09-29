@@ -186,12 +186,12 @@ export const createApi = (fetchFn: FetchFn) => {
         asEntryDetail,
       ),
 
-    generate: async (connection: Connection): Promise<Result<string>> =>
+    generate: async (connection: Connection, length = 20): Promise<Result<string>> =>
       mapResult(
         await authed(connection, {
           method: "POST",
           path: "/vault/generate",
-          body: { length: 20, uppercase: true, lowercase: true, digits: true, symbols: true, avoidAmbiguous: true },
+          body: { length, uppercase: true, lowercase: true, digits: true, symbols: true, avoidAmbiguous: true },
         }),
         (payload) => stringField(payload, "password"),
       ),

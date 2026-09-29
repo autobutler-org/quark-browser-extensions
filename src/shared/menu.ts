@@ -1,6 +1,7 @@
 import type { EntrySummary } from "./types";
 
 export const menuRoot = "quark-vault";
+export const generateMenuId = "generate";
 export const fillPrefix = "fill:";
 export const maxMenuEntries = 8;
 

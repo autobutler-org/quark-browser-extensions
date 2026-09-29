@@ -1,4 +1,15 @@
-import { fillLogin, fillOtp, otpFields, passwordFields, submit, usernameFieldFor } from "../src/content/forms";
+import {
+  fillLogin,
+  fillNewPassword,
+  fillOtp,
+  generatedLength,
+  isNewPasswordField,
+  newPasswordGroup,
+  otpFields,
+  passwordFields,
+  submit,
+  usernameFieldFor,
+} from "../src/content/forms";
 
 const mount = (html: string): Document => {
   document.body.innerHTML = html;
@@ -127,5 +138,56 @@ describe("one-time code fields", () => {
     mount(`<input id="code" type="text" autocomplete="one-time-code">`);
     fillOtp(input("code"), "987654");
     expect(input("code").value).toBe("987654");
+  });
+});
+
+describe("new-password fields", () => {
+  const ids = (fields: readonly HTMLInputElement[]) => fields.map((field) => field.id);
+
+  it("uses the autocomplete hint when present", () => {
+    mount(`<form><input id="cur" type="password" autocomplete="current-password"><input id="new" type="password" autocomplete="new-password"><input id="again" type="password" autocomplete="new-password"></form>`);
+    expect(ids(newPasswordGroup(input("new")))).toEqual(["new", "again"]);
+    expect(isNewPasswordField(input("cur"))).toBe(false);
+  });
+
+  it("treats two unmarked fields as password plus confirmation", () => {
+    mount(`<form><input id="p1" type="password"><input id="p2" type="password"></form>`);
+    expect(ids(newPasswordGroup(input("p1")))).toEqual(["p1", "p2"]);
+  });
+
+  it("treats three unmarked fields as current, new, confirm", () => {
+    mount(`<form><input id="cur" type="password"><input id="new" type="password"><input id="again" type="password"></form>`);
+    expect(ids(newPasswordGroup(input("new")))).toEqual(["new", "again"]);
+    expect(isNewPasswordField(input("cur"))).toBe(false);
+  });
+
+  it("leaves a plain login alone", () => {
+    mount(`<form><input id="user" type="text"><input id="pw" type="password"></form>`);
+    expect(isNewPasswordField(input("pw"))).toBe(false);
+  });
+
+  it("keeps separate forms apart", () => {
+    mount(`<form><input id="login" type="password"></form><form><input id="a" type="password"><input id="b" type="password"></form>`);
+    expect(isNewPasswordField(input("login"))).toBe(false);
+    expect(ids(newPasswordGroup(input("a")))).toEqual(["a", "b"]);
+  });
+
+  it("fills the whole group", () => {
+    mount(`<form><input id="p1" type="password" autocomplete="new-password"><input id="p2" type="password" autocomplete="new-password"></form>`);
+    fillNewPassword(input("p1"), "Gen3rated!");
+    expect([input("p1").value, input("p2").value]).toEqual(["Gen3rated!", "Gen3rated!"]);
+  });
+
+  it.each([
+    [-1, 20],
+    [8, 12],
+    [16, 16],
+    [128, 20],
+  ])("maxlength %i → %i characters", (maxLength, expected) => {
+    mount(`<input id="pw" type="password">`);
+    if (maxLength > 0) {
+      input("pw").maxLength = maxLength;
+    }
+    expect(generatedLength(input("pw"))).toBe(expected);
   });
 });

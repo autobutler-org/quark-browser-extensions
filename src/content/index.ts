@@ -2,7 +2,16 @@ import { errorText } from "../shared/errors";
 import { mayFill } from "../shared/host";
 import { ask, type FillCommand, type Hello, type PageCommand, type PageReply } from "../shared/messages";
 import { err, ok, type ApiError, type Credentials, type EntrySummary } from "../shared/types";
-import { fillLogin, fillOtp, otpFields, passwordFields, submit } from "./forms";
+import {
+  fillLogin,
+  fillNewPassword,
+  fillOtp,
+  generatedLength,
+  isNewPasswordField,
+  otpFields,
+  passwordFields,
+  submit,
+} from "./forms";
 import { attachPicker, type PickerHandle } from "./picker";
 
 const decorated = new WeakMap<HTMLInputElement, PickerHandle>();
@@ -45,6 +54,15 @@ const pickOtp =
     return null;
   };
 
+const suggest = (field: HTMLInputElement) => async (): Promise<string | null> => {
+  const result = await ask({ type: "generateForPage", length: generatedLength(field) });
+  if (!result.ok) {
+    return failureText(result.error);
+  }
+  fillNewPassword(field, result.value);
+  return null;
+};
+
 const scan = async (): Promise<void> => {
   const passwords = passwordFields(document).filter((field) => !decorated.has(field));
   const codes = otpFields(document).filter((field) => !decorated.has(field));
@@ -53,7 +71,18 @@ const scan = async (): Promise<void> => {
     return;
   }
   const greeting = await greet();
-  if (greeting === null || !greeting.settings.inlineButton || greeting.matches.length === 0) {
+  if (greeting === null || !greeting.settings.inlineButton) {
+    return;
+  }
+  const signups = passwords.filter(isNewPasswordField);
+  if (greeting.connected) {
+    signups.forEach((field) => {
+      if (!decorated.has(field)) {
+        decorated.set(field, attachPicker(field, [], location.hostname, { onPick: pick(field), onSuggest: suggest(field) }));
+      }
+    });
+  }
+  if (greeting.matches.length === 0) {
     return;
   }
   const attach = (onPick: (field: HTMLInputElement) => (entry: EntrySummary) => Promise<string | null>) =>
@@ -62,7 +91,7 @@ const scan = async (): Promise<void> => {
         decorated.set(field, attachPicker(field, greeting.matches, location.hostname, { onPick: onPick(field) }));
       }
     };
-  passwords.forEach(attach(pick));
+  passwords.filter((field) => !signups.includes(field)).forEach(attach(pick));
   codes.forEach(attach(pickOtp));
 };
 
@@ -89,12 +118,31 @@ const handleFill = (command: FillCommand): PageReply => {
     : err({ kind: "refused", reason: "Couldn't find the login fields on this page." });
 };
 
+const fillGeneratedHere = (password: string): PageReply => {
+  const active = document.activeElement;
+  const target =
+    active instanceof HTMLInputElement && active.type === "password"
+      ? active
+      : passwordFields(document).find(isNewPasswordField) ?? null;
+  if (target === null) {
+    return err({ kind: "refused", reason: "Click into a password field first." });
+  }
+  if (isNewPasswordField(target)) {
+    fillNewPassword(target, password);
+  } else {
+    fillLogin(document, { username: "", password }, target);
+  }
+  return ok(null);
+};
+
 const handleCommand = (command: PageCommand): PageReply => {
   switch (command.type) {
     case "fill":
       return handleFill(command);
     case "openPicker":
       return openPicker();
+    case "fillGenerated":
+      return fillGeneratedHere(command.password);
   }
 };
 

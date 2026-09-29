@@ -3,7 +3,7 @@ import { hostOf, matchEntries, mayFill, normalizeServer } from "../shared/host";
 import type { Hello, PageCommand, PageReply, Request, Responses } from "../shared/messages";
 import { err, ok, type Connection, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
 import { parseOtpSecret, totp } from "../shared/totp";
-import { entryIdFromMenu, menuItems, menuRoot, shortcutPlan } from "../shared/menu";
+import { entryIdFromMenu, generateMenuId, menuItems, menuRoot, shortcutPlan } from "../shared/menu";
 import { detectionIntervalSeconds, idleAction, type IdleState } from "./idle";
 import { createCache, deriveState, stateFromError } from "./state";
 import {
@@ -144,6 +144,8 @@ const rebuildMenu = async (pageUrl: string): Promise<void> => {
   menuItems(result.ok ? result.value : []).forEach((item) =>
     chrome.contextMenus.create({ id: item.id, parentId: menuRoot, title: item.title, enabled: item.enabled, contexts: ["editable"] }),
   );
+  chrome.contextMenus.create({ id: "sep", parentId: menuRoot, type: "separator", contexts: ["editable"] });
+  chrome.contextMenus.create({ id: generateMenuId, parentId: menuRoot, title: "Generate password", contexts: ["editable"] });
 };
 
 const openPopup = async (): Promise<void> => {
@@ -190,7 +192,7 @@ const hello = async (sender: Sender): Promise<Hello> => {
   if (sender.tab?.id !== undefined) {
     await setBadge(sender.tab.id, matches.length, settings.badge);
   }
-  return { settings, matches };
+  return { settings, matches, connected: (await loadConnection()) !== null };
 };
 
 const connect = async (
@@ -262,6 +264,7 @@ const forExtensionPages: Handler = (request, sender) => {
     case "fillFromPage":
     case "fieldFocused":
     case "otpFromPage":
+    case "generateForPage":
       return null;
   }
 };
@@ -277,6 +280,8 @@ const forContentScripts: Handler = (request, sender) => {
       return rebuildMenu(sender.url ?? "").then(() => null);
     case "otpFromPage":
       return otpFor(request.entryId, sender.url ?? "");
+    case "generateForPage":
+      return withConnection((conn) => api.generate(conn, Math.max(12, Math.min(64, request.length))));
     case "matches":
       return matchesFor(sender.url ?? "");
     case "fillFromPage":
@@ -305,7 +310,18 @@ chrome.commands.onCommand.addListener((command, tab) => {
   }
 });
 
+const fillGenerated = async (tabId: number): Promise<void> => {
+  const password = await withConnection((conn) => api.generate(conn));
+  if (password.ok) {
+    await chrome.tabs.sendMessage(tabId, { type: "fillGenerated", password: password.value }, { frameId: 0 }).catch(() => undefined);
+  }
+};
+
 chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === generateMenuId && tab?.id !== undefined) {
+    void fillGenerated(tab.id);
+    return;
+  }
   const entryId = entryIdFromMenu(info.menuItemId);
   if (entryId !== null && tab?.id !== undefined) {
     void fillInTab(tab.id, entryId);

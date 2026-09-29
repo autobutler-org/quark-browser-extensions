@@ -64,12 +64,21 @@ const api = http.createServer(async (req, res) => {
       ? json(res, 200, { id: 1, name: "Local Test", url: `http://localhost:${SITE}`, urlHost: "localhost", username: "alice", password: "s3cret", totpSecret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" })
       : json(res, 200, { id: 2, name: "GitHub", url: "https://github.com", urlHost: "github.com", username: "gh", password: "ghpw" });
   }
-  if (url === "/vault/generate") return json(res, 200, { password: "Gen3rated!Pass" });
+  if (url === "/vault/generate") return json(res, 200, { password: "G".repeat(body.length ?? 20) });
   json(res, 404, { error: "not found" });
 });
 
 const site = http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/html" });
+  if (req.url === "/signup") {
+    return res.end(`<!doctype html><html><body style="font-family:sans-serif;padding:40px">
+<h1>Create account</h1>
+<form style="width:320px;display:flex;flex-direction:column;gap:8px">
+<label>Email <input id="email" type="email"></label>
+<label>Password <input id="new1" type="password" autocomplete="new-password" maxlength="16" style="width:100%;height:32px"></label>
+<label>Confirm <input id="new2" type="password" autocomplete="new-password" maxlength="16" style="width:100%;height:32px"></label>
+</form></body></html>`);
+  }
   if (req.url === "/2fa") {
     return res.end(`<!doctype html><html><body style="font-family:sans-serif;padding:40px">
 <h1>Two-step verification</h1>
@@ -195,6 +204,18 @@ try {
 
   const pageSteal = await loginPage.evaluate(() => typeof chrome === "undefined" || typeof chrome.runtime?.sendMessage !== "function");
   check("page scripts can't message the extension", pageSteal);
+
+  const signup = await context.newPage();
+  await signup.goto(`http://localhost:${SITE}/signup`);
+  await signup.waitForTimeout(1500);
+  const newBox = await signup.locator("#new1").boundingBox();
+  await signup.mouse.click(newBox.x + newBox.width - 17, newBox.y + newBox.height / 2);
+  await signup.waitForTimeout(300);
+  await signup.keyboard.press("Enter");
+  await signup.waitForTimeout(800);
+  const generated = [await signup.locator("#new1").inputValue(), await signup.locator("#new2").inputValue()];
+  check("sign-up picker suggests a password for both fields, sized to maxlength", generated[0] === "G".repeat(16) && generated[1] === generated[0], JSON.stringify(generated));
+  await signup.close();
 
   const otpPage = await context.newPage();
   await otpPage.goto(`http://localhost:${SITE}/2fa`);
