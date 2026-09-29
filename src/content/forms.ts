@@ -123,3 +123,31 @@ export const fillOtp = (field: HTMLInputElement, code: string): void => {
     .slice(0, code.length)
     .forEach((box, index) => setValue(box, code[index] ?? ""));
 };
+
+const passwordGroup = (field: HTMLInputElement): readonly HTMLInputElement[] =>
+  inputs(field.form ?? field.ownerDocument).filter(
+    (input) => input.type === "password" && isVisible(input) && (input.form === field.form),
+  );
+
+export const newPasswordGroup = (field: HTMLInputElement): readonly HTMLInputElement[] => {
+  const group = passwordGroup(field);
+  const marked = group.filter((input) => input.autocomplete === "new-password");
+  if (marked.length > 0) {
+    return marked;
+  }
+  if (group.some((input) => input.autocomplete === "current-password")) {
+    return group.filter((input) => input.autocomplete !== "current-password");
+  }
+  if (group.length === 2) {
+    return group;
+  }
+  return group.length === 3 ? group.slice(1) : [];
+};
+
+export const isNewPasswordField = (field: HTMLInputElement): boolean => newPasswordGroup(field).includes(field);
+
+export const generatedLength = (field: HTMLInputElement): number =>
+  field.maxLength > 0 ? Math.max(12, Math.min(20, field.maxLength)) : 20;
+
+export const fillNewPassword = (field: HTMLInputElement, password: string): void =>
+  newPasswordGroup(field).forEach((input) => setValue(input, password));

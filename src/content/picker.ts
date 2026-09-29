@@ -30,11 +30,13 @@ const css = `
 }
 .item:hover .avatar, .item:focus-visible .avatar { background: #0EA5E9; color: #FFFFFF; }
 .name { font-size: 14px; font-weight: 500; color: #E2E8F0; }
+.hint { font-size: 12px; color: #94A3B8; }
 .error { padding: 10px; font-size: 13px; line-height: 1.4; color: #FCA5A5; }
 `;
 
 export type PickerHandlers = Readonly<{
   onPick: (entry: EntrySummary) => Promise<string | null>;
+  onSuggest?: () => Promise<string | null>;
 }>;
 
 export type PickerHandle = Readonly<{
@@ -48,7 +50,7 @@ export const attachPicker = (
   field: HTMLInputElement,
   matches: readonly EntrySummary[],
   pageHost: string,
-  { onPick }: PickerHandlers,
+  { onPick, onSuggest }: PickerHandlers,
 ): PickerHandle => {
   const doc = field.ownerDocument;
   const view = doc.defaultView ?? window;
@@ -105,6 +107,25 @@ export const attachPicker = (
       h$(doc, "div", { className: "name" }, entry.name),
     );
 
+  const suggestItem = (panel: HTMLElement, suggest: () => Promise<string | null>): HTMLButtonElement => {
+    const avatar = h$(doc, "div", { className: "avatar", "aria-hidden": "true" });
+    avatar.append(icon(doc, icons.key, 16));
+    return h$(
+      doc,
+      "button",
+      {
+        className: "item",
+        type: "button",
+        role: "option",
+        onclick: (() => {
+          void suggest().then((failure) => (failure === null ? closePanel() : showError(panel, failure)));
+        }) as EventListener,
+      },
+      avatar,
+      h$(doc, "div", {}, h$(doc, "div", { className: "name" }, "Suggest strong password"), h$(doc, "div", { className: "hint" }, "Fills this field and its confirmation")),
+    );
+  };
+
   const openPanel = (): void => {
     const panel = h$(
       doc,
@@ -112,6 +133,9 @@ export const attachPicker = (
       { className: "panel", role: "listbox", "aria-label": "Logins for this site" },
       h$(doc, "div", { className: "head" }, h$(doc, "div", { className: "label" }, "Quark Vault"), h$(doc, "div", { className: "host" }, pageHost)),
     );
+    if (onSuggest !== undefined) {
+      panel.append(suggestItem(panel, onSuggest));
+    }
     matches.forEach((entry) => panel.append(item(panel, entry)));
     anchor.append(panel);
     trigger.setAttribute("aria-expanded", "true");

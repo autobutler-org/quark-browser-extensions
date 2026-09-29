@@ -15,6 +15,8 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
   for **Quark Vault › Fill …**. Rebind it at `chrome://extensions/shortcuts`.
 - **One-time codes**: fields like "Enter verification code" (or a row of six digit boxes) get the same button when
   the entry has a TOTP secret. The secret stays in the service worker; only the code reaches the page.
+- **Sign-up forms**: new-password fields get **Suggest strong password**, which fills the field and its
+  confirmation, sized to the field's `maxlength`. Right-click › **Generate password** does the same anywhere.
 - **Copy and generate**: copy any entry's password from the popup, or generate a new one.
 - **Other password managers**: offers to turn off Chrome's own password saving and extensions like Proton Pass or
   Bitwarden, so only one manager tries to fill each form.
