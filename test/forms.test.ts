@@ -1,9 +1,11 @@
 import {
+  capturedLogin,
   fillLogin,
   fillNewPassword,
   fillOtp,
   generatedLength,
   isNewPasswordField,
+  looksLikeSubmit,
   newPasswordGroup,
   otpFields,
   passwordFields,
@@ -189,5 +191,47 @@ describe("new-password fields", () => {
       input("pw").maxLength = maxLength;
     }
     expect(generatedLength(input("pw"))).toBe(expected);
+  });
+});
+
+describe("capturedLogin", () => {
+  it("reads the username and password of a submitted login", () => {
+    const doc = mount(`<form id="f"><input id="u" type="email" value="alice@example.com"><input id="p" type="password" value="pw"></form>`);
+    expect(capturedLogin(doc, document.getElementById("f") as HTMLFormElement)).toEqual({ username: "alice@example.com", password: "pw" });
+  });
+
+  it("takes the new password from a change-password form", () => {
+    const doc = mount(`<form id="f"><input type="password" autocomplete="current-password" value="old"><input type="password" autocomplete="new-password" value="new"><input type="password" autocomplete="new-password" value="new"></form>`);
+    expect(capturedLogin(doc, document.getElementById("f") as HTMLFormElement)).toEqual({ username: "", password: "new" });
+  });
+
+  it("skips a sign-up whose confirmation doesn't match", () => {
+    const doc = mount(`<form id="f"><input type="text" value="bob"><input type="password" value="a"><input type="password" value="b"></form>`);
+    expect(capturedLogin(doc, document.getElementById("f") as HTMLFormElement)).toBeNull();
+  });
+
+  it("skips a form the browser won't submit", () => {
+    const doc = mount(`<form id="f"><input type="email" value="not-an-email"><input type="password" value="pw"></form>`);
+    expect(capturedLogin(doc, document.getElementById("f") as HTMLFormElement)).toBeNull();
+  });
+
+  it("skips empty password fields", () => {
+    const doc = mount(`<form id="f"><input type="text" value="bob"><input type="password"></form>`);
+    expect(capturedLogin(doc, document.getElementById("f") as HTMLFormElement)).toBeNull();
+  });
+});
+
+describe("looksLikeSubmit", () => {
+  it.each([
+    [`<form><button id="t" type="submit">Go</button></form>`, true],
+    [`<div><button id="t" type="button"><span>Sign in</span></button></div>`, true],
+    [`<input id="t" type="submit" value="Log in">`, true],
+    [`<div role="button" id="t">Continue</div>`, true],
+    [`<button id="t" type="button">Show password</button>`, false],
+    [`<a id="t" href="#">Sign in</a>`, false],
+  ])("%s → %s", (html, expected) => {
+    mount(html);
+    const target = document.getElementById("t") as Element;
+    expect(looksLikeSubmit(target.firstElementChild ?? target)).toBe(expected);
   });
 });

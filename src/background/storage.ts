@@ -5,6 +5,7 @@ const keys = {
   server: "server",
   connection: "connection",
   settings: "settings",
+  neverSave: "neverSave",
 } as const;
 
 const isConnection = (value: unknown): value is Connection =>
@@ -49,4 +50,16 @@ export const loadSettings = async (): Promise<Settings> => {
 export const saveSettings = async (settings: Settings): Promise<Settings> => {
   await chrome.storage.local.set({ [keys.settings]: settings });
   return settings;
+};
+
+export const loadNeverSave = async (): Promise<readonly string[]> => {
+  const stored = await chrome.storage.local.get(keys.neverSave);
+  const value: unknown = stored[keys.neverSave];
+  return Array.isArray(value) ? value.filter((host): host is string => typeof host === "string") : [];
+};
+
+export const saveNeverSave = async (hosts: readonly string[]): Promise<readonly string[]> => {
+  const unique = [...new Set(hosts)].toSorted();
+  await chrome.storage.local.set({ [keys.neverSave]: unique });
+  return unique;
 };

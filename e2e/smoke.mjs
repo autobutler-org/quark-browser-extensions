@@ -14,6 +14,7 @@ const API = 18080;
 const SITE = 18081;
 let locked = true;
 const log = [];
+const writes = [];
 
 const json = (res, status, body) => {
   res.writeHead(status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
@@ -32,7 +33,7 @@ const api = http.createServer(async (req, res) => {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
-      "Access-Control-Allow-Methods": "GET, POST",
+      "Access-Control-Allow-Methods": "GET, POST, PUT",
     });
     return res.end();
   }
@@ -51,17 +52,25 @@ const api = http.createServer(async (req, res) => {
     return json(res, 200, { locked: false });
   }
   if (url === "/vault/lock") { locked = true; return json(res, 200, { locked: true }); }
-  if (url === "/vault/entries") {
+  if (url === "/vault/entries" && req.method === "GET") {
     return json(res, 200, { entries: [
       { id: 1, name: "Local Test", urlHost: "localhost", folderId: null },
       { id: 2, name: "GitHub", urlHost: "github.com", folderId: null },
     ] });
   }
+  if (url === "/vault/entries" && req.method === "POST") {
+    writes.push({ method: "POST", body });
+    return json(res, 200, { id: 99 });
+  }
   const m = url.match(/^\/vault\/entries\/(\d+)$/);
+  if (m && req.method === "PUT") {
+    writes.push({ method: "PUT", id: Number(m[1]), body });
+    return json(res, 200, { id: Number(m[1]) });
+  }
   if (m) {
     if (locked) return json(res, 423, { error: "vault is locked" });
     return m[1] === "1"
-      ? json(res, 200, { id: 1, name: "Local Test", url: `http://localhost:${SITE}`, urlHost: "localhost", username: "alice", password: "s3cret", totpSecret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" })
+      ? json(res, 200, { id: 1, name: "Local Test", url: `http://localhost:${SITE}`, urlHost: "localhost", username: "alice", password: "s3cret", totpSecret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", notes: "keep me", customFields: [{ name: "pin", value: "1234", hidden: true }], folderId: 3 })
       : json(res, 200, { id: 2, name: "GitHub", url: "https://github.com", urlHost: "github.com", username: "gh", password: "ghpw" });
   }
   if (url === "/vault/generate") return json(res, 200, { password: "G".repeat(body.length ?? 20) });
@@ -88,7 +97,7 @@ const site = http.createServer((req, res) => {
   res.end(`<!doctype html><html><body style="font-family:sans-serif;padding:40px">
 <h1>Sign in</h1>
 <form id="f" style="width:320px;display:flex;flex-direction:column;gap:8px">
-<label>Email <input id="user" type="email" autocomplete="username" style="width:100%;height:32px"></label>
+<label>Username <input id="user" type="text" autocomplete="username" pattern="[^!]*" style="width:100%;height:32px"></label>
 <label>Password <input id="pw" type="password" style="width:100%;height:32px"></label>
 <button type="submit">Sign in</button>
 </form>
@@ -204,6 +213,41 @@ try {
 
   const pageSteal = await loginPage.evaluate(() => typeof chrome === "undefined" || typeof chrome.runtime?.sendMessage !== "function");
   check("page scripts can't message the extension", pageSteal);
+
+  const submitLogin = async (username, password) => {
+    await loginPage.evaluate(([u, p]) => {
+      document.getElementById("user").value = u;
+      document.getElementById("pw").value = p;
+    }, [username, password]);
+    await loginPage.click("button[type=submit]");
+    await loginPage.waitForTimeout(800);
+    return popup.evaluate((id) => chrome.runtime.sendMessage({ type: "pendingOffer", tabId: id }), tabId);
+  };
+
+  const sameOffer = await submitLogin("alice", "s3cret");
+  check("submitting the saved password offers nothing", sameOffer === null, JSON.stringify(sameOffer));
+
+  const invalid = await submitLogin("bo!b", "hunter2");
+  check("a submit the browser blocks offers nothing", invalid === null, JSON.stringify(invalid));
+
+  const saveOffer = await submitLogin("bob@example.com", "hunter2");
+  const barShown = await loginPage.evaluate(() => document.body.querySelectorAll(":scope > div").length);
+  check("new login offers to save", saveOffer?.kind === "save" && saveOffer.username === "bob@example.com", JSON.stringify(saveOffer));
+  check("save bar appears in the page", barShown >= 2, `host divs=${barShown}`);
+  if (shots) await loginPage.screenshot({ path: `${shots}/save-bar.png` });
+  const saved = await popup.evaluate((id) => chrome.runtime.sendMessage({ type: "resolveSave", action: "save", tabId: id }), tabId);
+  const post = writes.find((w) => w.method === "POST");
+  check("saving posts the new entry", saved.ok && post?.body.username === "bob@example.com" && post.body.password === "hunter2" && post.body.url === `http://localhost:${SITE}`, JSON.stringify(post));
+
+  const updateOffer = await submitLogin("alice", "n3w-pass");
+  check("changed password offers to update", updateOffer?.kind === "update" && updateOffer.entryId === 1, JSON.stringify(updateOffer));
+  const updated = await popup.evaluate((id) => chrome.runtime.sendMessage({ type: "resolveSave", action: "update", tabId: id }), tabId);
+  const put = writes.find((w) => w.method === "PUT");
+  check(
+    "update replaces only the password",
+    updated.ok && put?.id === 1 && put.body.password === "n3w-pass" && put.body.notes === "keep me" && put.body.totpSecret !== "" && put.body.folderId === 3 && put.body.customFields?.[0]?.value === "1234",
+    JSON.stringify(put),
+  );
 
   const signup = await context.newPage();
   await signup.goto(`http://localhost:${SITE}/signup`);
