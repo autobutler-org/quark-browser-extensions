@@ -13,6 +13,8 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
   site. The toolbar icon shows how many. Pick one, or press **Fill** in the popup.
 - **Shortcut and right-click**: `Ctrl+Shift+L` (`⌘⇧L` on macOS) fills the only match or opens the picker; right-click a field
   for **Quark Vault › Fill …**. Rebind it at `chrome://extensions/shortcuts`.
+- **One-time codes**: fields like "Enter verification code" (or a row of six digit boxes) get the same button when
+  the entry has a TOTP secret. The secret stays in the service worker; only the code reaches the page.
 - **Copy and generate**: copy any entry's password from the popup, or generate a new one.
 - **Other password managers**: offers to turn off Chrome's own password saving and extensions like Proton Pass or
   Bitwarden, so only one manager tries to fill each form.
@@ -66,6 +68,5 @@ static/           manifest, HTML, CSS, icons
 ## Not yet
 
 - Saving new logins from the page (the Quark API supports `POST /vault/entries`; the extension doesn't offer it yet)
-- TOTP codes
 - Firefox and Safari
 - Importing from other managers happens on the Quark: autobutler-org/quark#2543

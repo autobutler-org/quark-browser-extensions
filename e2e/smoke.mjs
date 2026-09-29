@@ -61,7 +61,7 @@ const api = http.createServer(async (req, res) => {
   if (m) {
     if (locked) return json(res, 423, { error: "vault is locked" });
     return m[1] === "1"
-      ? json(res, 200, { id: 1, name: "Local Test", url: `http://localhost:${SITE}`, urlHost: "localhost", username: "alice", password: "s3cret" })
+      ? json(res, 200, { id: 1, name: "Local Test", url: `http://localhost:${SITE}`, urlHost: "localhost", username: "alice", password: "s3cret", totpSecret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" })
       : json(res, 200, { id: 2, name: "GitHub", url: "https://github.com", urlHost: "github.com", username: "gh", password: "ghpw" });
   }
   if (url === "/vault/generate") return json(res, 200, { password: "Gen3rated!Pass" });
@@ -70,6 +70,12 @@ const api = http.createServer(async (req, res) => {
 
 const site = http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/html" });
+  if (req.url === "/2fa") {
+    return res.end(`<!doctype html><html><body style="font-family:sans-serif;padding:40px">
+<h1>Two-step verification</h1>
+<form style="width:320px"><label>Code <input id="otp" type="text" autocomplete="one-time-code" style="width:100%;height:32px"></label></form>
+</body></html>`);
+  }
   res.end(`<!doctype html><html><body style="font-family:sans-serif;padding:40px">
 <h1>Sign in</h1>
 <form id="f" style="width:320px;display:flex;flex-direction:column;gap:8px">
@@ -189,6 +195,23 @@ try {
 
   const pageSteal = await loginPage.evaluate(() => typeof chrome === "undefined" || typeof chrome.runtime?.sendMessage !== "function");
   check("page scripts can't message the extension", pageSteal);
+
+  const otpPage = await context.newPage();
+  await otpPage.goto(`http://localhost:${SITE}/2fa`);
+  await otpPage.waitForTimeout(1500);
+  const otpBox = await otpPage.locator("#otp").boundingBox();
+  await otpPage.mouse.click(otpBox.x + otpBox.width - 17, otpBox.y + otpBox.height / 2);
+  await otpPage.waitForTimeout(300);
+  await otpPage.keyboard.press("Enter");
+  await otpPage.waitForTimeout(800);
+  const otpValue = await otpPage.locator("#otp").inputValue();
+  check("inline picker fills a one-time code", /^\d{6}$/.test(otpValue), JSON.stringify(otpValue));
+  const popupCode = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "otp", entryId: 1 }));
+  const sameWindow = popupCode.ok && (popupCode.value.code === otpValue || popupCode.value.secondsLeft >= 27);
+  check("popup gets the same code (or a fresh one after rollover)", sameWindow && /^\d{6}$/.test(popupCode.value.code), JSON.stringify(popupCode));
+  const noSecret = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "otp", entryId: 2 }));
+  check("entry without a secret says so", !noSecret.ok && noSecret.error.kind === "refused", JSON.stringify(noSecret));
+  await otpPage.close();
 
   await popup.evaluate(() => chrome.runtime.sendMessage({ type: "lock" }));
   const whileLocked = await popup.evaluate((id) => chrome.runtime.sendMessage({ type: "fillInTab", tabId: id, entryId: 1 }), tabId);
