@@ -1,4 +1,4 @@
-import { hostMatches, isSecurePage, matchEntries, mayFill, normalizeServer, searchEntries } from "../src/shared/host";
+import { frameMayFill, hostMatches, isSecurePage, matchEntries, mayFill, normalizeServer, searchEntries } from "../src/shared/host";
 import type { EntrySummary } from "../src/shared/types";
 
 const entry = (id: number, name: string, urlHost: string): EntrySummary => ({
@@ -85,5 +85,29 @@ describe("normalizeServer", () => {
     ["", ""],
   ])("%s → %s", (input, expected) => {
     expect(normalizeServer(input)).toBe(expected);
+  });
+});
+
+describe("frameMayFill", () => {
+  const entryUrl = "https://example.com";
+
+  it("fills the top frame of the entry's site", () => {
+    expect(frameMayFill("https://example.com/login", "https://example.com/login", entryUrl, "example.com")).toBe(true);
+  });
+
+  it("fills a same-site frame", () => {
+    expect(frameMayFill("https://login.example.com/frame", "https://www.example.com/", entryUrl, "example.com")).toBe(true);
+  });
+
+  it("refuses the entry's site framed inside another site", () => {
+    expect(frameMayFill("https://login.example.com/frame", "https://evil.io/", entryUrl, "example.com")).toBe(false);
+  });
+
+  it("refuses another site framed inside the entry's site", () => {
+    expect(frameMayFill("https://ads.other.net/frame", "https://example.com/", entryUrl, "example.com")).toBe(false);
+  });
+
+  it("refuses when the top frame is unknown", () => {
+    expect(frameMayFill("https://example.com/frame", "", entryUrl, "example.com")).toBe(false);
   });
 });

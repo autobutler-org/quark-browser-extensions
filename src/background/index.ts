@@ -1,5 +1,5 @@
 import { createApi } from "../shared/api";
-import { hostMatches, hostOf, matchEntries, mayFill, normalizeHost, normalizeServer } from "../shared/host";
+import { frameMayFill, hostMatches, hostOf, matchEntries, normalizeHost, normalizeServer } from "../shared/host";
 import type { Hello, PageCommand, PageReply, Request, Responses } from "../shared/messages";
 import { err, ok, type Connection, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
 import { parseOtpSecret, totp } from "../shared/totp";
@@ -35,8 +35,25 @@ const fromExtensionOrigin = (sender: Sender): boolean => (sender.url ?? "").star
 
 const isExtensionPage = (sender: Sender): boolean => sender.id === chrome.runtime.id && fromExtensionOrigin(sender);
 
-const isTopFrameContent = (sender: Sender): boolean =>
-  sender.id === chrome.runtime.id && !fromExtensionOrigin(sender) && sender.tab !== undefined && sender.frameId === 0;
+const isContentScript = (sender: Sender): boolean =>
+  sender.id === chrome.runtime.id && !fromExtensionOrigin(sender) && sender.tab !== undefined;
+
+const isTopFrame = (sender: Sender): boolean => sender.frameId === 0;
+
+const topFrameUrl = async (sender: Sender): Promise<string> => {
+  if (isTopFrame(sender)) {
+    return sender.url ?? "";
+  }
+  const tabId = sender.tab?.id;
+  if (tabId === undefined) {
+    return "";
+  }
+  const reply: unknown = await chrome.tabs.sendMessage(tabId, { type: "whereAmI" }, { frameId: 0 }).catch(() => undefined);
+  return typeof reply === "string" ? reply : "";
+};
+
+const embeddedRefusal = (topUrl: string): string =>
+  `This login form is embedded in ${hostOf(topUrl) || "another page"}, so Quark Vault won't fill it.`;
 
 const withConnection = async <T>(run: (connection: Connection) => Promise<Result<T>>): Promise<Result<T>> => {
   const connection = await loadConnection();
@@ -91,23 +108,37 @@ const fillFromPage = async (
   entryId: number,
 ): Promise<Responses["fillFromPage"]> => {
   const pageUrl = sender.url ?? "";
-  const [settings, entry] = await Promise.all([loadSettings(), withConnection((conn) => api.getEntry(conn, entryId))]);
+  const [settings, entry, topUrl] = await Promise.all([
+    loadSettings(),
+    withConnection((conn) => api.getEntry(conn, entryId)),
+    topFrameUrl(sender),
+  ]);
   if (!entry.ok) {
     return entry;
   }
-  if (!mayFill(pageUrl, entry.value.url, entry.value.urlHost)) {
+  if (!frameMayFill(pageUrl, pageUrl, entry.value.url, entry.value.urlHost)) {
     return refused("This login doesn't belong to this site.");
+  }
+  if (!frameMayFill(pageUrl, topUrl, entry.value.url, entry.value.urlHost)) {
+    return refused(embeddedRefusal(topUrl));
   }
   return ok({ username: entry.value.username, password: entry.value.password, autoSubmit: settings.autoSubmit });
 };
 
-const otpFor = async (entryId: number, pageUrl: string | null): Promise<Responses["otp"]> => {
-  const entry = await withConnection((conn) => api.getEntry(conn, entryId));
+const otpFor = async (entryId: number, sender: Sender | null): Promise<Responses["otp"]> => {
+  const [entry, topUrl] = await Promise.all([
+    withConnection((conn) => api.getEntry(conn, entryId)),
+    sender === null ? Promise.resolve("") : topFrameUrl(sender),
+  ]);
   if (!entry.ok) {
     return entry;
   }
-  if (pageUrl !== null && !mayFill(pageUrl, entry.value.url, entry.value.urlHost)) {
+  const pageUrl = sender?.url ?? "";
+  if (sender !== null && !frameMayFill(pageUrl, pageUrl, entry.value.url, entry.value.urlHost)) {
     return refused("This login doesn't belong to this site.");
+  }
+  if (sender !== null && !frameMayFill(pageUrl, topUrl, entry.value.url, entry.value.urlHost)) {
+    return refused(embeddedRefusal(topUrl));
   }
   const params = parseOtpSecret(entry.value.totpSecret);
   return params === null ? refused("This login has no one-time code saved.") : ok(await totp(params, Date.now()));
@@ -126,9 +157,9 @@ const fillInTab = async (tabId: number, entryId: number): Promise<Responses["fil
     autoSubmit: settings.autoSubmit,
   };
   try {
-    const reply = (await chrome.tabs.sendMessage(tabId, command, { frameId: 0 })) as PageReply | undefined;
+    const reply = (await chrome.tabs.sendMessage(tabId, command)) as PageReply | undefined;
     if (reply === undefined) {
-      return refused("This page can't be filled. Reload it and try again.");
+      return refused("Couldn't find login fields on this page. If it just loaded, reload it and try again.");
     }
     return reply;
   } catch {
@@ -264,7 +295,7 @@ const onShortcut = async (tab: chrome.tabs.Tab | undefined): Promise<void> => {
       return;
     }
     case "picker": {
-      const reply = (await chrome.tabs.sendMessage(tab.id, { type: "openPicker" }, { frameId: 0 }).catch(() => undefined)) as
+      const reply = (await chrome.tabs.sendMessage(tab.id, { type: "openPicker" }).catch(() => undefined)) as
         | PageReply
         | undefined;
       if (reply === undefined || !reply.ok) {
@@ -281,7 +312,7 @@ const hello = async (sender: Sender): Promise<Hello> => {
   const settings = await loadSettings();
   const result = await matchesFor(sender.url ?? "");
   const matches = result.ok ? result.value : [];
-  if (sender.tab?.id !== undefined) {
+  if (sender.tab?.id !== undefined && isTopFrame(sender)) {
     await setBadge(sender.tab.id, matches.length, settings.badge);
   }
   return { settings, matches, connected: (await loadConnection()) !== null };
@@ -371,8 +402,10 @@ const forExtensionPages: Handler = (request, sender) => {
   }
 };
 
+const topFrameOnly = new Set<Request["type"]>(["captured", "myOffer", "resolveSave"]);
+
 const forContentScripts: Handler = (request, sender) => {
-  if (!isTopFrameContent(sender)) {
+  if (!isContentScript(sender) || (topFrameOnly.has(request.type) && !isTopFrame(sender))) {
     return null;
   }
   switch (request.type) {
@@ -381,7 +414,7 @@ const forContentScripts: Handler = (request, sender) => {
     case "fieldFocused":
       return rebuildMenu(sender.url ?? "").then(() => null);
     case "otpFromPage":
-      return otpFor(request.entryId, sender.url ?? "");
+      return otpFor(request.entryId, sender);
     case "generateForPage":
       return withConnection((conn) => api.generate(conn, Math.max(12, Math.min(64, request.length))));
     case "captured":
@@ -421,7 +454,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
 const fillGenerated = async (tabId: number): Promise<void> => {
   const password = await withConnection((conn) => api.generate(conn));
   if (password.ok) {
-    await chrome.tabs.sendMessage(tabId, { type: "fillGenerated", password: password.value }, { frameId: 0 }).catch(() => undefined);
+    await chrome.tabs.sendMessage(tabId, { type: "fillGenerated", password: password.value }).catch(() => undefined);
   }
 };
 
