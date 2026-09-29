@@ -34,18 +34,30 @@ export type Connection = Readonly<{
   token: string;
 }>;
 
+export const idleMinuteChoices = [5, 15, 30] as const;
+
+export type IdleMinutes = (typeof idleMinuteChoices)[number];
+
 export type Settings = Readonly<{
   inlineButton: boolean;
   badge: boolean;
   autoSubmit: boolean;
   othersReviewed: boolean;
+  lockOnIdle: boolean;
+  idleMinutes: IdleMinutes;
 }>;
+
+export type BooleanSetting = {
+  [K in keyof Settings]: Settings[K] extends boolean ? K : never;
+}[keyof Settings];
 
 export const defaultSettings: Settings = {
   inlineButton: true,
   badge: true,
   autoSubmit: false,
   othersReviewed: false,
+  lockOnIdle: false,
+  idleMinutes: 15,
 };
 
 export type ApiError =

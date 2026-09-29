@@ -1,7 +1,7 @@
 import { h, icon, icons } from "../shared/dom";
 import { stateText } from "../shared/errors";
 import { ask } from "../shared/messages";
-import type { Settings, VaultState } from "../shared/types";
+import { idleMinuteChoices, type BooleanSetting, type IdleMinutes, type Settings, type VaultState } from "../shared/types";
 import { othersSection } from "./others";
 
 const root = document.getElementById("app") as HTMLElement;
@@ -9,7 +9,7 @@ const others = othersSection();
 
 const toggle = (
   settings: Settings,
-  key: "inlineButton" | "badge" | "autoSubmit",
+  key: BooleanSetting,
   title: string,
   hint: string,
 ): HTMLElement => {
@@ -24,6 +24,37 @@ const toggle = (
     input,
   );
 };
+
+const save = (settings: Settings): void => {
+  void ask({ type: "saveSettings", settings }).then(render);
+};
+
+const idleMinutesSelect = (settings: Settings): HTMLElement => {
+  const select = h(
+    "select",
+    { id: "idle-minutes", disabled: !settings.lockOnIdle },
+    ...idleMinuteChoices.map((minutes) =>
+      h("option", { value: String(minutes), selected: minutes === settings.idleMinutes }, `After ${minutes} minutes`),
+    ),
+  );
+  select.addEventListener("change", () => save({ ...settings, idleMinutes: Number(select.value) as IdleMinutes }));
+  return h(
+    "div",
+    { className: "toggle" },
+    h("label", { className: "grow", for: "idle-minutes" }, "Idle time before locking"),
+    select,
+  );
+};
+
+const lockingSection = (settings: Settings): HTMLElement =>
+  h(
+    "section",
+    { className: "card" },
+    h("h2", {}, "Locking"),
+    h("p", { className: "muted small" }, "Locking from this browser locks the vault on your Quark for every device. The vault always locks when this computer's screen locks."),
+    toggle(settings, "lockOnIdle", "Lock the vault when this computer is idle", "Off by default, so someone else mid-task isn't locked out"),
+    idleMinutesSelect(settings),
+  );
 
 const connection = (state: VaultState): HTMLElement => {
   const signedIn = state.kind !== "disconnected" && state.kind !== "signedOut";
@@ -63,8 +94,9 @@ const render = async (): Promise<void> => {
         toggle(settings, "badge", "Show the match count on the toolbar icon", ""),
         toggle(settings, "autoSubmit", "Submit the form after filling", "Off by default. Some sites need a second look first."),
       ),
+      lockingSection(settings),
       others,
-      h("p", { className: "muted small" }, "The vault auto-locks on the schedule set on your Quark."),
+      h("p", { className: "muted small" }, "The vault also auto-locks on the schedule set on your Quark."),
     ),
   );
 };

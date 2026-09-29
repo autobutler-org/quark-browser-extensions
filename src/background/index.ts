@@ -1,7 +1,8 @@
 import { createApi } from "../shared/api";
 import { hostOf, matchEntries, mayFill, normalizeServer } from "../shared/host";
 import type { Hello, PageCommand, PageReply, Request, Responses } from "../shared/messages";
-import { err, ok, type Connection, type EntrySummary, type Result, type VaultState } from "../shared/types";
+import { err, ok, type Connection, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
+import { detectionIntervalSeconds, idleAction, type IdleState } from "./idle";
 import { createCache, deriveState, stateFromError } from "./state";
 import {
   clearConnection,
@@ -186,7 +187,7 @@ const forExtensionPages: Handler = (request, sender) => {
     case "settings":
       return loadSettings();
     case "saveSettings":
-      return saveSettings(request.settings);
+      return saveSettings(request.settings).then(applyIdleInterval);
     case "hello":
     case "fillFromPage":
       return null;
@@ -208,6 +209,22 @@ const forContentScripts: Handler = (request, sender) => {
       return null;
   }
 };
+
+const applyIdleInterval = (settings: Settings): Settings => {
+  chrome.idle.setDetectionInterval(detectionIntervalSeconds(settings));
+  return settings;
+};
+
+const onIdleState = async (state: IdleState): Promise<void> => {
+  const settings = await loadSettings();
+  if (idleAction(state, settings) === "lock" && (await loadConnection()) !== null) {
+    entriesCache.clear();
+    await withConnection((conn) => api.lock(conn));
+  }
+};
+
+chrome.idle.onStateChanged.addListener((state) => void onIdleState(state as IdleState));
+void loadSettings().then(applyIdleInterval);
 
 chrome.runtime.onMessage.addListener((request: Request, sender, sendResponse) => {
   const pending = forExtensionPages(request, sender) ?? forContentScripts(request, sender);
