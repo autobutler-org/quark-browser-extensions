@@ -37,6 +37,11 @@ export type PickerHandlers = Readonly<{
   onPick: (entry: EntrySummary) => Promise<string | null>;
 }>;
 
+export type PickerHandle = Readonly<{
+  open: () => void;
+  destroy: () => void;
+}>;
+
 const initial = (name: string): string => (name.trim()[0] ?? "?").toUpperCase();
 
 export const attachPicker = (
@@ -44,7 +49,7 @@ export const attachPicker = (
   matches: readonly EntrySummary[],
   pageHost: string,
   { onPick }: PickerHandlers,
-): (() => void) => {
+): PickerHandle => {
   const doc = field.ownerDocument;
   const view = doc.defaultView ?? window;
   const host = h$(doc, "div");
@@ -150,11 +155,19 @@ export const attachPicker = (
   doc.body.append(host);
   place();
 
-  return () => {
-    view.cancelAnimationFrame(frame);
-    doc.removeEventListener("mousedown", onOutside, true);
-    view.removeEventListener("scroll", schedule, true);
-    view.removeEventListener("resize", schedule);
-    host.remove();
+  return {
+    open: () => {
+      if (shadow.querySelector(".panel") === null) {
+        place();
+        openPanel();
+      }
+    },
+    destroy: () => {
+      view.cancelAnimationFrame(frame);
+      doc.removeEventListener("mousedown", onOutside, true);
+      view.removeEventListener("scroll", schedule, true);
+      view.removeEventListener("resize", schedule);
+      host.remove();
+    },
   };
 };

@@ -177,6 +177,16 @@ try {
   const inline = await loginPage.evaluate(() => [document.getElementById("user").value, document.getElementById("pw").value]);
   check("inline picker fills the page", inline[0] === "alice" && inline[1] === "s3cret", JSON.stringify(inline));
 
+  const opened = await worker.evaluate((id) => chrome.tabs.sendMessage(id, { type: "openPicker" }, { frameId: 0 }), tabId);
+  check("shortcut can open the inline picker", opened?.ok === true, JSON.stringify(opened));
+  await loginPage.keyboard.press("Escape");
+  const command = await worker.evaluate(async () => (await chrome.commands.getAll()).find((c) => c.name === "fill-login"));
+  check(
+    "fill command is registered; the browser binds Ctrl+Shift+L or leaves it for the user to set",
+    command !== undefined && (command.shortcut === "Ctrl+Shift+L" || command.shortcut === ""),
+    JSON.stringify(command),
+  );
+
   const pageSteal = await loginPage.evaluate(() => typeof chrome === "undefined" || typeof chrome.runtime?.sendMessage !== "function");
   check("page scripts can't message the extension", pageSteal);
 

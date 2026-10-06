@@ -1,11 +1,11 @@
 import { errorText } from "../shared/errors";
 import { mayFill } from "../shared/host";
-import { ask, type Hello, type PageCommand, type PageReply } from "../shared/messages";
+import { ask, type FillCommand, type Hello, type PageCommand, type PageReply } from "../shared/messages";
 import { err, ok, type Credentials, type EntrySummary } from "../shared/types";
 import { fillLogin, passwordFields, submit } from "./forms";
-import { attachPicker } from "./picker";
+import { attachPicker, type PickerHandle } from "./picker";
 
-const decorated = new WeakMap<HTMLInputElement, () => void>();
+const decorated = new WeakMap<HTMLInputElement, PickerHandle>();
 let hello: Promise<Hello | null> | null = null;
 
 const greet = (): Promise<Hello | null> => {
@@ -49,7 +49,18 @@ const scan = async (): Promise<void> => {
     );
 };
 
-const handleCommand = (command: PageCommand): PageReply => {
+const openPicker = (): PageReply => {
+  const active = document.activeElement;
+  const focused = active instanceof HTMLInputElement ? decorated.get(active) : undefined;
+  const handle = focused ?? passwordFields(document).map((field) => decorated.get(field)).find((found) => found !== undefined);
+  if (handle === undefined) {
+    return err({ kind: "refused", reason: "No login fields to fill on this page." });
+  }
+  handle.open();
+  return ok(null);
+};
+
+const handleFill = (command: FillCommand): PageReply => {
   if (window !== window.top) {
     return err({ kind: "refused", reason: "Filling only happens in the top frame." });
   }
@@ -61,13 +72,32 @@ const handleCommand = (command: PageCommand): PageReply => {
     : err({ kind: "refused", reason: "Couldn't find the login fields on this page." });
 };
 
+const handleCommand = (command: PageCommand): PageReply => {
+  switch (command.type) {
+    case "fill":
+      return handleFill(command);
+    case "openPicker":
+      return openPicker();
+  }
+};
+
 chrome.runtime.onMessage.addListener((message: PageCommand, sender, sendResponse) => {
-  if (sender.id !== chrome.runtime.id || message.type !== "fill") {
+  if (sender.id !== chrome.runtime.id) {
     return false;
   }
   sendResponse(handleCommand(message));
   return false;
 });
+
+document.addEventListener(
+  "focusin",
+  (event) => {
+    if (event.target instanceof HTMLInputElement) {
+      void ask({ type: "fieldFocused" }).catch(() => null);
+    }
+  },
+  true,
+);
 
 let timer: ReturnType<typeof setTimeout> | undefined;
 const scheduleScan = (): void => {
