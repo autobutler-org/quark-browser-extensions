@@ -1,5 +1,6 @@
 import type { SaveAction, SaveOffer } from "../background/save";
 import { h$, icon, icons } from "../shared/dom";
+import { adoptStyles } from "./styles";
 import { saveBarCopy } from "../shared/saveCopy";
 
 const css = `
@@ -43,12 +44,9 @@ export const showSaveBar = (
   onAction: (action: SaveAction) => Promise<string | null>,
 ): void => {
   hideSaveBar();
-  const view = doc.defaultView ?? window;
   const host = h$(doc, "div");
   const shadow = host.attachShadow({ mode: "closed" });
-  const sheet = new view.CSSStyleSheet();
-  sheet.replaceSync(css);
-  shadow.adoptedStyleSheets = [sheet];
+  adoptStyles(shadow, css);
 
   const copy = saveBarCopy(offer);
   const mark = h$(doc, "div", { className: "mark", "aria-hidden": "true" });

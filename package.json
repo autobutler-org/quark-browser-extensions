@@ -10,8 +10,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm test",
-    "test:e2e": "npm run build && node e2e/smoke.mjs",
-    "package": "npm run build && cd dist && zip -qr ../quark-vault.zip ."
+    "test:e2e": "npm run build:chrome && node e2e/smoke.mjs",
+    "package": "npm run build && (cd dist/chrome && zip -qr ../../quark-vault-chrome.zip .) && (cd dist/firefox && zip -qr ../../quark-vault-firefox.zip .)",
+    "build:chrome": "node build.mjs --target=chrome",
+    "build:firefox": "node build.mjs --target=firefox",
+    "lint:firefox": "npm run build:firefox && npx --yes web-ext@8 lint --source-dir dist/firefox --self-hosted"
   },
   "devDependencies": {
     "@types/chrome": "^0.3.4",

@@ -3,7 +3,7 @@ import http from "node:http";
 
 import { fileURLToPath } from "node:url";
 
-const dist = fileURLToPath(new URL("../dist", import.meta.url));
+const dist = fileURLToPath(new URL("../dist/chrome", import.meta.url));
 const shots = process.env.E2E_SCREENSHOTS ?? "";
 const executablePath = process.env.CHROME_PATH;
 if (!executablePath) {
