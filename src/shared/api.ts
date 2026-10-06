@@ -41,7 +41,7 @@ type Request = Readonly<{
   body?: unknown;
 }>;
 
-type Failure = Readonly<{ status: number; message: string }>;
+type Failure = Readonly<{ status: number; message: string; state: string }>;
 
 const authRequired = "authentication required";
 
@@ -105,7 +105,7 @@ const send =
       const payload = await readJson(response);
       return response.ok
         ? ok(payload)
-        : err({ status: response.status, message: stringField(payload, "error") });
+        : err({ status: response.status, message: stringField(payload, "error"), state: stringField(payload, "status") });
     } catch (cause) {
       return err({ kind: "network", message: cause instanceof Error ? cause.message : String(cause) });
     }
@@ -164,7 +164,7 @@ export const createApi = (fetchFn: FetchFn) => {
         return err({ kind: "badCredentials" });
       }
       if (isFailure(result.error) && result.error.status === 403) {
-        return err({ kind: "accountRefused", status: result.error.message });
+        return err({ kind: "accountRefused", status: result.error.state });
       }
       return err(normalizeError(result.error));
     },
