@@ -1,5 +1,5 @@
 import { errorText } from "../shared/errors";
-import { mayFill } from "../shared/host";
+import { frameMayFill } from "../shared/host";
 import { ask, type FillCommand, type Hello, type PageCommand, type PageReply } from "../shared/messages";
 import { err, ok, type ApiError, type Credentials, type EntrySummary } from "../shared/types";
 import type { SaveAction, SaveOffer } from "../background/save";
@@ -99,37 +99,55 @@ const scan = async (): Promise<void> => {
   codes.forEach(attach(pickOtp));
 };
 
-const openPicker = (): PageReply => {
+const isTop = window === window.top;
+
+const topUrl = (): string => {
+  if (isTop) {
+    return location.href;
+  }
+  const origins = location.ancestorOrigins;
+  const top = origins === undefined || origins.length === 0 ? undefined : origins.item(origins.length - 1);
+  return top ?? "";
+};
+
+const hasLoginFields = (): boolean => passwordFields(document).length > 0 || otpFields(document).length > 0;
+
+const openPicker = (): PageReply | null => {
   const active = document.activeElement;
   const focused = active instanceof HTMLInputElement ? decorated.get(active) : undefined;
   const handle = focused ?? passwordFields(document).map((field) => decorated.get(field)).find((found) => found !== undefined);
   if (handle === undefined) {
-    return err({ kind: "refused", reason: "No login fields to fill on this page." });
+    return null;
   }
   handle.open();
   return ok(null);
 };
 
-const handleFill = (command: FillCommand): PageReply => {
-  if (window !== window.top) {
-    return err({ kind: "refused", reason: "Filling only happens in the top frame." });
+const handleFill = (command: FillCommand): PageReply | null => {
+  if (!hasLoginFields()) {
+    return null;
   }
-  if (!mayFill(location.href, command.entryUrl, command.entryHost)) {
-    return err({ kind: "refused", reason: "This login doesn't belong to this site." });
+  if (!frameMayFill(location.href, location.href, command.entryUrl, command.entryHost)) {
+    return isTop ? err({ kind: "refused", reason: "This login doesn't belong to this site." }) : null;
+  }
+  if (!frameMayFill(location.href, topUrl(), command.entryUrl, command.entryHost)) {
+    return err({ kind: "refused", reason: "This login form is embedded in another site, so Quark Vault won't fill it." });
   }
   return fill(command.credentials, command.autoSubmit, null)
     ? ok(null)
     : err({ kind: "refused", reason: "Couldn't find the login fields on this page." });
 };
 
-const fillGeneratedHere = (password: string): PageReply => {
+const fillGeneratedHere = (password: string): PageReply | null => {
   const active = document.activeElement;
   const target =
     active instanceof HTMLInputElement && active.type === "password"
       ? active
-      : passwordFields(document).find(isNewPasswordField) ?? null;
+      : isTop
+        ? passwordFields(document).find(isNewPasswordField) ?? null
+        : null;
   if (target === null) {
-    return err({ kind: "refused", reason: "Click into a password field first." });
+    return null;
   }
   if (isNewPasswordField(target)) {
     fillNewPassword(target, password);
@@ -171,8 +189,10 @@ const capture = (form: HTMLFormElement | null): void => {
     .catch(() => null);
 };
 
-const handleCommand = (command: PageCommand): PageReply => {
+const handleCommand = (command: PageCommand): PageReply | string | null => {
   switch (command.type) {
+    case "whereAmI":
+      return isTop ? location.href : null;
     case "offerCheck":
       void offerSave(undefined);
       return ok(null);
@@ -189,7 +209,10 @@ chrome.runtime.onMessage.addListener((message: PageCommand, sender, sendResponse
   if (sender.id !== chrome.runtime.id) {
     return false;
   }
-  sendResponse(handleCommand(message));
+  const reply = handleCommand(message);
+  if (reply !== null) {
+    sendResponse(reply);
+  }
   return false;
 });
 
