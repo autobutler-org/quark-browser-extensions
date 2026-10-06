@@ -18,11 +18,13 @@ export type Request =
   | Readonly<{ type: "hello" }>
   | Readonly<{ type: "fieldFocused" }>
   | Readonly<{ type: "otpFromPage"; entryId: number }>
-  | Readonly<{ type: "otp"; entryId: number }>;
+  | Readonly<{ type: "otp"; entryId: number }>
+  | Readonly<{ type: "generateForPage"; length: number }>;
 
 export type Hello = Readonly<{
   settings: Settings;
   matches: readonly EntrySummary[];
+  connected: boolean;
 }>;
 
 export type Responses = {
@@ -43,6 +45,7 @@ export type Responses = {
   fieldFocused: null;
   otpFromPage: Result<OtpCode>;
   otp: Result<OtpCode>;
+  generateForPage: Result<string>;
 };
 
 export type FillCommand = Readonly<{
@@ -53,7 +56,10 @@ export type FillCommand = Readonly<{
   autoSubmit: boolean;
 }>;
 
-export type PageCommand = FillCommand | Readonly<{ type: "openPicker" }>;
+export type PageCommand =
+  | FillCommand
+  | Readonly<{ type: "openPicker" }>
+  | Readonly<{ type: "fillGenerated"; password: string }>;
 
 export type PageReply = Result<null>;
 
