@@ -1,4 +1,5 @@
-import { defaultSettings, type Connection, type Settings } from "../shared/types";
+import { decodeSettings } from "../shared/settings";
+import type { Connection, Settings } from "../shared/types";
 
 const keys = {
   server: "server",
@@ -42,15 +43,7 @@ export const clearConnection = async (): Promise<void> => {
 
 export const loadSettings = async (): Promise<Settings> => {
   const stored = await chrome.storage.local.get(keys.settings);
-  const value: unknown = stored[keys.settings];
-  const partial = typeof value === "object" && value !== null ? (value as Partial<Settings>) : {};
-  return {
-    inlineButton: typeof partial.inlineButton === "boolean" ? partial.inlineButton : defaultSettings.inlineButton,
-    badge: typeof partial.badge === "boolean" ? partial.badge : defaultSettings.badge,
-    autoSubmit: typeof partial.autoSubmit === "boolean" ? partial.autoSubmit : defaultSettings.autoSubmit,
-    othersReviewed:
-      typeof partial.othersReviewed === "boolean" ? partial.othersReviewed : defaultSettings.othersReviewed,
-  };
+  return decodeSettings(stored[keys.settings]);
 };
 
 export const saveSettings = async (settings: Settings): Promise<Settings> => {
