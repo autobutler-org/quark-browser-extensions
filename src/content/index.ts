@@ -2,12 +2,16 @@ import { errorText } from "../shared/errors";
 import { mayFill } from "../shared/host";
 import { ask, type FillCommand, type Hello, type PageCommand, type PageReply } from "../shared/messages";
 import { err, ok, type ApiError, type Credentials, type EntrySummary } from "../shared/types";
+import type { SaveAction, SaveOffer } from "../background/save";
+import { showSaveBar } from "./savebar";
 import {
+  capturedLogin,
   fillLogin,
   fillNewPassword,
   fillOtp,
   generatedLength,
   isNewPasswordField,
+  looksLikeSubmit,
   otpFields,
   passwordFields,
   submit,
@@ -135,8 +139,43 @@ const fillGeneratedHere = (password: string): PageReply => {
   return ok(null);
 };
 
+const resolveSave = async (action: SaveAction): Promise<string | null> => {
+  const result = await ask({ type: "resolveSave", action });
+  return result.ok ? null : failureText(result.error);
+};
+
+const offerSave = async (known: SaveOffer | null | undefined): Promise<void> => {
+  const offer = known === undefined ? await ask({ type: "myOffer" }).catch(() => null) : known;
+  if (offer !== null) {
+    showSaveBar(document, offer, resolveSave);
+  }
+};
+
+let lastCapture = "";
+
+const capture = (form: HTMLFormElement | null): void => {
+  if (window !== window.top) {
+    return;
+  }
+  const credentials = capturedLogin(document, form);
+  if (credentials === null) {
+    return;
+  }
+  const key = `${credentials.username}\n${credentials.password}`;
+  if (key === lastCapture) {
+    return;
+  }
+  lastCapture = key;
+  void ask({ type: "captured", ...credentials })
+    .then((offer) => offerSave(offer))
+    .catch(() => null);
+};
+
 const handleCommand = (command: PageCommand): PageReply => {
   switch (command.type) {
+    case "offerCheck":
+      void offerSave(undefined);
+      return ok(null);
     case "fill":
       return handleFill(command);
     case "openPicker":
@@ -159,6 +198,36 @@ document.addEventListener(
   (event) => {
     if (event.target instanceof HTMLInputElement) {
       void ask({ type: "fieldFocused" }).catch(() => null);
+    }
+  },
+  true,
+);
+
+document.addEventListener(
+  "submit",
+  (event) => {
+    if (event.target instanceof HTMLFormElement) {
+      capture(event.target);
+    }
+  },
+  true,
+);
+
+document.addEventListener(
+  "click",
+  (event) => {
+    if (event.target instanceof Element && looksLikeSubmit(event.target)) {
+      capture(event.target.closest("form"));
+    }
+  },
+  true,
+);
+
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.type === "password") {
+      capture(event.target.form);
     }
   },
   true,

@@ -11,7 +11,29 @@ import {
 
 export type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 
-type Method = "GET" | "POST";
+type Method = "GET" | "POST" | "PUT";
+
+export type NewEntry = Readonly<{
+  name: string;
+  url: string;
+  username: string;
+  password: string;
+}>;
+
+export const replacementBody = (current: unknown, password: string): Record<string, unknown> => {
+  const folderId = field(current, "folderId");
+  const customFields = field(current, "customFields");
+  return {
+    name: stringField(current, "name"),
+    url: stringField(current, "url"),
+    username: stringField(current, "username"),
+    password,
+    notes: stringField(current, "notes"),
+    totpSecret: stringField(current, "totpSecret"),
+    customFields: Array.isArray(customFields) ? customFields : [],
+    folderId: typeof folderId === "number" ? folderId : null,
+  };
+};
 
 type Request = Readonly<{
   method: Method;
@@ -185,6 +207,24 @@ export const createApi = (fetchFn: FetchFn) => {
         await authed(connection, { method: "GET", path: `/vault/entries/${encodeURIComponent(String(id))}` }),
         asEntryDetail,
       ),
+
+    createEntry: async (connection: Connection, entry: NewEntry): Promise<Result<number>> =>
+      mapResult(
+        await authed(connection, { method: "POST", path: "/vault/entries", body: entry }),
+        (payload) => Number(field(payload, "id")),
+      ),
+
+    replacePassword: async (connection: Connection, id: number, password: string): Promise<Result<null>> => {
+      const path = `/vault/entries/${encodeURIComponent(String(id))}`;
+      const current = await authed(connection, { method: "GET", path });
+      if (!current.ok) {
+        return err(normalizeError(current.error));
+      }
+      return mapResult(
+        await authed(connection, { method: "PUT", path, body: replacementBody(current.value, password) }),
+        () => null,
+      );
+    },
 
     generate: async (connection: Connection, length = 20): Promise<Result<string>> =>
       mapResult(

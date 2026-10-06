@@ -271,3 +271,7 @@ body {
 .link.muted {
   color: var(--muted);
 }
+
+.banner.save {
+  border-color: var(--mark);
+}

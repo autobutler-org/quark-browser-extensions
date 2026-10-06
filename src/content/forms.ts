@@ -151,3 +151,39 @@ export const generatedLength = (field: HTMLInputElement): number =>
 
 export const fillNewPassword = (field: HTMLInputElement, password: string): void =>
   newPasswordGroup(field).forEach((input) => setValue(input, password));
+
+const filled = (fields: readonly HTMLInputElement[]): readonly HTMLInputElement[] =>
+  fields.filter((field) => field.value !== "");
+
+export const capturedLogin = (doc: Document, form: HTMLFormElement | null): Credentials | null => {
+  if (form !== null && !form.checkValidity()) {
+    return null;
+  }
+  const scope: ParentNode = form ?? doc;
+  const fields = filled(inputs(scope).filter((input) => input.type === "password" && isVisible(input)));
+  const first = fields[0];
+  if (first === undefined) {
+    return null;
+  }
+  const fresh = filled(newPasswordGroup(first).length > 0 ? newPasswordGroup(first) : fields.filter(isNewPasswordField));
+  if (new Set(fresh.map((field) => field.value)).size > 1) {
+    return null;
+  }
+  const password = fresh[0]?.value ?? first.value;
+  const username = usernameFieldFor(first)?.value.trim() ?? standaloneUsernameField(doc)?.value.trim() ?? "";
+  return { username, password };
+};
+
+export const looksLikeSubmit = (element: Element): boolean => {
+  const button = element.closest<HTMLElement>('button, input[type="submit"], input[type="button"], [role="button"]');
+  if (button === null) {
+    return false;
+  }
+  if (button instanceof HTMLInputElement) {
+    return button.type === "submit" || /log ?in|sign ?in|continue|next|submit/i.test(button.value);
+  }
+  if (button instanceof HTMLButtonElement && button.type === "submit" && button.form !== null) {
+    return true;
+  }
+  return /log ?in|sign ?in|sign ?up|register|create account|continue|next|submit|save/i.test(button.textContent ?? "");
+};

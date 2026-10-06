@@ -17,6 +17,9 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
   the entry has a TOTP secret. The secret stays in the service worker; only the code reaches the page.
 - **Sign-up forms**: new-password fields get **Suggest strong password**, which fills the field and its
   confirmation, sized to the field's `maxlength`. Right-click › **Generate password** does the same anywhere.
+- **Save and update**: after you sign in somewhere, a bar offers to save the login, or to update the password when
+  it changed. The captured password is held in memory for two minutes at most and never written anywhere else.
+  **Never for this site** can be undone on the options page.
 - **Copy and generate**: copy any entry's password from the popup, or generate a new one.
 - **Other password managers**: offers to turn off Chrome's own password saving and extensions like Proton Pass or
   Bitwarden, so only one manager tries to fill each form.
@@ -28,6 +31,7 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 | Vault password           | Sent once to `POST /api/v0/vault/unlock`, never stored                                          |
 | Session token            | `chrome.storage.session` (memory, gone when Chrome quits); `local` only if "stay signed in"    |
 | Decrypted entries        | Fetched one at a time on a click, passed straight to the page, never stored or cached          |
+| Captured sign-ins        | Held in service-worker memory per tab for at most two minutes, then dropped                    |
 | Which site gets a login  | Top frame only, host must equal the entry's host or be a subdomain of it, checked twice (worker and page) |
 | Plain `http://` pages    | Refused, unless the entry itself was saved with an `http://` URL (a router admin page, say)    |
 | Page scripts             | Can't message the extension; the picker lives in a closed shadow root                          |
@@ -69,6 +73,5 @@ static/           manifest, HTML, CSS, icons
 
 ## Not yet
 
-- Saving new logins from the page (the Quark API supports `POST /vault/entries`; the extension doesn't offer it yet)
 - Firefox and Safari
 - Importing from other managers happens on the Quark: autobutler-org/quark#2543
