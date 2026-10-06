@@ -112,6 +112,7 @@ const asEntryDetail = (value: unknown): EntryDetail => ({
   urlHost: stringField(value, "urlHost"),
   username: stringField(value, "username"),
   password: stringField(value, "password"),
+  totpSecret: stringField(value, "totpSecret"),
 });
 
 const asStatus = (value: unknown): VaultStatus => ({

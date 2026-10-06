@@ -1,8 +1,8 @@
 import { errorText } from "../shared/errors";
 import { mayFill } from "../shared/host";
 import { ask, type FillCommand, type Hello, type PageCommand, type PageReply } from "../shared/messages";
-import { err, ok, type Credentials, type EntrySummary } from "../shared/types";
-import { fillLogin, passwordFields, submit } from "./forms";
+import { err, ok, type ApiError, type Credentials, type EntrySummary } from "../shared/types";
+import { fillLogin, fillOtp, otpFields, passwordFields, submit } from "./forms";
 import { attachPicker, type PickerHandle } from "./picker";
 
 const decorated = new WeakMap<HTMLInputElement, PickerHandle>();
@@ -26,15 +26,29 @@ const pick =
   async (entry: EntrySummary): Promise<string | null> => {
     const result = await ask({ type: "fillFromPage", entryId: entry.id });
     if (!result.ok) {
-      return result.error.kind === "locked"
-        ? "The vault is locked. Unlock it from the Quark Vault toolbar button."
-        : errorText(result.error);
+      return failureText(result.error);
     }
     return fill(result.value, result.value.autoSubmit, field) ? null : "Couldn't find the login fields on this page.";
   };
 
+const failureText = (error: ApiError): string =>
+  error.kind === "locked" ? "The vault is locked. Unlock it from the Quark Vault toolbar button." : errorText(error);
+
+const pickOtp =
+  (field: HTMLInputElement) =>
+  async (entry: EntrySummary): Promise<string | null> => {
+    const result = await ask({ type: "otpFromPage", entryId: entry.id });
+    if (!result.ok) {
+      return failureText(result.error);
+    }
+    fillOtp(field, result.value.code);
+    return null;
+  };
+
 const scan = async (): Promise<void> => {
-  const fields = passwordFields(document).filter((field) => !decorated.has(field));
+  const passwords = passwordFields(document).filter((field) => !decorated.has(field));
+  const codes = otpFields(document).filter((field) => !decorated.has(field));
+  const fields = [...passwords, ...codes];
   if (fields.length === 0) {
     return;
   }
@@ -42,11 +56,14 @@ const scan = async (): Promise<void> => {
   if (greeting === null || !greeting.settings.inlineButton || greeting.matches.length === 0) {
     return;
   }
-  fields
-    .filter((field) => !decorated.has(field))
-    .forEach((field) =>
-      decorated.set(field, attachPicker(field, greeting.matches, location.hostname, { onPick: pick(field) })),
-    );
+  const attach = (onPick: (field: HTMLInputElement) => (entry: EntrySummary) => Promise<string | null>) =>
+    (field: HTMLInputElement): void => {
+      if (!decorated.has(field)) {
+        decorated.set(field, attachPicker(field, greeting.matches, location.hostname, { onPick: onPick(field) }));
+      }
+    };
+  passwords.forEach(attach(pick));
+  codes.forEach(attach(pickOtp));
 };
 
 const openPicker = (): PageReply => {

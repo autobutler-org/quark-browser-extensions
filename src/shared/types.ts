@@ -14,6 +14,7 @@ export type EntryDetail = Readonly<{
   urlHost: string;
   username: string;
   password: string;
+  totpSecret: string;
 }>;
 
 export type VaultStatus = Readonly<{

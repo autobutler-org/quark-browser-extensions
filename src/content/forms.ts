@@ -87,3 +87,39 @@ export const submit = (form: HTMLFormElement | null): void => {
     form.requestSubmit();
   }
 };
+
+const otpTypes = new Set(["text", "tel", "number", ""]);
+const otpHint = /(^|[^a-z])(otp|totp|2fa|mfa)([^a-z]|$)|one.?time|verification.?code|auth(entication)?.?code|security.?code|two.?factor/i;
+
+const describes = (input: HTMLInputElement): string =>
+  [input.name, input.id, input.placeholder, input.getAttribute("aria-label") ?? ""].join(" ");
+
+const isDigitBox = (input: HTMLInputElement): boolean => input.maxLength === 1 && otpTypes.has(input.type);
+
+const digitBoxesFrom = (first: HTMLInputElement): readonly HTMLInputElement[] => {
+  const scope: ParentNode = first.form ?? first.parentElement?.parentElement ?? first.ownerDocument;
+  const boxes = inputs(scope).filter((input) => isDigitBox(input) && isVisible(input));
+  return boxes.slice(boxes.indexOf(first));
+};
+
+export const isOtpField = (input: HTMLInputElement): boolean =>
+  otpTypes.has(input.type) &&
+  isVisible(input) &&
+  (input.autocomplete === "one-time-code" ||
+    otpHint.test(describes(input)) ||
+    (isDigitBox(input) && digitBoxesFrom(input).length >= 4));
+
+export const otpFields = (doc: Document): readonly HTMLInputElement[] => {
+  const found = inputs(doc).filter(isOtpField);
+  return found.filter((input) => !(isDigitBox(input) && found.some((other) => other !== input && isDigitBox(other) && precedes(other, input))));
+};
+
+export const fillOtp = (field: HTMLInputElement, code: string): void => {
+  if (!isDigitBox(field)) {
+    setValue(field, code);
+    return;
+  }
+  digitBoxesFrom(field)
+    .slice(0, code.length)
+    .forEach((box, index) => setValue(box, code[index] ?? ""));
+};

@@ -1,4 +1,4 @@
-import { fillLogin, passwordFields, submit, usernameFieldFor } from "../src/content/forms";
+import { fillLogin, fillOtp, otpFields, passwordFields, submit, usernameFieldFor } from "../src/content/forms";
 
 const mount = (html: string): Document => {
   document.body.innerHTML = html;
@@ -101,5 +101,31 @@ describe("submit", () => {
     document.getElementById("go")?.addEventListener("click", clicked);
     submit(document.getElementById("f") as HTMLFormElement);
     expect(clicked).toHaveBeenCalledOnce();
+  });
+});
+
+describe("one-time code fields", () => {
+  it("finds fields by autocomplete or name, not ordinary text fields", () => {
+    const doc = mount(`
+      <input id="search" type="text" name="q">
+      <input id="a" type="text" autocomplete="one-time-code">
+      <input id="b" type="tel" name="totp_code">
+      <input id="c" type="text" placeholder="Enter verification code">
+      <input id="d" type="password" name="otp">
+    `);
+    expect(otpFields(doc).map((field) => field.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("treats a run of single-digit boxes as one field starting at the first box", () => {
+    const doc = mount(`<form>${[1, 2, 3, 4, 5, 6].map((n) => `<input id="d${n}" type="text" maxlength="1" inputmode="numeric">`).join("")}</form>`);
+    expect(otpFields(doc).map((field) => field.id)).toEqual(["d1"]);
+    fillOtp(input("d1"), "123456");
+    expect([1, 2, 3, 4, 5, 6].map((n) => input(`d${n}`).value).join("")).toBe("123456");
+  });
+
+  it("fills a single code field", () => {
+    mount(`<input id="code" type="text" autocomplete="one-time-code">`);
+    fillOtp(input("code"), "987654");
+    expect(input("code").value).toBe("987654");
   });
 });
