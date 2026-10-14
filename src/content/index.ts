@@ -13,6 +13,7 @@ import {
   identifierField,
   isNewPasswordField,
   looksLikeSubmit,
+  onePass,
   otpFields,
   passwordFields,
   submit,
@@ -91,9 +92,14 @@ const suggest = (field: HTMLInputElement) => async (): Promise<string | null> =>
 
 const scan = async (): Promise<void> => {
   forgetDetached();
-  const passwords = passwordFields(document).filter((field) => !decorated.has(field));
-  const codes = otpFields(document).filter((field) => !decorated.has(field));
-  const identifier = identifierField(document);
+  const [passwords, codes, identifier] = onePass(
+    () =>
+      [
+        passwordFields(document).filter((field) => !decorated.has(field)),
+        otpFields(document).filter((field) => !decorated.has(field)),
+        identifierField(document),
+      ] as const,
+  );
   const identifiers = identifier === null || decorated.has(identifier) ? [] : [identifier];
   const fields = [...passwords, ...codes, ...identifiers];
   if (fields.length === 0) {
@@ -103,7 +109,7 @@ const scan = async (): Promise<void> => {
   if (greeting === null || !greeting.settings.inlineButton) {
     return;
   }
-  const signups = passwords.filter(isNewPasswordField);
+  const signups = onePass(() => passwords.filter(isNewPasswordField));
   if (greeting.connected) {
     signups.forEach((field) => {
       if (!decorated.has(field)) {
