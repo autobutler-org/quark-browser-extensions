@@ -437,7 +437,7 @@ describe("inline buttons", () => {
     );
     expect(attached.map((found) => found.field)).toEqual([byTag("pw"), byTag("confirm")]);
     await expect(attached[0]?.onSuggest?.()).resolves.toBeNull();
-    expect(ofType("generateForPage")).toEqual([{ type: "generateForPage", length: 20 }]);
+    expect(ofType("generateForPage")).toEqual([{ type: "generateForPage", length: 20, classes: ["lower", "upper", "digit", "symbol"] }]);
     expect([byTag("pw").value, byTag("confirm").value]).toEqual(["Sugg3sted!password", "Sugg3sted!password"]);
   });
 

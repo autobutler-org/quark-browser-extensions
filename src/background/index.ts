@@ -12,6 +12,7 @@ import {
 import { frameMayFill, hostMatches, matchEntries } from "../shared/hostMatch";
 import type { Hello, PageCommand, PageReply, Request, Responses } from "../shared/messages";
 import { err, ok, type Connection, type EntryDetail, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
+import { defaultPlan, generateFor, sanePlan, type PasswordPlan } from "../shared/password";
 import { parseOtpSecret, totp } from "../shared/totp";
 import { entryIdFromMenu, generateMenuId, menuItems, menuRoot, shortcutPlan } from "../shared/menu";
 import { detectionIntervalSeconds, idleAction, type IdleState } from "./idle";
@@ -93,6 +94,10 @@ const withConnection = async <T>(run: (connection: Connection) => Promise<Result
   }
   return result;
 };
+
+// The Quark draws the characters; generateFor keeps a draw only when it has every class asked for (#131).
+const generated = (plan: PasswordPlan): Promise<Result<string>> =>
+  withConnection((conn) => generateFor(plan, (length, classes) => api.generate(conn, length, classes)));
 
 const currentState = async (): Promise<VaultState> => {
   const [server, connection] = await Promise.all([loadServer(), loadConnection()]);
@@ -496,7 +501,7 @@ const forExtensionPages: ExtensionPageHandlers = {
     withConnection((conn) => api.getEntry(conn, request.entryId)).then((entry) =>
       entry.ok ? ok({ username: entry.value.username, password: entry.value.password }) : entry,
     ),
-  generate: () => withConnection((conn) => api.generate(conn)),
+  generate: () => generated(defaultPlan),
   otp: (request) => otpFor(request.entryId, null),
   pendingOffer: (request) => offerFor(request.tabId),
   resolveSave: (request) =>
@@ -511,7 +516,7 @@ const forContentScripts: ContentScriptHandlers = {
   hello: (sender) => hello(sender),
   fieldFocused: (sender) => rebuildMenu(sender.url ?? "").then(() => null),
   otpFromPage: (request, sender) => otpFor(request.entryId, sender),
-  generateForPage: (request) => withConnection((conn) => api.generate(conn, Math.max(12, Math.min(64, request.length)))),
+  generateForPage: (request) => generated(sanePlan(request.length, request.classes)),
   captured: (request, sender) => captured(sender, request.username, request.password),
   myOffer: (sender) => myOffer(sender),
   resolveSave: (request, tabId) => resolveSave(tabId, request.action),
@@ -539,7 +544,7 @@ const onIdleState = async (state: IdleState): Promise<void> => {
 // Only the frame the user right-clicked gets the password: a broadcast would reach the embedding page and
 // every other iframe in the tab.
 const fillGenerated = async (tabId: number, frameId: number): Promise<void> => {
-  const password = await withConnection((conn) => api.generate(conn));
+  const password = await generated(defaultPlan);
   if (password.ok) {
     await chrome.tabs.sendMessage(tabId, { type: "fillGenerated", password: password.value }, { frameId }).catch(() => undefined);
   }

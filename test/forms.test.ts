@@ -3,7 +3,7 @@ import {
   fillLogin,
   fillNewPassword,
   fillOtp,
-  generatedLength,
+  fieldRules,
   isNewPasswordField,
   looksLikeSubmit,
   newPasswordGroup,
@@ -180,17 +180,11 @@ describe("new-password fields", () => {
     expect([input("p1").value, input("p2").value]).toEqual(["Gen3rated!", "Gen3rated!"]);
   });
 
-  it.each([
-    [-1, 20],
-    [8, 12],
-    [16, 16],
-    [128, 20],
-  ])("maxlength %i → %i characters", (maxLength, expected) => {
+  it("reads the rules a generated password must meet", () => {
+    mount(`<input id="pw" type="password" maxlength="8" minlength="6" pattern="[a-z0-9]+">`);
+    expect(fieldRules(input("pw"))).toEqual({ maxLength: 8, minLength: 6, pattern: "[a-z0-9]+" });
     mount(`<input id="pw" type="password">`);
-    if (maxLength > 0) {
-      input("pw").maxLength = maxLength;
-    }
-    expect(generatedLength(input("pw"))).toBe(expected);
+    expect(fieldRules(input("pw"))).toEqual({ maxLength: -1, minLength: -1, pattern: "" });
   });
 });
 

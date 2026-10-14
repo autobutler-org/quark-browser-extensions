@@ -1,6 +1,7 @@
 import { errorText } from "../shared/errors";
 import { t } from "../shared/i18n";
 import { ask, type FillCommand, type Hello, type PageCommand, type PageReply } from "../shared/messages";
+import { fits, isShort, passwordFor } from "../shared/password";
 import { err, ok, type ApiError, type Credentials, type EntrySummary } from "../shared/types";
 import type { SaveAction, SaveOffer } from "../background/save";
 import { showSaveBar } from "./savebar";
@@ -10,7 +11,7 @@ import {
   fillNewPassword,
   fillOtp,
   frameShown,
-  generatedLength,
+  fieldRules,
   identifierField,
   isLoginField,
   isNewPasswordField,
@@ -88,13 +89,18 @@ const pickOtp =
     return null;
   };
 
+// A password that fits the field's maxlength, minlength and pattern (#131). The pattern is checked here, in
+// the page's own frame, so a page's pattern never runs in the worker.
+const passwordForField = (field: HTMLInputElement) =>
+  passwordFor(fieldRules(field), (plan) => ask({ type: "generateForPage", length: plan.length, classes: plan.classes }));
+
 const suggest = (field: HTMLInputElement) => async (): Promise<string | null> => {
-  const result = await ask({ type: "generateForPage", length: generatedLength(field) });
+  const result = await passwordForField(field);
   if (!result.ok) {
     return failureText(result.error);
   }
   fillNewPassword(field, result.value);
-  return null;
+  return isShort(result.value) ? t("pickerFilledShort", String(result.value.length)) : null;
 };
 
 const scan = async (): Promise<void> => {
@@ -252,17 +258,22 @@ const onScreen = (field: HTMLElement): boolean => {
 
 // Only the password field the user is on, and only one they can see and reach. Never another field: the
 // page that embeds a sign-up iframe must not get the password through fields of its own.
-const fillGeneratedHere = (password: string): PageReply | null => {
+const fillGeneratedHere = (generated: string): Promise<PageReply> | null => {
   const target = focusedElement();
   if (!(target instanceof HTMLInputElement) || !passwordFields(document).includes(target) || !onScreen(target)) {
     return null;
   }
-  if (isNewPasswordField(target)) {
-    fillNewPassword(target, password);
-  } else {
-    fillLogin(document, { username: "", password }, target);
-  }
-  return ok(null);
+  return (fits(generated, fieldRules(target)) ? Promise.resolve(ok(generated)) : passwordForField(target)).then((fitting) => {
+    if (!fitting.ok) {
+      return fitting;
+    }
+    if (isNewPasswordField(target)) {
+      fillNewPassword(target, fitting.value);
+    } else {
+      fillLogin(document, { username: "", password: fitting.value }, target);
+    }
+    return ok(null);
+  });
 };
 
 const resolveSave = async (action: SaveAction): Promise<string | null> => {

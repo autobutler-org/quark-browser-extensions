@@ -2,6 +2,7 @@ import { fromBase64, type DeriveAuthKey, type UpgradeLedger } from "./authKey";
 import { deriveAuthKey } from "./deriveAuthKey";
 import { extensionTooOld, legacyAgain, legacyInsecure, legacyUpgradeNeeded, quarkTooOld } from "./errors";
 import { serverTransport } from "./host";
+import { charClasses, type CharClass } from "./password";
 import {
   err,
   ok,
@@ -315,12 +316,19 @@ export const createApi = (fetchFn: FetchFn, ledger: UpgradeLedger, deriveKey: De
       );
     },
 
-    generate: async (connection: Connection, length = 20): Promise<Result<string>> =>
+    generate: async (connection: Connection, length = 20, classes: readonly CharClass[] = charClasses): Promise<Result<string>> =>
       mapResult(
         await authed(connection, {
           method: "POST",
           path: "/vault/generate",
-          body: { length, uppercase: true, lowercase: true, digits: true, symbols: true, avoidAmbiguous: true },
+          body: {
+            length,
+            uppercase: classes.includes("upper"),
+            lowercase: classes.includes("lower"),
+            digits: classes.includes("digit"),
+            symbols: classes.includes("symbol"),
+            avoidAmbiguous: true,
+          },
         }),
         (payload) => stringField(payload, "password"),
       ),

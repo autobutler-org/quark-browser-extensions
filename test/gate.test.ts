@@ -61,7 +61,7 @@ const requests: { [K in Request["type"]]: Extract<Request, { type: K }> } = {
   fieldFocused: { type: "fieldFocused" },
   otpFromPage: { type: "otpFromPage", entryId: 1 },
   otp: { type: "otp", entryId: 1 },
-  generateForPage: { type: "generateForPage", length: 20 },
+  generateForPage: { type: "generateForPage", length: 20, classes: ["lower", "upper", "digit", "symbol"] },
   captured: { type: "captured", username: "u", password: "p" },
   myOffer: { type: "myOffer" },
   pendingOffer: { type: "pendingOffer", tabId: 7 },
