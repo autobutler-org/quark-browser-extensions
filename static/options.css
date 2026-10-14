@@ -29,6 +29,7 @@
 
 .row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
 }
@@ -36,6 +37,7 @@
 .toggle {
   min-height: 52px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
   border-bottom: 1px solid var(--border);
@@ -46,18 +48,29 @@
   white-space: nowrap;
 }
 
+/* Text takes the spare room; in a narrow window the control wraps under it instead of squeezing it. */
+.toggle > .grow,
+.row > .grow {
+  flex-basis: 12rem;
+}
+
 .toggle:last-child {
   border-bottom: none;
 }
 
 select {
-  height: 40px;
+  min-height: 40px;
+  max-width: 100%;
   padding: 0 12px;
   background: var(--input);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control);
   border-radius: 10px;
 }
 
 select:disabled {
   opacity: 0.6;
+}
+
+.card .mono {
+  overflow-wrap: anywhere;
 }

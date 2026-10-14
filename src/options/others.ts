@@ -1,4 +1,5 @@
 import { h } from "../shared/dom";
+import { replaceKeepingFocus } from "../popup/focus";
 import { builtInState, findCompetitors, type BuiltInState, type InstalledExtension } from "../shared/competitors";
 import { browserCopy, currentBrowser } from "../shared/platform";
 
@@ -77,8 +78,9 @@ export const othersSection = (): HTMLElement => {
       update({ extensions: await readExtensions(), error: "" });
     });
 
-  const button = (label: string, onclick: () => Promise<void>): HTMLButtonElement =>
-    h("button", { className: "secondary", type: "button", onclick: (() => void onclick()) as EventListener }, label);
+  // Several rows share a button label, so the name says which row it acts on.
+  const button = (label: string, onclick: () => Promise<void>, name = label): HTMLButtonElement =>
+    h("button", { className: "secondary", type: "button", "aria-label": name, onclick: (() => void onclick()) as EventListener }, label);
 
   const builtInRow = (): HTMLElement => {
     const { builtIn } = model;
@@ -91,7 +93,11 @@ export const othersSection = (): HTMLElement => {
             ? copy.builtInManaged
             : copy.builtInOff;
     const action =
-      builtIn === null ? button("Check", checkBuiltIn) : builtIn.kind === "on" ? button("Turn off", turnOffBuiltIn) : null;
+      builtIn === null
+        ? button("Check", checkBuiltIn, `Check ${copy.builtInManager}`)
+        : builtIn.kind === "on"
+          ? button("Turn off", turnOffBuiltIn, `Turn off ${copy.builtInManager}`)
+          : null;
     return h(
       "div",
       { className: "toggle" },
@@ -117,7 +123,7 @@ export const othersSection = (): HTMLElement => {
               "Proton Pass, Bitwarden, 1Password and others. Checking asks for permission to manage extensions; Quark Vault only uses it to list password managers and to turn one off when you choose.",
             ),
           ),
-          button("Check", checkExtensions),
+          button("Check", checkExtensions, "Check password manager extensions"),
         ),
       ];
     }
@@ -132,14 +138,15 @@ export const othersSection = (): HTMLElement => {
         !copy.canDisableOthers
           ? h("span", { className: "muted small" }, `Turn off in ${copy.extensionsPage}`)
           : extension.mayDisable
-            ? button("Turn off", () => turnOffExtension(extension))
+            ? button("Turn off", () => turnOffExtension(extension), `Turn off ${extension.name}`)
             : h("span", { className: "muted small" }, "Managed by your organization"),
       ),
     );
   };
 
   const render = (): void => {
-    section.replaceChildren(
+    replaceKeepingFocus(
+      section,
       h("h2", {}, "Other password managers"),
       h("p", { className: "muted small" }, `More than one manager filling the same form gets confusing. Turning one off keeps its saved passwords; you can turn it back on from ${copy.extensionsPage}.`),
       builtInRow(),
