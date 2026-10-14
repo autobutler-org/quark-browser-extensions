@@ -1,37 +1,36 @@
+import { t } from "./i18n";
 import type { ApiError, VaultState } from "./types";
 
-export const extensionTooOld = "This extension is too old for your Quark. Update the extension, then sign in again.";
+export const extensionTooOld = (): string => t("errorExtensionTooOld");
 
-export const quarkTooOld = "Your Quark is too old for this extension. Update your Quark, then sign in again.";
+export const quarkTooOld = (): string => t("errorQuarkTooOld");
 
 export const errorText = (error: ApiError): string => {
   switch (error.kind) {
     case "signedOut":
-      return "Your Quark session ended. Sign in again.";
+      return t("errorSignedOut");
     case "badCredentials":
-      return "Invalid username or password.";
+      return t("errorBadCredentials");
     case "accountRefused":
-      return error.status === "pending"
-        ? "This account is waiting for an admin to approve it."
-        : "This account is disabled.";
+      return error.status === "pending" ? t("errorAccountPending") : t("errorAccountDisabled");
     case "notAdmin":
-      return "The vault needs an admin account.";
+      return t("errorNotAdmin");
     case "locked":
-      return error.reason === "" ? "The vault is locked." : `The vault is locked: ${error.reason}.`;
+      return error.reason === "" ? t("errorLocked") : t("errorLockedReason", error.reason);
     case "badMasterPassword":
-      return "That password didn't unlock the vault.";
+      return t("errorBadMasterPassword");
     case "notInitialized":
-      return "The vault isn't set up yet. Create it in the Quark app first.";
+      return t("errorNotInitialized");
     case "driveDisconnected":
-      return "The drive holding the vault is disconnected.";
+      return t("errorDriveDisconnected");
     case "rateLimited":
-      return "Too many attempts. Wait a minute and try again.";
+      return t("errorRateLimited");
     case "notFound":
-      return "That entry no longer exists.";
+      return t("errorNotFound");
     case "network":
-      return "Couldn't reach your Quark. Check the address and that it's online.";
+      return t("errorNetwork");
     case "server":
-      return "Your Quark couldn't finish that. Try again.";
+      return t("errorServer");
     case "refused":
       return error.reason;
   }
@@ -40,9 +39,9 @@ export const errorText = (error: ApiError): string => {
 export const stateText = (state: VaultState): string => {
   switch (state.kind) {
     case "disconnected":
-      return "Not connected";
+      return t("stateDisconnected");
     case "signedOut":
-      return "Signed out";
+      return t("stateSignedOut");
     case "notAdmin":
       return errorText({ kind: "notAdmin" });
     case "notInitialized":
@@ -52,7 +51,7 @@ export const stateText = (state: VaultState): string => {
     case "locked":
       return errorText({ kind: "locked", reason: state.reason });
     case "unlocked":
-      return "Unlocked";
+      return t("stateUnlocked");
     case "unreachable":
       return errorText({ kind: "network", message: state.message });
   }

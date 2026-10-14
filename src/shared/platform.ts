@@ -1,3 +1,5 @@
+import { t } from "./i18n";
+
 export type Browser = "chrome" | "firefox";
 
 export const browserFromUrl = (extensionUrl: string): Browser =>
@@ -13,24 +15,26 @@ export type BrowserCopy = Readonly<{
   builtInManaged: string;
   builtInOff: string;
   extensionsPage: string;
+  settingsPage: string;
   canDisableOthers: boolean;
 }>;
 
-export const browserCopy = (browser: Browser): BrowserCopy =>
-  browser === "firefox"
+// Only the built-in manager's name and the browser's own pages differ; the rest of the copy names neither browser.
+export const browserCopy = (browser: Browser): BrowserCopy => ({
+  builtInOn: t("builtInOn"),
+  builtInManaged: t("builtInManaged"),
+  builtInOff: t("builtInOff"),
+  ...(browser === "firefox"
     ? {
-        builtInManager: "Firefox Password Manager",
-        builtInOn: "Firefox is still offering to save passwords.",
-        builtInManaged: "Firefox's password saving is set by your organization or another add-on.",
-        builtInOff: "Firefox's password saving is off.",
+        builtInManager: t("builtInManagerFirefox"),
         extensionsPage: "about:addons",
+        settingsPage: "about:preferences#privacy",
         canDisableOthers: false,
       }
     : {
-        builtInManager: "Google Password Manager",
-        builtInOn: "Chrome is still offering to save passwords.",
-        builtInManaged: "Chrome's password saving is set by your organization or another extension.",
-        builtInOff: "Chrome's password saving is off.",
+        builtInManager: t("builtInManagerChrome"),
         extensionsPage: "chrome://extensions",
+        settingsPage: "chrome://settings",
         canDisableOthers: true,
-      };
+      }),
+});

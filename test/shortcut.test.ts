@@ -26,7 +26,7 @@ describe("shortcutHelp", () => {
     expect(shortcutHelp("chrome", "")).toEqual({
       bound: false,
       label: "Not set",
-      steps: "Chrome didn't bind it, often because another extension has the same keys. Set one at chrome://extensions/shortcuts.",
+      steps: "The browser didn't bind it, often because another extension has the same keys. Set one at chrome://extensions/shortcuts.",
       url: "chrome://extensions/shortcuts",
     });
   });

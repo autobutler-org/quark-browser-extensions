@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fakeI18n } from "./fakeChrome";
 import type { PageCommand, Request } from "../src/shared/messages";
 import type { EntrySummary } from "../src/shared/types";
 
@@ -47,6 +48,7 @@ const setup = async (fixture: string, worker: Worker): Promise<void> => {
   document.body.innerHTML = readFileSync(join(import.meta.dirname, "fixtures", "forms", fixture), "utf8");
   vi.stubGlobal("MutationObserver", TrackedObserver);
   vi.stubGlobal("chrome", {
+    i18n: fakeI18n(),
     runtime: {
       id: "quark",
       sendMessage: (request: Request) => {

@@ -120,8 +120,8 @@ tag again.
 
 1. On a branch, set the new version:
    `npm version X.Y.Z --no-git-tag-version` (this updates `package.json` and
-   `package-lock.json`). While `wxt.config.ts` still sets `manifest.version`,
-   change it there too.
+   `package-lock.json`). That is the only place to edit: WXT writes the
+   version from `package.json` into every built manifest.
 2. Open a pull request (`chore(release): vX.Y.Z`). The release workflow runs a
    dry run on it.
 3. After it merges, tag the merge commit on `main` and push the tag:

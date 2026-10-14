@@ -1,5 +1,6 @@
 import { h, icon, icons } from "../shared/dom";
 import { stateText } from "../shared/errors";
+import { formatDuration, t } from "../shared/i18n";
 import { ask } from "../shared/messages";
 import { idleMinuteChoices, type BooleanSetting, type IdleMinutes, type Settings, type VaultState } from "../shared/types";
 import { currentBrowser } from "../shared/platform";
@@ -7,6 +8,7 @@ import { fillShortcut, shortcutHelp } from "../shared/shortcut";
 import { replaceKeepingFocus } from "../popup/focus";
 import { othersSection } from "./others";
 
+document.title = t("optionsTitle");
 const root = document.getElementById("app") as HTMLElement;
 const others = othersSection();
 
@@ -45,14 +47,14 @@ const idleMinutesSelect = (settings: Settings): HTMLElement => {
     "select",
     { id: "idle-minutes", disabled: !settings.lockOnIdle },
     ...idleMinuteChoices.map((minutes) =>
-      h("option", { value: String(minutes), selected: minutes === settings.idleMinutes }, `After ${minutes} minutes`),
+      h("option", { value: String(minutes), selected: minutes === settings.idleMinutes }, t("optionsIdleAfter", formatDuration(minutes, "minute", "long"))),
     ),
   );
   select.addEventListener("change", () => save({ ...settings, idleMinutes: Number(select.value) as IdleMinutes }));
   return h(
     "div",
     { className: "toggle" },
-    h("label", { className: "grow", for: "idle-minutes" }, "Idle time before locking"),
+    h("label", { className: "grow", for: "idle-minutes" }, t("optionsIdleTime")),
     select,
   );
 };
@@ -61,9 +63,9 @@ const lockingSection = (settings: Settings): HTMLElement =>
   h(
     "section",
     { className: "card", id: "locking" },
-    h("h2", {}, "Locking"),
-    h("p", { className: "muted small" }, "Locking from this browser locks the vault on your Quark for every device. The vault always locks when this computer's screen locks."),
-    toggle(settings, "lockOnIdle", "Lock the vault when this computer is idle", "Off by default, so someone else mid-task isn't locked out"),
+    h("h2", {}, t("optionsLocking")),
+    h("p", { className: "muted small" }, t("optionsLockingIntro")),
+    toggle(settings, "lockOnIdle", t("optionsLockOnIdle"), t("optionsLockOnIdleHint")),
     idleMinutesSelect(settings),
   );
 
@@ -76,20 +78,20 @@ const shortcutSection = (shortcut: string): HTMLElement => {
   return h(
     "section",
     { className: "card", id: "shortcut" },
-    h("h2", {}, "Shortcut"),
+    h("h2", {}, t("optionsShortcut")),
     h(
       "div",
       { className: "toggle" },
       h(
         "div",
         { className: "grow" },
-        h("div", {}, "Fill a login"),
-        h("div", { className: "muted small" }, `One match fills right away; several open the picker. Right-click a field for the same list. ${help.steps}`),
+        h("div", {}, t("optionsFillLogin")),
+        h("div", { className: "muted small" }, t("optionsShortcutHint", help.steps)),
       ),
       h("span", { className: "mono" }, help.label),
       help.url === null
         ? null
-        : h("button", { className: "secondary", type: "button", onclick: (() => openShortcuts(help.url ?? "")) as EventListener }, help.bound ? "Change" : "Set a shortcut"),
+        : h("button", { className: "secondary", type: "button", onclick: (() => openShortcuts(help.url ?? "")) as EventListener }, help.bound ? t("optionsChangeShortcut") : t("optionsSetShortcut")),
     ),
   );
 };
@@ -98,9 +100,9 @@ const neverSaveSection = (hosts: readonly string[]): HTMLElement =>
   h(
     "section",
     { className: "card", id: "never-save" },
-    h("h2", {}, "Never save on these sites"),
+    h("h2", {}, t("optionsNeverSave")),
     ...(hosts.length === 0
-      ? [h("p", { className: "muted small" }, "None yet. Choose \"Never for this site\" when Quark Vault offers to save a login.")]
+      ? [h("p", { className: "muted small" }, t("optionsNeverSaveNone"))]
       : hosts.map((host) =>
           h(
             "div",
@@ -108,8 +110,8 @@ const neverSaveSection = (hosts: readonly string[]): HTMLElement =>
             h("div", { className: "grow mono" }, host),
             h(
               "button",
-              { className: "secondary", type: "button", "aria-label": `Remove ${host}`, onclick: (() => void ask({ type: "removeNeverSave", host }).then(render)) as EventListener },
-              "Remove",
+              { className: "secondary", type: "button", "aria-label": t("removeName", host), onclick: (() => void ask({ type: "removeNeverSave", host }).then(render)) as EventListener },
+              t("remove"),
             ),
           ),
         )),
@@ -120,18 +122,18 @@ const connection = (state: VaultState): HTMLElement => {
   return h(
     "section",
     { className: "card", id: "connection" },
-    h("h2", {}, "Connection"),
+    h("h2", {}, t("optionsConnection")),
     h(
       "div",
       { className: "row" },
       h(
         "div",
         { className: "grow" },
-        h("div", { className: "mono" }, "server" in state ? state.server : "No Quark connected"),
-        h("div", { className: "muted small" }, signedIn ? `Signed in · ${stateText(state)}` : "Open the Quark Vault toolbar button to connect."),
+        h("div", { className: "mono" }, "server" in state ? state.server : t("optionsNoQuark")),
+        h("div", { className: "muted small" }, signedIn ? t("optionsSignedIn", stateText(state)) : t("optionsConnectHint")),
       ),
       signedIn
-        ? h("button", { className: "secondary", type: "button", onclick: (() => void ask({ type: "signOut" }).then(() => render())) as EventListener }, "Sign out")
+        ? h("button", { className: "secondary", type: "button", onclick: (() => void ask({ type: "signOut" }).then(() => render())) as EventListener }, t("signOut"))
         : null,
     ),
   );
@@ -150,21 +152,21 @@ const render = async (): Promise<void> => {
     h(
       "main",
       { className: "page" },
-      h("div", { className: "title" }, h("div", { className: "brand-mark large" }, icon(document, icons.quark, 20)), h("h1", {}, "Quark Vault options")),
+      h("div", { className: "title" }, h("div", { className: "brand-mark large" }, icon(document, icons.quark, 20)), h("h1", {}, t("optionsTitle"))),
       connection(state),
       h(
         "section",
         { className: "card", id: "autofill" },
-        h("h2", {}, "Autofill"),
-        toggle(settings, "inlineButton", "Show the Quark button in password fields", "Only when the vault has an entry for the site"),
-        toggle(settings, "badge", "Show the match count on the toolbar icon", ""),
-        toggle(settings, "autoSubmit", "Submit the form after filling", "Off by default. Some sites need a second look first."),
+        h("h2", {}, t("optionsAutofill")),
+        toggle(settings, "inlineButton", t("optionsInlineButton"), t("optionsInlineButtonHint")),
+        toggle(settings, "badge", t("optionsBadge"), ""),
+        toggle(settings, "autoSubmit", t("optionsAutoSubmit"), t("optionsAutoSubmitHint")),
       ),
       lockingSection(settings),
       shortcutSection(shortcut),
       neverSaveSection(neverSave),
       others,
-      h("p", { className: "muted small" }, "The vault also auto-locks on the schedule set on your Quark."),
+      h("p", { className: "muted small" }, t("optionsServerAutoLock")),
     ),
   );
 };

@@ -1,4 +1,5 @@
 import { errorText } from "../shared/errors";
+import { t } from "../shared/i18n";
 import { ask, type FillCommand, type Hello, type PageCommand, type PageReply } from "../shared/messages";
 import { err, ok, type ApiError, type Credentials, type EntrySummary } from "../shared/types";
 import type { SaveAction, SaveOffer } from "../background/save";
@@ -42,11 +43,11 @@ const pick =
     if (!result.ok) {
       return failureText(result.error);
     }
-    return fill(result.value, result.value.autoSubmit, field) ? null : "Couldn't find the login fields on this page.";
+    return fill(result.value, result.value.autoSubmit, field) ? null : t("refuseNoFields");
   };
 
 const failureText = (error: ApiError): string =>
-  error.kind === "locked" ? "The vault is locked. Unlock it from the Quark Vault toolbar button." : errorText(error);
+  error.kind === "locked" ? t("pageLocked") : errorText(error);
 
 const pickOtp =
   (field: HTMLInputElement) =>
@@ -130,14 +131,14 @@ const openPicker = (): PageReply | null => {
 const fillFromWorker = async (entryId: number): Promise<PageReply> => {
   const result = await ask({ type: "fillFromPage", entryId }).catch(() => null);
   if (result === null) {
-    return err({ kind: "refused", reason: "This page can't be filled. Reload it and try again." });
+    return err({ kind: "refused", reason: t("refuseReload") });
   }
   if (!result.ok) {
     return result;
   }
   return fill(result.value, result.value.autoSubmit, null)
     ? ok(null)
-    : err({ kind: "refused", reason: "Couldn't find the login fields on this page." });
+    : err({ kind: "refused", reason: t("refuseNoFields") });
 };
 
 const handleFill = (command: FillCommand): PageReply | Promise<PageReply> | null => {

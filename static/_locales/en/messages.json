@@ -1,0 +1,798 @@
+{
+  "extName": {
+    "message": "Quark Vault",
+    "description": "The extension's name, in the store, toolbar and menus."
+  },
+  "extDescription": {
+    "message": "Fill logins from the password vault on your Quark.",
+    "description": "The extension's description in the store and the extensions page."
+  },
+  "commandFillLogin": {
+    "message": "Fill a login from Quark Vault",
+    "description": "The keyboard shortcut's description on the browser's shortcuts page."
+  },
+  "cancel": {
+    "message": "Cancel"
+  },
+  "dismiss": {
+    "message": "Dismiss"
+  },
+  "signOut": {
+    "message": "Sign out"
+  },
+  "unlock": {
+    "message": "Unlock"
+  },
+  "fill": {
+    "message": "Fill"
+  },
+  "fillName": {
+    "message": "Fill $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "generatePassword": {
+    "message": "Generate password"
+  },
+  "remove": {
+    "message": "Remove"
+  },
+  "removeName": {
+    "message": "Remove $HOST$",
+    "placeholders": {
+      "host": {
+        "content": "$1"
+      }
+    }
+  },
+  "check": {
+    "message": "Check"
+  },
+  "checkName": {
+    "message": "Check $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "turnOff": {
+    "message": "Turn off"
+  },
+  "turnOffName": {
+    "message": "Turn off $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "notNow": {
+    "message": "Not now"
+  },
+  "errorExtensionTooOld": {
+    "message": "This extension is too old for your Quark. Update the extension, then sign in again."
+  },
+  "errorQuarkTooOld": {
+    "message": "Your Quark is too old for this extension. Update your Quark, then sign in again."
+  },
+  "errorSignedOut": {
+    "message": "Your Quark session ended. Sign in again."
+  },
+  "errorBadCredentials": {
+    "message": "Invalid username or password."
+  },
+  "errorAccountPending": {
+    "message": "This account is waiting for an admin to approve it."
+  },
+  "errorAccountDisabled": {
+    "message": "This account is disabled."
+  },
+  "errorNotAdmin": {
+    "message": "The vault needs an admin account."
+  },
+  "errorLocked": {
+    "message": "The vault is locked."
+  },
+  "errorLockedReason": {
+    "message": "The vault is locked: $REASON$.",
+    "description": "REASON is the explanation the Quark gave, in English.",
+    "placeholders": {
+      "reason": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorBadMasterPassword": {
+    "message": "That password didn't unlock the vault."
+  },
+  "errorNotInitialized": {
+    "message": "The vault isn't set up yet. Create it in the Quark app first."
+  },
+  "errorDriveDisconnected": {
+    "message": "The drive holding the vault is disconnected."
+  },
+  "errorRateLimited": {
+    "message": "Too many attempts. Wait a minute and try again."
+  },
+  "errorNotFound": {
+    "message": "That entry no longer exists."
+  },
+  "errorNetwork": {
+    "message": "Couldn't reach your Quark. Check the address and that it's online."
+  },
+  "errorServer": {
+    "message": "Your Quark couldn't finish that. Try again."
+  },
+  "stateDisconnected": {
+    "message": "Not connected"
+  },
+  "stateSignedOut": {
+    "message": "Signed out"
+  },
+  "stateUnlocked": {
+    "message": "Unlocked"
+  },
+  "insecureServerRefusal": {
+    "message": "This Quark address uses plain http, so your passwords would cross the network unencrypted. Use an https address, or confirm that you understand the risk."
+  },
+  "insecureServerWarning": {
+    "message": "Connected over plain http. Your passwords cross the network unencrypted. Switch to an https address."
+  },
+  "matchSavedForScheme": {
+    "message": "Saved for $SCHEME$",
+    "description": "SCHEME is http or https.",
+    "placeholders": {
+      "scheme": {
+        "content": "$1"
+      }
+    }
+  },
+  "matchDifferentPort": {
+    "message": "Different port"
+  },
+  "refuseWrongSite": {
+    "message": "This login doesn't belong to this site."
+  },
+  "refuseEmbeddedIn": {
+    "message": "This login form is embedded in $HOST$, so Quark Vault won't fill it.",
+    "placeholders": {
+      "host": {
+        "content": "$1"
+      }
+    }
+  },
+  "refuseEmbeddedInPage": {
+    "message": "This login form is embedded in another page, so Quark Vault won't fill it."
+  },
+  "refuseEmbeddedInSite": {
+    "message": "This login form is embedded in another site, so Quark Vault won't fill it."
+  },
+  "refuseNoOtp": {
+    "message": "This login has no one-time code saved."
+  },
+  "refuseNoFieldsReload": {
+    "message": "Couldn't find login fields on this page. If it just loaded, reload it and try again."
+  },
+  "refuseNoFields": {
+    "message": "Couldn't find the login fields on this page."
+  },
+  "refuseReload": {
+    "message": "This page can't be filled. Reload it and try again."
+  },
+  "refuseCantFill": {
+    "message": "This page can't be filled."
+  },
+  "refuseTabMoved": {
+    "message": "This tab is now on $HOST$, not $CONFIRMED$. Open the popup again to fill it.",
+    "placeholders": {
+      "host": {
+        "content": "$1"
+      },
+      "confirmed": {
+        "content": "$2"
+      }
+    }
+  },
+  "refuseSaveGone": {
+    "message": "That login is no longer waiting to be saved."
+  },
+  "refuseNothingToUpdate": {
+    "message": "There's nothing to update for this login."
+  },
+  "refuseNoTab": {
+    "message": "No tab to save from."
+  },
+  "pageLocked": {
+    "message": "The vault is locked. Unlock it from the Quark Vault toolbar button."
+  },
+  "menuNoLogins": {
+    "message": "No saved logins for this site"
+  },
+  "menuFillWhere": {
+    "message": "Fill $NAME$ ($WHERE$)",
+    "description": "WHERE says where a login for another port or scheme was saved.",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      },
+      "where": {
+        "content": "$2"
+      }
+    }
+  },
+  "pickerTrigger": {
+    "message": "Fill from Quark Vault"
+  },
+  "pickerFillItem": {
+    "message": "Fill $NAME$, $WHERE$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      },
+      "where": {
+        "content": "$2"
+      }
+    }
+  },
+  "pickerFilled": {
+    "message": "Filled $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "pickerFilledStrong": {
+    "message": "Filled a strong password"
+  },
+  "pickerSuggest": {
+    "message": "Suggest strong password"
+  },
+  "pickerSuggestHint": {
+    "message": "Fills this field and its confirmation"
+  },
+  "pickerMenuLabel": {
+    "message": "Logins for $HOST$",
+    "placeholders": {
+      "host": {
+        "content": "$1"
+      }
+    }
+  },
+  "pickerFallbacks": {
+    "message": "Saved for another port or scheme"
+  },
+  "pickerNoLogins": {
+    "message": "No logins saved for this site"
+  },
+  "saveTitle": {
+    "message": "Save this login to Quark Vault?"
+  },
+  "saveSub": {
+    "message": "$USERNAME$ on $HOST$",
+    "placeholders": {
+      "username": {
+        "content": "$1"
+      },
+      "host": {
+        "content": "$2"
+      }
+    }
+  },
+  "saveNever": {
+    "message": "Never for this site"
+  },
+  "saveSave": {
+    "message": "Save"
+  },
+  "updateTitle": {
+    "message": "Update the password in Quark Vault?"
+  },
+  "updateSub": {
+    "message": "$ENTRY$ · $USERNAME$",
+    "placeholders": {
+      "entry": {
+        "content": "$1"
+      },
+      "username": {
+        "content": "$2"
+      }
+    }
+  },
+  "updateUpdate": {
+    "message": "Update"
+  },
+  "unlockToSaveTitle": {
+    "message": "Unlock Quark Vault to save this login"
+  },
+  "shortcutNotSet": {
+    "message": "Not set"
+  },
+  "shortcutFirefoxChange": {
+    "message": "To change it, open about:addons, click the gear button, then Manage Extension Shortcuts."
+  },
+  "shortcutFirefoxUnbound": {
+    "message": "Firefox didn't bind it. To set one, open about:addons, click the gear button, then Manage Extension Shortcuts."
+  },
+  "shortcutChange": {
+    "message": "Change it at $PAGE$.",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "shortcutUnbound": {
+    "message": "The browser didn't bind it, often because another extension has the same keys. Set one at $PAGE$.",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "welcomeNeedTitle": {
+    "message": "What you need"
+  },
+  "welcomeNeedQuark": {
+    "message": "A Quark with the password vault set up, an admin account on it, and the vault password."
+  },
+  "welcomeNeedAdmin": {
+    "message": "You sign in with the admin account first, then unlock with the vault password. Only admins can open the vault; if you aren't one, ask whoever runs your Quark."
+  },
+  "welcomeNeedSessions": {
+    "message": "This browser shows up in your Quark's Settings › Sessions, where you can revoke it any time."
+  },
+  "welcomeAddressTitle": {
+    "message": "Your Quark's address"
+  },
+  "welcomeAddressFormat": {
+    "message": "Use https://your-quark when it has https, or http://host:port for a Quark on your own network, such as http://192.168.1.20:8080."
+  },
+  "welcomeAddressInsecure": {
+    "message": "Plain http to another machine asks you to confirm first, because passwords would cross the network unencrypted."
+  },
+  "welcomePermissionsTitle": {
+    "message": "Why it asks for these permissions"
+  },
+  "welcomeSitesFirefox": {
+    "message": "Access to your data for all websites: to find login forms on the pages you visit and fill them. Firefox asks for it separately; the popup shows Allow until you grant it."
+  },
+  "welcomeSitesChrome": {
+    "message": "Read and change all your data on all websites: to find login forms on the pages you visit and fill them."
+  },
+  "welcomePageSafety": {
+    "message": "A page never gets a password until you pick a login saved for that site, and your Quark session stays out of pages' reach."
+  },
+  "welcomeOtherPermissions": {
+    "message": "Storage keeps your settings and sign-in, idle locks the vault when this computer locks, and the right-click menu offers Fill."
+  },
+  "welcomeOptionalFirefox": {
+    "message": "Privacy and management, asked only if you choose to check for other password managers in the options."
+  },
+  "welcomeOptionalChrome": {
+    "message": "Privacy and management (Manage your apps, extensions…), asked only if you choose to check for other password managers in the options."
+  },
+  "addressCheck": {
+    "message": "Check the address, then try again."
+  },
+  "addressTriedHttps": {
+    "message": "Tried $ORIGIN$. If your Quark serves plain http, edit the address to http://$HOST$.",
+    "placeholders": {
+      "origin": {
+        "content": "$1"
+      },
+      "host": {
+        "content": "$2"
+      }
+    }
+  },
+  "addressTried": {
+    "message": "Tried $ORIGIN$. Check the address and port, and that your Quark is online.",
+    "placeholders": {
+      "origin": {
+        "content": "$1"
+      }
+    }
+  },
+  "builtInManagerFirefox": {
+    "message": "Firefox Password Manager"
+  },
+  "builtInManagerChrome": {
+    "message": "Google Password Manager"
+  },
+  "builtInOn": {
+    "message": "The browser is still offering to save passwords."
+  },
+  "builtInManaged": {
+    "message": "The browser's password saving is set by your organization or another extension."
+  },
+  "builtInOff": {
+    "message": "The browser's password saving is off."
+  },
+  "othersTitle": {
+    "message": "Other password managers"
+  },
+  "othersIntro": {
+    "message": "More than one manager filling the same form gets confusing. Turning one off keeps its saved passwords; you can turn it back on from $PAGE$.",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "othersBlocked": {
+    "message": "The browser didn't allow that change. Try it from $PAGE$ instead.",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "othersBuiltInHint": {
+    "message": "The browser can offer to save and fill passwords too."
+  },
+  "othersExtensions": {
+    "message": "Password manager extensions"
+  },
+  "othersExtensionsHint": {
+    "message": "Proton Pass, Bitwarden, 1Password and others. Checking asks for permission to manage extensions; Quark Vault only uses it to list password managers and to turn one off when you choose."
+  },
+  "othersCheckExtensions": {
+    "message": "Check password manager extensions"
+  },
+  "othersNone": {
+    "message": "No other password manager extensions are turned on."
+  },
+  "othersAlsoFills": {
+    "message": "Also fills logins"
+  },
+  "othersTurnOffIn": {
+    "message": "Turn off in $PAGE$",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "othersManaged": {
+    "message": "Managed by your organization"
+  },
+  "optionsTitle": {
+    "message": "Quark Vault options"
+  },
+  "optionsConnection": {
+    "message": "Connection"
+  },
+  "optionsNoQuark": {
+    "message": "No Quark connected"
+  },
+  "optionsSignedIn": {
+    "message": "Signed in · $STATE$",
+    "placeholders": {
+      "state": {
+        "content": "$1"
+      }
+    }
+  },
+  "optionsConnectHint": {
+    "message": "Open the Quark Vault toolbar button to connect."
+  },
+  "optionsAutofill": {
+    "message": "Autofill"
+  },
+  "optionsInlineButton": {
+    "message": "Show the Quark button in password fields"
+  },
+  "optionsInlineButtonHint": {
+    "message": "Only when the vault has an entry for the site"
+  },
+  "optionsBadge": {
+    "message": "Show the match count on the toolbar icon"
+  },
+  "optionsAutoSubmit": {
+    "message": "Submit the form after filling"
+  },
+  "optionsAutoSubmitHint": {
+    "message": "Off by default. Some sites need a second look first."
+  },
+  "optionsLocking": {
+    "message": "Locking"
+  },
+  "optionsLockingIntro": {
+    "message": "Locking from this browser locks the vault on your Quark for every device. The vault always locks when this computer's screen locks."
+  },
+  "optionsLockOnIdle": {
+    "message": "Lock the vault when this computer is idle"
+  },
+  "optionsLockOnIdleHint": {
+    "message": "Off by default, so someone else mid-task isn't locked out"
+  },
+  "optionsIdleTime": {
+    "message": "Idle time before locking"
+  },
+  "optionsIdleAfter": {
+    "message": "After $DURATION$",
+    "description": "DURATION is a number of minutes, such as \"15 minutes\".",
+    "placeholders": {
+      "duration": {
+        "content": "$1"
+      }
+    }
+  },
+  "optionsShortcut": {
+    "message": "Shortcut"
+  },
+  "optionsFillLogin": {
+    "message": "Fill a login"
+  },
+  "optionsShortcutHint": {
+    "message": "One match fills right away; several open the picker. Right-click a field for the same list. $STEPS$",
+    "placeholders": {
+      "steps": {
+        "content": "$1"
+      }
+    }
+  },
+  "optionsChangeShortcut": {
+    "message": "Change"
+  },
+  "optionsSetShortcut": {
+    "message": "Set a shortcut"
+  },
+  "optionsNeverSave": {
+    "message": "Never save on these sites"
+  },
+  "optionsNeverSaveNone": {
+    "message": "None yet. Choose \"Never for this site\" when Quark Vault offers to save a login."
+  },
+  "optionsServerAutoLock": {
+    "message": "The vault also auto-locks on the schedule set on your Quark."
+  },
+  "popupChecking": {
+    "message": "Checking your Quark…"
+  },
+  "popupConnectTitle": {
+    "message": "Connect to your Quark"
+  },
+  "popupConnectIntro": {
+    "message": "Sign in with an admin account; only admins can open the vault."
+  },
+  "popupConnectIntroRevoke": {
+    "message": "Sign in with an admin account; only admins can open the vault. You can revoke this browser in Settings › Sessions."
+  },
+  "popupInsecureAddress": {
+    "message": "This address uses plain http, not https. Your Quark password, vault password and every login you fill would cross the network unencrypted, where anyone on it can read them."
+  },
+  "popupInsecureConfirm": {
+    "message": "I understand this connection is unencrypted"
+  },
+  "popupServer": {
+    "message": "Quark address"
+  },
+  "popupUsername": {
+    "message": "Username"
+  },
+  "popupPassword": {
+    "message": "Password"
+  },
+  "popupPersist": {
+    "message": "Stay signed in after the browser closes"
+  },
+  "popupConnect": {
+    "message": "Connect"
+  },
+  "popupConnecting": {
+    "message": "Connecting…"
+  },
+  "popupWelcomeBanner": {
+    "message": "New here? What you need, and why."
+  },
+  "popupWelcomeRead": {
+    "message": "Read"
+  },
+  "popupWelcomeTitle": {
+    "message": "Welcome to Quark Vault"
+  },
+  "popupWelcomeIntro": {
+    "message": "It fills logins from the password vault on your Quark."
+  },
+  "popupWelcomeDone": {
+    "message": "Got it"
+  },
+  "popupOptions": {
+    "message": "Options"
+  },
+  "popupLockedTitle": {
+    "message": "Vault is locked"
+  },
+  "popupLockedIntro": {
+    "message": "Unlocking here unlocks the vault on your Quark for every device, until it auto-locks."
+  },
+  "popupMasterPassword": {
+    "message": "Vault password"
+  },
+  "popupUnlocking": {
+    "message": "Unlocking…"
+  },
+  "popupCopiedUsername": {
+    "message": "Copied the username for $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupCopiedPassword": {
+    "message": "Copied the password for $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupCopiedCode": {
+    "message": "Copied the code for $NAME$. It changes in $SECONDS$.",
+    "description": "SECONDS is a short duration, such as \"23s\".",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      },
+      "seconds": {
+        "content": "$2"
+      }
+    }
+  },
+  "popupGenerated": {
+    "message": "Generated a password and copied it"
+  },
+  "popupSaved": {
+    "message": "Saved the login"
+  },
+  "popupUpdated": {
+    "message": "Updated the password"
+  },
+  "popupSiteAccess": {
+    "message": "Allow Quark Vault on websites so it can fill logins there."
+  },
+  "popupAllow": {
+    "message": "Allow"
+  },
+  "popupOthers": {
+    "message": "The browser or another password manager may also try to fill logins."
+  },
+  "popupReview": {
+    "message": "Review"
+  },
+  "popupShortcut": {
+    "message": "Fill shortcut"
+  },
+  "popupShortcutNotSet": {
+    "message": "Fill shortcut: Not set"
+  },
+  "popupCopyCode": {
+    "message": "Copy one-time code for $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupCopyUsername": {
+    "message": "Copy username for $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupCopyPassword": {
+    "message": "Copy password for $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupOnThisSite": {
+    "message": "On this site"
+  },
+  "popupOtherPort": {
+    "message": "Other port or scheme"
+  },
+  "popupFillAnyway": {
+    "message": "Fill anyway"
+  },
+  "popupFillAnywayName": {
+    "message": "Fill anyway $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupFillAnywaySavedFor": {
+    "message": "$NAME$ is saved for $SAVED$, not $PAGE$. Filling it here gives its username and password to $PAGE$.",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      },
+      "saved": {
+        "content": "$2"
+      },
+      "page": {
+        "content": "$3"
+      }
+    }
+  },
+  "popupFillAnywayNoSite": {
+    "message": "$NAME$ isn't saved for any site, not $PAGE$. Filling it here gives its username and password to $PAGE$.",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      },
+      "page": {
+        "content": "$2"
+      }
+    }
+  },
+  "popupFillAnywayHttp": {
+    "message": "$PAGE$ uses plain http, so they would also cross the network unencrypted.",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupFillAnywayTrust": {
+    "message": "Only fill it if you trust $PAGE$ with this login.",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupFillOn": {
+    "message": "Fill on $PAGE$",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupNoSite": {
+    "message": "no site"
+  },
+  "popupAutoLock": {
+    "message": "Unlocked · auto-locks after $DURATION$ idle",
+    "description": "DURATION is a short number of minutes, such as \"15 min\".",
+    "placeholders": {
+      "duration": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupSearch": {
+    "message": "Search the vault"
+  },
+  "popupAllEntries": {
+    "message": "All entries · $COUNT$",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupLock": {
+    "message": "Lock vault"
+  },
+  "popupTryAgain": {
+    "message": "Try again"
+  },
+  "popupEditAddress": {
+    "message": "Edit address"
+  }
+}

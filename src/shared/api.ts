@@ -78,7 +78,7 @@ export const toApiError = ({ status, message }: Failure): ApiError => {
     case 423:
       return { kind: "locked", reason: message.replace(/^vault is locked:?\s*/i, "") };
     case 426:
-      return { kind: "refused", reason: extensionTooOld };
+      return { kind: "refused", reason: extensionTooOld() };
     case 429:
       return { kind: "rateLimited" };
     case 503:
@@ -179,7 +179,7 @@ export const createApi = (fetchFn: FetchFn, deriveKey: DeriveAuthKey = deriveAut
       }
       const salt = saltReply.ok ? asAuthSalt(saltReply.value) : null;
       if (salt === null) {
-        return err({ kind: "refused", reason: quarkTooOld });
+        return err({ kind: "refused", reason: quarkTooOld() });
       }
       const authKey = await deriveKey(password, salt.salt);
       const result = await request(server, null, {

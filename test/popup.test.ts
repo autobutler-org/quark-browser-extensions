@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fakeI18n } from "./fakeChrome";
 import type { Request } from "../src/shared/messages";
 import type { SiteMatch } from "../src/shared/host";
 import { defaultSettings, ok, type EntrySummary, type VaultState } from "../src/shared/types";
@@ -68,6 +69,7 @@ const button = (app: HTMLElement, name: string): HTMLButtonElement => {
 
 beforeEach(() => {
   vi.stubGlobal("chrome", {
+    i18n: fakeI18n(),
     runtime: { getURL: (path: string) => `chrome-extension://quark/${path}`, openOptionsPage: () => Promise.resolve() },
     tabs: { query: () => Promise.resolve([{ id: 7, url: tabUrl }]), create: () => Promise.resolve() },
     commands: { getAll: () => Promise.resolve([]) },
@@ -275,3 +277,21 @@ describe("all entries", () => {
     expect(app.querySelectorAll(".list .fill")).toHaveLength(0);
   });
 });
+
+describe("the popup's copy", () => {
+  it("speaks of the browser, not Chrome, in Chrome and Firefox alike", async () => {
+    for (const base of ["chrome-extension://quark/", "moz-extension://quark/"]) {
+      vi.stubGlobal("chrome", { ...chrome, runtime: { ...chrome.runtime, getURL: (path: string) => `${base}${path}` } });
+      const app = await openPopup({ kind: "disconnected" });
+      expect(app.querySelector('label[class="check"]:has(#persist)')?.textContent).toBe("Stay signed in after the browser closes");
+      expect(app.textContent).not.toMatch(/Chrome|Firefox/);
+    }
+  });
+
+  it("titles the window and formats the auto-lock time", async () => {
+    const app = await openPopup({ ...unlocked, autoLockSeconds: 900 });
+    expect(document.title).toBe("Quark Vault");
+    expect(app.querySelector(".status")?.textContent).toContain("Unlocked · auto-locks after 15 min idle");
+  });
+});
+

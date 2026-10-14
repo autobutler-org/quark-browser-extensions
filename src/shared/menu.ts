@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { isFallback, primaryMatches, type SiteMatch } from "./host";
 
 export const menuRoot = "quark-vault";
@@ -15,10 +16,10 @@ export type MenuItem = Readonly<{
 // a login for this page.
 export const menuItems = (matches: readonly SiteMatch[]): readonly MenuItem[] =>
   matches.length === 0
-    ? [{ id: "none", title: "No saved logins for this site", enabled: false }]
+    ? [{ id: "none", title: t("menuNoLogins"), enabled: false }]
     : matches.slice(0, maxMenuEntries).map((entry) => ({
         id: `${fillPrefix}${entry.id}`,
-        title: (isFallback(entry) ? `Fill ${entry.name} (${entry.where})` : `Fill ${entry.name}`).replaceAll("&", "&&"),
+        title: (isFallback(entry) ? t("menuFillWhere", entry.name, entry.where) : t("fillName", entry.name)).replaceAll("&", "&&"),
         enabled: true,
       }));
 

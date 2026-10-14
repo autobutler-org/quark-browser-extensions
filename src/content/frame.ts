@@ -1,3 +1,4 @@
+import { t } from "../shared/i18n";
 import { frameMayFill } from "../shared/host";
 
 type Origins = Readonly<{ length: number; item: (index: number) => string | null }>;
@@ -41,10 +42,10 @@ export const fillDecision = (
     return { kind: "silent" };
   }
   if (!frameMayFill(href, href, entryUrl, entryHost)) {
-    return isTop ? { kind: "refuse", reason: "This login doesn't belong to this site." } : { kind: "silent" };
+    return isTop ? { kind: "refuse", reason: t("refuseWrongSite") } : { kind: "silent" };
   }
   if (!frameMayFill(href, topUrl, entryUrl, entryHost)) {
-    return { kind: "refuse", reason: "This login form is embedded in another site, so Quark Vault won't fill it." };
+    return { kind: "refuse", reason: t("refuseEmbeddedInSite") };
   }
   return { kind: "ask" };
 };
