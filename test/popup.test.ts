@@ -6,7 +6,13 @@ import type { SiteMatch } from "../src/shared/host";
 import { defaultSettings, ok, type EntrySummary, type VaultState } from "../src/shared/types";
 
 // The popup talks to the worker only through ask(), so the tests answer for it.
-const worker = vi.hoisted((): { state: unknown; welcomeSeen: boolean; sent: Request[]; refuseFill: string } => ({ state: null, welcomeSeen: true, sent: [], refuseFill: "" }));
+const worker = vi.hoisted((): { state: unknown; welcomeSeen: boolean; sent: Request[]; refuseFill: string; entries: EntrySummary[] } => ({
+  state: null,
+  welcomeSeen: true,
+  sent: [],
+  refuseFill: "",
+  entries: [],
+}));
 vi.mock("../src/shared/messages", () => ({
   ask: (request: Request) => {
     worker.sent.push(request);
@@ -24,7 +30,7 @@ const answer = (request: Request): unknown => {
     case "settings":
       return { ...defaultSettings, othersReviewed: true, welcomeSeen: worker.welcomeSeen };
     case "entries":
-      return ok([entry(1, "Work mail", "example.com"), entry(2, "Bank", "bank.test")]);
+      return ok(worker.entries);
     case "matches":
       return ok([match(1, "Work mail"), match(3, "Old work mail")]);
     case "pendingOffer":
@@ -80,6 +86,10 @@ beforeEach(() => {
 });
 
 const clipboard: string[] = [];
+
+beforeEach(() => {
+  worker.entries = [entry(1, "Work mail", "example.com"), entry(2, "Bank", "bank.test")];
+});
 
 afterEach(() => {
   worker.welcomeSeen = true;
@@ -187,6 +197,32 @@ describe("popup.css", () => {
   it("rings the search box when its field has focus", () => {
     expect(rule(".search:focus-within")).toMatch(/outline: 2px solid var\(--focus\)/);
   });
+
+  it("reflows below 360px instead of scrolling sideways (#108)", () => {
+    expect(rule("body")).toMatch(/max-width:\s*100vw/);
+    expect(rule(".brand")).toMatch(/min-width:\s*0/);
+    expect(rule(".brand-name")).toMatch(/text-overflow:\s*ellipsis/);
+    expect(rule(".status")).toMatch(/flex-wrap:\s*wrap/);
+  });
+
+  it("lets a banner's title wrap, but not its buttons (#104)", () => {
+    expect(rule(".banner .name")).toMatch(/white-space:\s*normal/);
+    expect(rule(".banner .link")).toMatch(/white-space:\s*nowrap/);
+    expect(rule(".banner .link")).toMatch(/flex-shrink:\s*0/);
+  });
+
+  it("spaces out the Fill anyway warning, and wraps a long host in its button (#105)", () => {
+    expect(rule(".confirm")).toMatch(/flex-direction:\s*column/);
+    expect(rule(".confirm")).toMatch(/gap:/);
+    expect(rule(".confirm-actions")).toMatch(/gap:/);
+    expect(rule(".confirm-actions")).toMatch(/flex-wrap:\s*wrap/);
+    expect(rule(".confirm .primary")).toMatch(/overflow-wrap:\s*anywhere/);
+  });
+
+  it("truncates an entry's host like its name (#106)", () => {
+    expect(rule(".host")).toMatch(/text-overflow:\s*ellipsis/);
+    expect(rule(".host")).toMatch(/white-space:\s*nowrap/);
+  });
 });
 
 describe("all entries", () => {
@@ -203,6 +239,13 @@ describe("all entries", () => {
     button(app, "Copy one-time code for Bank").click();
     await vi.waitFor(() => expect(app.querySelector(".notice")?.textContent).toBe("Copied the code for Bank. It changes in 20s."));
     expect(clipboard).toEqual(["ana", "hunter2", "123456"]);
+  });
+
+  it("offers a one-time code only for entries not known to lack one (#103)", async () => {
+    worker.entries = [{ ...entry(2, "Bank", "bank.test"), hasTotp: false }, { ...entry(4, "Shop", "shop.test"), hasTotp: true }, entry(5, "Forum", "forum.test")];
+    const app = await openPopup(unlocked);
+    const codeButtons = [...app.querySelectorAll(".list button")].map((found) => found.getAttribute("aria-label")).filter((label) => label?.startsWith("Copy one-time code"));
+    expect(codeButtons).toEqual(["Copy one-time code for Forum", "Copy one-time code for Shop"]);
   });
 
   it("fills an entry that matches this page with one click", async () => {
@@ -269,6 +312,41 @@ describe("all entries", () => {
     button(app, "Fill on example.com").click();
     await vi.waitFor(() => expect(app.querySelector(".error-box")?.textContent).toContain("evil.example"));
     expect(app.querySelector("#fill-anyway-2")).toBeNull();
+  });
+
+  it("gives truncated names and hosts their full text on hover (#106)", async () => {
+    const long = "a-very-long-subdomain-name.with-many-labels.example-company-intranet.co.uk";
+    worker.entries = [entry(2, "A really long entry name for the intranet", long)];
+    const app = await openPopup(unlocked);
+    expect(row(app, "A really long entry name for the intranet").querySelector(".name")?.getAttribute("title")).toBe("A really long entry name for the intranet");
+    expect(row(app, "A really long entry name for the intranet").querySelector(".host")?.getAttribute("title")).toBe(long);
+  });
+
+  it("scrolls the Fill anyway warning into view when it opens (#105)", async () => {
+    const scrolled: string[] = [];
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this.id);
+    };
+    const app = await openPopup(unlocked);
+    button(app, "Fill anyway Bank").click();
+    await settle();
+    expect(scrolled).toEqual(["fill-anyway-2"]);
+    expect(app.querySelector("#fill-anyway-2 .confirm-actions")?.querySelectorAll("button")).toHaveLength(2);
+    delete (Element.prototype as Partial<Element>).scrollIntoView;
+  });
+
+  it("says when a search finds nothing (#110)", async () => {
+    const app = await openPopup(unlocked);
+    const search = app.querySelector<HTMLInputElement>("#search")!;
+    search.value = "zzz";
+    search.dispatchEvent(new Event("input"));
+    expect(app.querySelector(".list .empty")?.textContent).toContain("No entries match “zzz”");
+  });
+
+  it("says when the vault has no entries yet (#110)", async () => {
+    worker.entries = [];
+    const app = await openPopup(unlocked);
+    expect(app.querySelector(".list .empty")?.textContent).toContain("No entries yet");
   });
 
   it("offers no fill on a page that isn't on the web", async () => {

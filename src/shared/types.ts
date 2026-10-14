@@ -5,6 +5,8 @@ export type EntrySummary = Readonly<{
   folderId: number | null;
   createdAt: string;
   updatedAt: string;
+  // Whether the entry has a one-time code; set by the worker only once it has looked the entry up.
+  hasTotp?: boolean;
 }>;
 
 export type EntryDetail = Readonly<{

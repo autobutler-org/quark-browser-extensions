@@ -3,7 +3,7 @@ import { accountId } from "../src/shared/authKey";
 import { legacyUpgradeNeeded } from "../src/shared/errors";
 import type { Request } from "../src/shared/messages";
 import type { SaveOffer } from "../src/background/save";
-import { defaultSettings, err, ok, type ApiError, type Result, type Settings, type VaultState } from "../src/shared/types";
+import { defaultSettings, err, ok, type ApiError, type EntrySummary, type Result, type Settings, type VaultState } from "../src/shared/types";
 
 // The popup's screens and flows: connecting (with the plain-http confirmation), the first-run welcome, unlocking
 // and locking, the save banner, the site-access and other-managers banners, and the error screens. The worker
@@ -22,6 +22,7 @@ const worker = {
   generate: ok("generated-pw") as Result<string>,
   otp: ok({ code: "123456", secondsLeft: 9 }) as Result<{ code: string; secondsLeft: number }>,
   resolveSave: ok(null) as Result<null>,
+  entries: [] as EntrySummary[],
   asked: [] as Request[],
 };
 
@@ -36,7 +37,7 @@ const answer = (request: Request): unknown => {
       worker.settings = request.settings;
       return request.settings;
     case "entries":
-      return worker.state.kind === "unlocked" ? ok([]) : err({ kind: "locked", reason: "" });
+      return worker.state.kind === "unlocked" ? ok(worker.entries) : err({ kind: "locked", reason: "" });
     case "matches":
       return ok([]);
     case "pendingOffer":
@@ -85,6 +86,7 @@ beforeEach(() => {
     generate: ok("generated-pw"),
     otp: ok({ code: "123456", secondsLeft: 9 }),
     resolveSave: ok(null),
+    entries: [],
     asked: [],
   });
   Object.assign(browser, { url: "chrome-extension://quark/", siteAccess: true, grantSites: true, tabsOpened: [], shortcut: "", clipboard: [], closed: 0 });
@@ -145,7 +147,7 @@ const click = async (app: ParentNode, name: string): Promise<void> => {
 };
 
 const heading = (app: HTMLElement): string => app.querySelector("h1")?.textContent ?? "";
-const alertText = (app: HTMLElement): string => app.querySelector('.error-box[role="alert"]')?.textContent ?? "";
+const alertText = (app: HTMLElement): string => app.querySelector('.error-box[role="alert"]:not([hidden])')?.textContent ?? "";
 const asked = (type: Request["type"]) => worker.asked.filter((request) => request.type === type);
 
 const typeInto = (app: HTMLElement, id: string, value: string): void => {
@@ -206,6 +208,87 @@ describe("connecting", () => {
     expect(heading(app)).toBe("Connect to your Quark");
     expect(alertText(app)).not.toBe("");
     expect(buttonNamed(app, "Connect")?.disabled).toBe(false);
+  });
+});
+
+describe("the connect form", () => {
+  beforeEach(() => {
+    worker.state = { kind: "disconnected" };
+  });
+
+  const fill = (app: HTMLElement, address = "quark.local"): void => {
+    typeInto(app, "server", address);
+    typeInto(app, "username", "admin");
+    typeInto(app, "password", "pw");
+    app.querySelector<HTMLInputElement>("#persist")!.checked = true;
+  };
+
+  it("takes an address without a scheme (#99)", async () => {
+    const app = await openPopup();
+    const address = app.querySelector<HTMLInputElement>("#server")!;
+    expect(address.type).toBe("text");
+    expect(address.getAttribute("inputmode")).toBe("url");
+    expect(address.getAttribute("spellcheck")).toBe("false");
+    fill(app, "192.168.1.20:8080");
+    await submitForm(app);
+    expect(asked("connect")[0]).toMatchObject({ server: "192.168.1.20:8080", allowInsecure: false });
+  });
+
+  it("starts on the address, or on the first empty field after it (#109)", async () => {
+    await openPopup();
+    expect(document.activeElement?.id).toBe("server");
+    worker.state = { kind: "unreachable", server, message: "fetch failed" };
+    const unreachable = await openPopup();
+    await click(unreachable, "Edit address");
+    expect(document.activeElement?.id).toBe("username");
+  });
+
+  it("keeps the address, username and Stay signed in after bad credentials, and goes to the password (#98)", async () => {
+    worker.connect = err({ kind: "badCredentials" });
+    const app = await openPopup();
+    fill(app);
+    await submitForm(app);
+    expect(alertText(app)).toBe("Invalid username or password.");
+    expect(app.querySelector<HTMLInputElement>("#server")!.value).toBe("quark.local");
+    expect(app.querySelector<HTMLInputElement>("#username")!.value).toBe("admin");
+    expect(app.querySelector<HTMLInputElement>("#password")!.value).toBe("");
+    expect(app.querySelector<HTMLInputElement>("#persist")!.checked).toBe(true);
+    expect(document.activeElement?.id).toBe("password");
+  });
+
+  it("keeps the whole form after a network error, goes to the address, and says which address it tried (#98, #100)", async () => {
+    worker.connect = err({ kind: "network", message: "fetch failed" });
+    const app = await openPopup();
+    fill(app);
+    await submitForm(app);
+    expect(app.querySelector<HTMLInputElement>("#password")!.value).toBe("pw");
+    expect(app.querySelector<HTMLInputElement>("#persist")!.checked).toBe(true);
+    expect(document.activeElement?.id).toBe("server");
+    expect(alertText(app)).toContain("Can't reach your Quark");
+    expect(alertText(app)).toContain("Tried https://quark.local");
+  });
+
+  it("keeps Stay signed in and the password when the Quark asks for a legacy upgrade (#98)", async () => {
+    const legacyUpgrade = { server: "https://quark.local", username: "admin" };
+    worker.connect = err({ kind: "refused", reason: legacyUpgradeNeeded(legacyUpgrade.server), legacyUpgrade });
+    const app = await openPopup();
+    fill(app);
+    await submitForm(app);
+    expect(app.querySelector<HTMLInputElement>("#password")!.value).toBe("pw");
+    expect(app.querySelector<HTMLInputElement>("#persist")!.checked).toBe(true);
+    expect(document.activeElement?.id).toBe("legacy-upgrade");
+  });
+
+  it("keeps the username and Stay signed in when editing an unreachable address (#98)", async () => {
+    worker.state = { kind: "unreachable", server, message: "fetch failed" };
+    worker.connect = err({ kind: "network", message: "fetch failed" });
+    const app = await openPopup();
+    await click(app, "Edit address");
+    fill(app, "quark.lan");
+    await submitForm(app);
+    expect(app.querySelector<HTMLInputElement>("#server")!.value).toBe("quark.lan");
+    expect(app.querySelector<HTMLInputElement>("#username")!.value).toBe("admin");
+    expect(app.querySelector<HTMLInputElement>("#persist")!.checked).toBe(true);
   });
 });
 
@@ -332,6 +415,89 @@ describe("unlocking and locking", () => {
     worker.state = { kind: "locked", server: "http://192.168.1.10", reason: "" };
     const app = await openPopup();
     expect(app.querySelector('.error-box[role="status"]')).not.toBeNull();
+  });
+});
+
+describe("notices (#102)", () => {
+  const notice = (app: HTMLElement): string => app.querySelector(".notice")?.textContent ?? "";
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("goes when an error shows", async () => {
+    const app = await openPopup();
+    await click(app, "Generate password");
+    expect(notice(app)).toBe("Generated a password and copied it");
+    worker.generate = err({ kind: "server", status: 500, message: "boom" });
+    await click(app, "Generate password");
+    expect(alertText(app)).not.toBe("");
+    expect(notice(app)).toBe("");
+  });
+
+  it("goes after a few seconds", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const app = await openPopup();
+    await click(app, "Generate password");
+    vi.advanceTimersByTime(4000);
+    expect(notice(app)).toBe("Generated a password and copied it");
+    vi.advanceTimersByTime(1000);
+    expect(notice(app)).toBe("");
+  });
+
+  it("goes when the copied one-time code changes", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    worker.otp = ok({ code: "123456", secondsLeft: 2 });
+    worker.entries = [{ id: 1, name: "Mail", urlHost: "mail.test", folderId: null, createdAt: "", updatedAt: "" }];
+    const app = await openPopup();
+    await click(app, "Copy one-time code for Mail");
+    expect(notice(app)).toBe("Copied the code for Mail. It changes in 2s.");
+    vi.advanceTimersByTime(2000);
+    expect(notice(app)).toBe("");
+  });
+});
+
+describe("a generated password (#111)", () => {
+  const panel = (app: HTMLElement): HTMLElement | null => app.querySelector(".generated");
+
+  it("is copied and shown hidden until revealed", async () => {
+    const app = await openPopup();
+    await click(app, "Generate password");
+    expect(browser.clipboard).toEqual(["generated-pw"]);
+    expect(panel(app)).not.toBeNull();
+    expect(panel(app)!.textContent).not.toContain("generated-pw");
+    const reveal = buttonNamed(app, "Show the generated password")!;
+    expect(reveal.textContent).toBe("Show");
+    reveal.focus();
+    reveal.click();
+    await settle();
+    expect(panel(app)!.querySelector(".mono")?.textContent).toBe("generated-pw");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Hide the generated password");
+    expect(document.activeElement?.textContent).toBe("Hide");
+  });
+
+  it("can be copied again, replaced, and put away", async () => {
+    const app = await openPopup();
+    await click(app, "Generate password");
+    await click(app, "Copy the generated password");
+    expect(browser.clipboard).toEqual(["generated-pw", "generated-pw"]);
+    worker.generate = ok("second-pw");
+    await click(app, "Generate another");
+    expect(browser.clipboard).toEqual(["generated-pw", "generated-pw", "second-pw"]);
+    // A new password goes back to hidden.
+    expect(panel(app)!.textContent).not.toContain("second-pw");
+    await click(app, "Dismiss the generated password");
+    expect(panel(app)).toBeNull();
+  });
+
+  it("is forgotten when the vault locks", async () => {
+    const app = await openPopup();
+    await click(app, "Generate password");
+    await click(app, "Lock vault");
+    typeInto(app, "master", "pw");
+    await submitForm(app);
+    expect(app.querySelector("#search")).not.toBeNull();
+    expect(panel(app)).toBeNull();
   });
 });
 
@@ -467,7 +633,10 @@ describe("screens for a Quark that can't open the vault", () => {
   it("offers to fix the address of an unreachable Quark", async () => {
     worker.state = { kind: "unreachable", server: "https://192.168.1.10", message: "fetch failed" };
     const app = await openPopup();
+    expect(heading(app)).toBe("Can't reach your Quark");
+    expect(app.querySelector(".intro p")?.textContent).toMatch(/^Tried https:\/\/192\.168\.1\.10\./);
     expect(app.textContent).toContain("http://192.168.1.10");
+    expect(app.textContent).not.toContain("Check the address and that it's online");
     await click(app, "Edit address");
     expect(heading(app)).toBe("Connect to your Quark");
     expect(app.querySelector<HTMLInputElement>("#server")?.value).toBe("https://192.168.1.10");
