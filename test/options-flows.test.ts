@@ -1,5 +1,7 @@
 import { fakeI18n } from "./fakeChrome";
 import type { Request } from "../src/shared/messages";
+import { idleAction } from "../src/background/idle";
+import type { Browser } from "../src/shared/platform";
 import { defaultSettings, type VaultState } from "../src/shared/types";
 
 // The options page's flows: settings, signing out, the shortcut, and the "other password managers" section with
@@ -287,6 +289,57 @@ describe("the options page", () => {
     enabled.dispatchEvent(new Event("change"));
     await settle();
     expect(worker.settings).toMatchObject({ lockOnIdle: true, idleMinutes: 5 });
+  });
+
+  // Chrome reports a locked screen, so the vault locks then, and idle locking is the user's choice. Firefox can't
+  // see a screen lock, so idle.ts always locks after the idle time, and the page says so instead (#151).
+  const locking = (app: HTMLElement) => {
+    const toggle = app.querySelector<HTMLInputElement>("#lockOnIdle")!;
+    return {
+      intro: app.querySelector("#locking p")?.textContent ?? "",
+      checked: toggle.checked,
+      disabled: toggle.disabled,
+      hint: app.querySelector("#lockOnIdle-hint")?.textContent ?? "",
+      idleTimeDisabled: app.querySelector<HTMLSelectElement>("#idle-minutes")!.disabled,
+    };
+  };
+
+  it("says Chrome locks with the screen, and leaves idle locking to the user (#151)", async () => {
+    const shown = locking(await openOptions());
+    expect(shown.intro).toContain("The vault locks when your screen locks.");
+    expect(shown.intro).toContain("Turn on idle locking to also lock it after a set time.");
+    expect(shown.intro).not.toContain("Firefox");
+    expect(shown).toMatchObject({ checked: false, disabled: false, hint: "Off by default, so someone else mid-task isn't locked out", idleTimeDisabled: true });
+  });
+
+  it("says Firefox locks after the idle time, with idle locking shown on and fixed (#151)", async () => {
+    browser.url = "moz-extension://quark/";
+    const app = await openOptions();
+    const shown = locking(app);
+    expect(shown.intro).toContain("Firefox can't tell when your screen locks, so the vault locks after the idle time below.");
+    expect(shown.intro).not.toContain("otherwise");
+    expect(shown).toMatchObject({ checked: true, disabled: true, idleTimeDisabled: false });
+    expect(shown.hint).toContain("Always on in Firefox");
+    const select = app.querySelector<HTMLSelectElement>("#idle-minutes")!;
+    select.value = "5";
+    select.dispatchEvent(new Event("change"));
+    await settle();
+    expect(worker.settings).toMatchObject({ lockOnIdle: false, idleMinutes: 5 });
+  });
+
+  // What the page says happens on an idle computer must be what the worker does.
+  it.each([
+    ["chrome", false],
+    ["chrome", true],
+    ["firefox", false],
+    ["firefox", true],
+  ] as const)("matches idle.ts on %s with lock-on-idle %s (#151)", async (name: Browser, lockOnIdle) => {
+    browser.url = name === "firefox" ? "moz-extension://quark/" : "chrome-extension://quark/";
+    worker.settings = { ...worker.settings, lockOnIdle };
+    const shown = locking(await openOptions());
+    expect(idleAction("idle", worker.settings, name)).toBe(shown.checked ? "lock" : "none");
+    expect(idleAction("locked", worker.settings, name)).toBe("lock");
+    expect(shown.idleTimeDisabled, "the idle time is editable exactly when it applies").toBe(!shown.checked);
   });
 
   it("signs out of the Quark", async () => {

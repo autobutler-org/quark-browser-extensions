@@ -12,18 +12,21 @@ document.title = t("optionsTitle");
 const root = document.getElementById("app") as HTMLElement;
 const others = othersSection();
 
+// `fixed` shows a setting the browser decides, on and greyed out, instead of the user's choice.
 const toggle = (
   settings: Settings,
   key: BooleanSetting,
   title: string,
   hint: string,
+  fixed = false,
 ): HTMLElement => {
   // The setting key names the checkbox, so focus finds it again after the page re-renders; the hint is
   // read as its description rather than run into its name.
   const input = h("input", {
     id: key,
     type: "checkbox",
-    checked: settings[key],
+    checked: fixed || settings[key],
+    disabled: fixed,
     "aria-labelledby": `${key}-title`,
     "aria-describedby": hint === "" ? undefined : `${key}-hint`,
   });
@@ -42,10 +45,10 @@ const save = (settings: Settings): void => {
   void ask({ type: "saveSettings", settings }).then(render);
 };
 
-const idleMinutesSelect = (settings: Settings): HTMLElement => {
+const idleMinutesSelect = (settings: Settings, idleLocks: boolean): HTMLElement => {
   const select = h(
     "select",
-    { id: "idle-minutes", disabled: !settings.lockOnIdle },
+    { id: "idle-minutes", disabled: !idleLocks },
     ...idleMinuteChoices.map((minutes) =>
       h("option", { value: String(minutes), selected: minutes === settings.idleMinutes }, t("optionsIdleAfter", formatDuration(minutes, "minute", "long"))),
     ),
@@ -59,15 +62,21 @@ const idleMinutesSelect = (settings: Settings): HTMLElement => {
   );
 };
 
-const lockingSection = (settings: Settings): HTMLElement =>
-  h(
+// Chrome locks the vault when the screen locks, and after the idle time only with lock-on-idle. Firefox can't see
+// a screen lock, so the worker always locks it after the idle time (src/background/idle.ts), and the page says so.
+const lockingSection = (settings: Settings): HTMLElement => {
+  const firefox = currentBrowser() === "firefox";
+  return h(
     "section",
     { className: "card", id: "locking" },
     h("h2", {}, t("optionsLocking")),
-    h("p", { className: "muted small" }, t("optionsLockingIntroFirefox")),
-    toggle(settings, "lockOnIdle", t("optionsLockOnIdle"), t("optionsLockOnIdleHint")),
-    idleMinutesSelect(settings),
+    h("p", { className: "muted small" }, firefox ? t("optionsLockingIntroFirefox") : t("optionsLockingIntroChrome")),
+    firefox
+      ? toggle(settings, "lockOnIdle", t("optionsLockOnIdle"), t("optionsLockOnIdleHintFirefox"), true)
+      : toggle(settings, "lockOnIdle", t("optionsLockOnIdle"), t("optionsLockOnIdleHint")),
+    idleMinutesSelect(settings, firefox || settings.lockOnIdle),
   );
+};
 
 const openShortcuts = (url: string): void => {
   void chrome.tabs.create({ url });

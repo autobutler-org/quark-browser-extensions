@@ -48,6 +48,25 @@ describe("messages.json", () => {
     expect([...inMessage].toSorted()).toEqual(names.toSorted());
   });
 
+  // A key kept for one browser is only shown behind a check for that browser, at most 12 lines up (#151).
+  it("uses copy kept for one browser only behind a browser check", () => {
+    const tsFiles = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((found) =>
+        found.isDirectory() ? tsFiles(join(dir, found.name)) : found.name.endsWith(".ts") ? [join(dir, found.name)] : [],
+      );
+    const unchecked: string[] = [];
+    for (const file of tsFiles(join(import.meta.dirname, "../src"))) {
+      const lines = readFileSync(file, "utf8").split("\n");
+      lines.forEach((line, index) => {
+        for (const [, key = ""] of line.matchAll(/t\("(\w+(?:Firefox|Chrome))"/g)) {
+          const before = lines.slice(Math.max(0, index - 12), index + 1).join("\n");
+          if (!/=== "(firefox|chrome)"/.test(before)) unchecked.push(`${file}:${index + 1} ${key}`);
+        }
+      });
+    }
+    expect(unchecked).toEqual([]);
+  });
+
   it("names a browser only in copy kept for that browser", () => {
     for (const [key, { message }] of Object.entries(enMessages)) {
       if (/Chrome|Google/.test(message)) expect(key, message).toMatch(/Chrome$/);
