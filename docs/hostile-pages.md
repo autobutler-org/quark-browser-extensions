@@ -16,7 +16,7 @@ An attack **succeeds** if the password reaches page script without the user know
 | Hidden decoy fields, inline picker on the real field | Blocked | `decoy.spec.ts` › doesn't catch a fill from the inline picker |
 | Hidden decoy fields, popup Fill or shortcut | Blocked since [#129](https://github.com/autobutler-org/quark-browser-extensions/issues/129) | `decoy.spec.ts` › doesn't catch a fill from the popup or the shortcut |
 | The same, hidden by `visibility:collapse`, `filter`, a transparent mask or a `clip-path` | Blocked since [#142](https://github.com/autobutler-org/quark-browser-extensions/issues/142) | `decoy.spec.ts` › a decoy password field, visibility:collapse (and the six styles after it) |
-| Decoy fields slotted into a shadow tree whose wrapper clips them, popup Fill | Blocked since [#139](https://github.com/autobutler-org/quark-browser-extensions/issues/139) | `shadow.spec.ts` › a decoy pair slotted into a open/closed shadow tree … |
+| Decoy fields slotted into a shadow tree whose wrapper clips them, popup Fill | Blocked since [#139](https://github.com/autobutler-org/quark-browser-extensions/issues/139) | `shadow.spec.ts` › a decoy pair slotted into an open (or a closed) shadow tree … |
 | A same-site frame the user can't see, holding a password form, popup Fill | Blocked since [#141](https://github.com/autobutler-org/quark-browser-extensions/issues/141) | `frames.spec.ts` › a hidden same-site frame … |
 | Cross-origin parent framing the login form | Blocked | `cross-origin.spec.ts` › a cross-origin parent can't get a login filled |
 | Form whose action posts to another origin | Blocked by default | `cross-origin.spec.ts` › is filled but not submitted |

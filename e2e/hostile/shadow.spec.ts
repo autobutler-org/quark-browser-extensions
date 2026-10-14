@@ -9,7 +9,7 @@ test.beforeEach(async ({ popup, quark }) => {
 // (#139). The fields' own boxes stay full and checkVisibility() passes; only the slot's wrapper hides them.
 // Declarative shadow roots, so the page needs no script to build them.
 const wrappers = {
-  "0×0 overflow:hidden": "overflow:hidden;width:0;height:0",
+  "0×0 and overflow:hidden": "overflow:hidden;width:0;height:0",
   "clip-path:polygon(0 0,0 0,0 0)": "clip-path:polygon(0 0,0 0,0 0)",
   "opacity:0": "opacity:0",
 } as const;
@@ -32,7 +32,7 @@ const values = (page: import("@playwright/test").Page) =>
 
 for (const mode of ["open", "closed"] as const) {
   for (const [kind, style] of Object.entries(wrappers)) {
-    test(`a decoy pair slotted into a ${mode} shadow tree under a ${kind} wrapper doesn't catch the popup's Fill`, async ({ context, popup, quark, site, worker }) => {
+    test(`a decoy pair slotted into ${mode === "open" ? "an" : "a"} ${mode} shadow tree under a wrapper with ${kind} doesn't catch the popup's Fill`, async ({ context, popup, quark, site, worker }) => {
       const login = await seededLogin(quark);
       const url = `${site}/hostile/slotted`;
       await serve(context, url, slottedPage(mode, style));
@@ -48,7 +48,7 @@ for (const mode of ["open", "closed"] as const) {
   }
 
   // A real sign-in card component: the page's own fields slotted into its body.
-  test(`a login slotted into a ${mode} shadow tree still fills from the popup`, async ({ context, popup, quark, site, worker }) => {
+  test(`a login slotted into ${mode === "open" ? "an" : "a"} ${mode} shadow tree still fills from the popup`, async ({ context, popup, quark, site, worker }) => {
     const login = await seededLogin(quark);
     const url = `${site}/hostile/slotted-card`;
     await serve(
