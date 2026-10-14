@@ -33,12 +33,12 @@ afterEach(() => {
 const startWorker = async () => {
   const { saveConnection } = await import("../src/background/storage");
   await saveConnection(connection, false);
-  const fetchSpy = vi.fn(async (url: string) => {
+  const fetchSpy = vi.fn((url: string) => {
     if (url.endsWith("/vault/entries")) {
-      return json(200, { entries: summaries });
+      return Promise.resolve(json(200, { entries: summaries }));
     }
     const detail = details.find((entry) => url.endsWith(`/vault/entries/${entry.id}`));
-    return detail === undefined ? json(404) : json(200, detail);
+    return Promise.resolve(detail === undefined ? json(404) : json(200, detail));
   });
   vi.stubGlobal("fetch", fetchSpy);
   const { main } = await import("../src/background/index");

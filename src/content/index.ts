@@ -102,7 +102,7 @@ const scan = async (): Promise<void> => {
 const isTop = window === window.top;
 
 const topUrl = (verifiedTopUrl: string | undefined): string =>
-  frameTopUrl(isTop, location.href, location.ancestorOrigins as DOMStringList | undefined, verifiedTopUrl);
+  frameTopUrl(isTop, location.href, location.ancestorOrigins, verifiedTopUrl);
 
 const hasLoginFields = (): boolean => passwordFields(document).length > 0 || otpFields(document).length > 0;
 

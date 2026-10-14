@@ -22,7 +22,9 @@ const waitForUp = async (server: string, exited: () => string | null): Promise<v
     try {
       const response = await fetch(`${server}/api/v0/auth/status`);
       if (response.ok) return;
-    } catch {}
+    } catch {
+      // Not listening yet: try again.
+    }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error(`quark serve did not answer at ${server} within 60s`);

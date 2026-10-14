@@ -35,14 +35,14 @@ export const totpSecret = base32(new TextEncoder().encode("12345678901234567890"
 export const seed = async (server: string, site: string, addLegacy: () => Promise<void>): Promise<Seeded> => {
   const api = client(server);
   const { salt } = await api.salt(owner.username);
-  const setup = await api.expectOk(
+  const setup = await api.expectOk<{ token: string }>(
     api.call("POST", "/auth/setup", { username: owner.username, authKey: authKey(owner.password, salt) }),
     "POST /auth/setup",
   );
-  const token = setup.token as string;
+  const token = setup.token;
   await api.expectOk(api.call("POST", "/vault/setup", { masterPassword }, token), "POST /vault/setup");
-  const folder = await api.expectOk(api.call("POST", "/vault/folders", { name: "Work" }, token), "POST /vault/folders");
-  const local = await api.expectOk(
+  const folder = await api.expectOk<{ id: number }>(api.call("POST", "/vault/folders", { name: "Work" }, token), "POST /vault/folders");
+  const local = await api.expectOk<{ id: number }>(
     api.call(
       "POST",
       "/vault/entries",
@@ -60,7 +60,7 @@ export const seed = async (server: string, site: string, addLegacy: () => Promis
     ),
     "POST /vault/entries",
   );
-  const github = await api.expectOk(
+  const github = await api.expectOk<{ id: number }>(
     api.call("POST", "/vault/entries", { name: "GitHub", url: "https://github.com", username: "gh", password: "ghpw" }, token),
     "POST /vault/entries",
   );

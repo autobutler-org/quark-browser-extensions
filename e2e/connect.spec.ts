@@ -1,7 +1,10 @@
 import { connect, expect, signInAndUnlock, storedConnection, test } from "./fixtures.ts";
+import type { Logged } from "./support/proxy.ts";
 
-const logins = (wire: { method: string; path: string; body: any }[]) =>
-  wire.filter((request) => request.method === "POST" && request.path === "/api/v0/auth/login").map((request) => request.body);
+const logins = (wire: Logged[]) =>
+  wire
+    .filter((request) => request.method === "POST" && request.path === "/api/v0/auth/login")
+    .map((request) => request.body as Record<string, unknown>);
 
 test("the Quark refuses a password-only sign-in with 426", async ({ quark }) => {
   // The contract the mock has to keep with the real server (quark#2430).
@@ -48,7 +51,7 @@ test("a legacy account sends its password beside the key once, which moves it to
   });
 
   const [upgrade] = logins(await quark.wire());
-  expect(Object.keys(upgrade).sort()).toEqual(["authKey", "password", "username"]);
+  expect(Object.keys(upgrade ?? {}).sort()).toEqual(["authKey", "password", "username"]);
   expect((await quark.api.salt(legacy.username)).legacy).toBe(false);
   // The key alone signs it in from now on, and the password alone is refused.
   await quark.api.login(legacy.username, legacy.password);

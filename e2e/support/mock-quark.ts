@@ -19,13 +19,18 @@ const json = (res: http.ServerResponse, status: number, body: unknown) => {
   res.end(JSON.stringify(body));
 };
 
-const readBody = (req: http.IncomingMessage): Promise<any> =>
+// A request body as the mock reads it. The extension and the seed always send a
+// username; the rest is checked where it matters, as the real server does.
+type Body = Record<string, unknown> &
+  Readonly<{ username: string; authKey?: unknown; password?: unknown; masterPassword?: unknown; length?: number; name?: string }>;
+
+const readBody = (req: http.IncomingMessage): Promise<Body | null> =>
   new Promise((resolve) => {
     let data = "";
     req.on("data", (chunk) => (data += chunk));
     req.on("end", () => {
       try {
-        resolve(data ? JSON.parse(data) : {});
+        resolve(data ? (JSON.parse(data) as Body) : ({} as Body));
       } catch {
         resolve(null);
       }
@@ -60,7 +65,7 @@ export const startMockQuark = async (port?: number): Promise<Target> => {
     const url = new URL(req.url ?? "/", "http://mock");
     const path = url.pathname.replace(/^\/api\/v0/, "");
     const method = req.method ?? "GET";
-    const body = method === "GET" ? {} : await readBody(req);
+    const body = method === "GET" ? ({} as Body) : await readBody(req);
     if (body === null) return json(res, 400, { error: "invalid request body" });
 
     if (path === "/auth/status") return json(res, 200, { setup: accounts.size > 0 });
@@ -188,8 +193,9 @@ export const startMockQuark = async (port?: number): Promise<Target> => {
 
   return {
     server: `http://127.0.0.1:${bound}`,
-    addLegacy: async () => {
+    addLegacy: () => {
       accounts.set(legacy.username, { salt: randomBytes(16).toString("base64"), authKey: null, password: legacy.password });
+      return Promise.resolve();
     },
     stop: () => new Promise((resolve) => server.close(() => resolve())),
   };

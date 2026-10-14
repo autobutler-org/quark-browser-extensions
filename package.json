@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Chrome extension that fills logins from the password vault on your Quark",
+  "license": "MIT-0",
   "type": "module",
   "scripts": {
     "build": "wxt build -b chrome && wxt build -b firefox",
@@ -10,7 +11,7 @@
     "dev:firefox": "wxt -b firefox",
     "typecheck": "tsc --noEmit && tsc -p e2e",
     "test": "vitest run",
-    "check": "npm run typecheck && npm test",
+    "check": "npm run typecheck && npm run lint && npm test",
     "test:e2e": "npm run build:chrome && playwright test -c e2e",
     "package": "wxt zip -b chrome && wxt zip -b firefox",
     "build:chrome": "wxt build -b chrome",
@@ -18,16 +19,20 @@
     "lint:firefox": "npm run build:firefox && npx --yes web-ext@8 lint --source-dir .output/firefox-mv3 --self-hosted",
     "coverage": "vitest run --coverage",
     "test:e2e:quark": "scripts/build-quark.sh && npm run test:e2e",
-    "test:e2e:mock": "npm run build:chrome && E2E_TARGET=mock playwright test -c e2e"
+    "test:e2e:mock": "npm run build:chrome && E2E_TARGET=mock playwright test -c e2e",
+    "lint": "eslint ."
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.64.0",
     "@types/chrome": "^0.3.4",
     "@types/node": "^22.20.5",
     "@vitest/coverage-v8": "^5.0.4",
     "bcryptjs": "^3.0.3",
+    "eslint": "^10.12.0",
     "jsdom": "^30.1.1",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.2",
     "vitest": "^5.0.2",
     "wxt": "^0.21.4"
   },

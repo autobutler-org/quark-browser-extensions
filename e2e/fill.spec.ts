@@ -18,22 +18,22 @@ test("fills the matching login from the popup, and only that site's", async ({ c
     "no tabs permission: the worker can't read other tabs' URLs",
   ).toBe(true);
 
-  const fill = await popup.evaluate(([id, entryId]) => chrome.runtime.sendMessage({ type: "fillInTab", tabId: id, entryId }), [tabId, quark.seed.local]);
+  const fill: unknown = await popup.evaluate(([id, entryId]) => chrome.runtime.sendMessage({ type: "fillInTab", tabId: id, entryId }), [tabId, quark.seed.local]);
   expect(fill).toMatchObject({ ok: true });
   const filled = await page.evaluate(() => ({
     user: (document.getElementById("user") as HTMLInputElement).value,
     pw: (document.getElementById("pw") as HTMLInputElement).value,
-    events: (window as any).events as string[],
-    submitted: !!(window as any).submitted,
+    events: (window as unknown as { events: string[] }).events,
+    submitted: !!(window as unknown as { submitted?: boolean }).submitted,
   }));
   expect(filled).toMatchObject({ user: "alice", pw: "s3cret", submitted: false });
   expect(filled.events).toEqual(expect.arrayContaining(["user=alice", "pw=s3cret"]));
 
-  const wrongSite = await popup.evaluate(([id, entryId]) => chrome.runtime.sendMessage({ type: "fillInTab", tabId: id, entryId }), [tabId, quark.seed.github]);
+  const wrongSite: unknown = await popup.evaluate(([id, entryId]) => chrome.runtime.sendMessage({ type: "fillInTab", tabId: id, entryId }), [tabId, quark.seed.github]);
   expect(wrongSite).toMatchObject({ ok: false, error: { kind: "refused" } });
 
   expect(
-    await page.evaluate(() => typeof (window as any).chrome === "undefined" || typeof (window as any).chrome.runtime?.sendMessage !== "function"),
+    await page.evaluate(() => typeof (window as { chrome?: typeof chrome }).chrome?.runtime?.sendMessage !== "function"),
     "page scripts can't message the extension",
   ).toBe(true);
 });
@@ -45,7 +45,7 @@ test("fills from the inline picker and the fill shortcut", async ({ context, sit
   await expect(page.locator("#user")).toHaveValue("alice");
   await expect(page.locator("#pw")).toHaveValue("s3cret");
 
-  const opened = await worker.evaluate((id) => chrome.tabs.sendMessage(id, { type: "openPicker" }, { frameId: 0 }), tabId);
+  const opened: unknown = await worker.evaluate((id) => chrome.tabs.sendMessage(id, { type: "openPicker" }, { frameId: 0 }), tabId);
   expect(opened).toMatchObject({ ok: true });
   await page.keyboard.press("Escape");
   const command = await worker.evaluate(async () => (await chrome.commands.getAll()).find((c) => c.name === "fill-login"));
@@ -94,13 +94,16 @@ test("fills a one-time code, the same one the popup gets", async ({ context, pop
   await expect(page.locator("#otp")).toHaveValue(/^\d{6}$/);
   const filled = await page.locator("#otp").inputValue();
 
-  const code = await popup.evaluate((entryId) => chrome.runtime.sendMessage({ type: "otp", entryId }), quark.seed.local);
+  const code = await popup.evaluate(
+    (entryId) => chrome.runtime.sendMessage<unknown, { ok: boolean; value: { code: string; secondsLeft: number } }>({ type: "otp", entryId }),
+    quark.seed.local,
+  );
   expect(code.ok).toBe(true);
   expect(code.value.code).toMatch(/^\d{6}$/);
   // The same code, unless the 30-second window rolled over in between.
   expect(code.value.code === filled || code.value.secondsLeft >= 27).toBe(true);
 
-  const noSecret = await popup.evaluate((entryId) => chrome.runtime.sendMessage({ type: "otp", entryId }), quark.seed.github);
+  const noSecret: unknown = await popup.evaluate((entryId) => chrome.runtime.sendMessage({ type: "otp", entryId }), quark.seed.github);
   expect(noSecret).toMatchObject({ ok: false, error: { kind: "refused" } });
 });
 
@@ -113,8 +116,8 @@ test("a locked vault refuses to fill, and the options page loads", async ({ cont
     undefined,
     await quark.api.login(quark.seed.owner.username, quark.seed.owner.password),
   );
-  expect(status.body.locked, "the lock reached the Quark").toBe(true);
-  const fill = await popup.evaluate(([id, entryId]) => chrome.runtime.sendMessage({ type: "fillInTab", tabId: id, entryId }), [tabId, quark.seed.local]);
+  expect((status.body as { locked: boolean }).locked, "the lock reached the Quark").toBe(true);
+  const fill: unknown = await popup.evaluate(([id, entryId]) => chrome.runtime.sendMessage({ type: "fillInTab", tabId: id, entryId }), [tabId, quark.seed.local]);
   expect(fill).toMatchObject({ ok: false, error: { kind: "locked" } });
 
   const options = await context.newPage();

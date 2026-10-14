@@ -18,7 +18,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run check
+      - name: Typecheck, lint and unit tests
+        run: npm run check
       - run: npm run lint:firefox
       - name: Build the Chrome and Firefox zips
         run: npm run package

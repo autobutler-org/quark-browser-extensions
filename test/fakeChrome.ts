@@ -20,12 +20,14 @@ const area = () => {
   const items = new Map<string, unknown>();
   return {
     items,
-    get: async (key: string) => (items.has(key) ? { [key]: structuredClone(items.get(key)) } : {}),
-    set: async (values: Record<string, unknown>) => {
+    get: (key: string) => Promise.resolve(items.has(key) ? { [key]: structuredClone(items.get(key)) } : {}),
+    set: (values: Record<string, unknown>) => {
       Object.entries(values).forEach(([key, value]) => items.set(key, structuredClone(value)));
+      return Promise.resolve();
     },
-    remove: async (key: string) => {
+    remove: (key: string) => {
       items.delete(key);
+      return Promise.resolve();
     },
   };
 };
@@ -40,17 +42,17 @@ export const fakeChrome = () => {
   const chrome = {
     storage: {
       local: area(),
-      session: { ...area(), setAccessLevel: async (_options: { accessLevel: string }) => undefined as unknown },
+      session: { ...area(), setAccessLevel: (_options: { accessLevel: string }) => Promise.resolve(undefined as unknown) },
     },
     runtime: { id: extensionId, getURL: (path: string) => `${extensionUrl}${path}`, onMessage },
     commands: { onCommand: event() },
-    contextMenus: { onClicked: event(), removeAll: async () => undefined, create: () => undefined },
-    tabs: { onUpdated: event(), onRemoved: event(), sendMessage: async () => undefined },
+    contextMenus: { onClicked: event(), removeAll: () => Promise.resolve(undefined), create: () => undefined },
+    tabs: { onUpdated: event(), onRemoved: event(), sendMessage: () => Promise.resolve(undefined) },
     idle: { onStateChanged: event(), setDetectionInterval: () => undefined },
     action: {
-      setBadgeBackgroundColor: async () => undefined,
-      setBadgeText: async () => undefined,
-      openPopup: async () => undefined,
+      setBadgeBackgroundColor: () => Promise.resolve(undefined),
+      setBadgeText: () => Promise.resolve(undefined),
+      openPopup: () => Promise.resolve(undefined),
     },
   };
   // Sends a message the way chrome.runtime.sendMessage would reach the worker's listener.

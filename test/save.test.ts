@@ -21,9 +21,9 @@ const input = (overrides: Partial<OfferInput> & { details?: readonly EntryDetail
     credentials: { username: "alice", password: "new-pass" },
     matches: details.map((d) => summary(d.id)),
     locked: false,
-    loadDetail: async (id): Promise<Result<EntryDetail>> => {
+    loadDetail: (id): Promise<Result<EntryDetail>> => {
       const found = details.find((d) => d.id === id);
-      return found === undefined ? { ok: false, error: { kind: "notFound" } } : { ok: true, value: found };
+      return Promise.resolve(found === undefined ? { ok: false, error: { kind: "notFound" } } : { ok: true, value: found });
     },
     ...overrides,
   };

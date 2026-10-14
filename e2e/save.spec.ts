@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, openLoginPage, signInAndUnlock, test } from "./fixtures.ts";
 
-const submitLogin = async (page: Page, popup: Page, tabId: number, username: string, password: string) => {
+const submitLogin = async (page: Page, popup: Page, tabId: number, username: string, password: string): Promise<unknown> => {
   await page.evaluate(
     ([u, p]) => {
       (document.getElementById("user") as HTMLInputElement).value = u!;
@@ -18,7 +18,7 @@ const submitLogin = async (page: Page, popup: Page, tabId: number, username: str
 test("offers to save a new login and to update a changed password", async ({ context, popup, quark, site, worker }) => {
   await signInAndUnlock(popup, quark);
   const token = await quark.api.login(quark.seed.owner.username, quark.seed.owner.password);
-  const entry = (id: number) => quark.api.expectOk(quark.api.call("GET", `/vault/entries/${id}`, undefined, token), "GET entry");
+  const entry = (id: number) => quark.api.expectOk<Record<string, unknown>>(quark.api.call("GET", `/vault/entries/${id}`, undefined, token), "GET entry");
   const before = await entry(quark.seed.local);
   const { page, tabId } = await openLoginPage(context, worker, site);
   let savedId: number | undefined;
@@ -30,10 +30,13 @@ test("offers to save a new login and to update a changed password", async ({ con
     expect(await submitLogin(page, popup, tabId, "bob@example.com", "hunter2")).toMatchObject({ kind: "save", username: "bob@example.com" });
     expect(await page.locator("body > div").count(), "the save bar beside the inline button").toBeGreaterThanOrEqual(2);
     expect(await popup.evaluate((id) => chrome.runtime.sendMessage({ type: "resolveSave", action: "save", tabId: id }), tabId)).toMatchObject({ ok: true });
-    const list = await quark.api.expectOk(quark.api.call("GET", "/vault/entries", undefined, token), "GET entries");
-    const added = list.entries.filter((e: { id: number }) => e.id !== quark.seed.local && e.id !== quark.seed.github);
+    const list = await quark.api.expectOk<{ entries: { id: number }[] }>(
+      quark.api.call("GET", "/vault/entries", undefined, token),
+      "GET entries",
+    );
+    const added = list.entries.filter((e) => e.id !== quark.seed.local && e.id !== quark.seed.github);
     expect(added).toHaveLength(1);
-    savedId = added[0].id as number;
+    savedId = added[0]!.id;
     expect(await entry(savedId)).toMatchObject({ urlHost: "localhost", url: site, username: "bob@example.com", password: "hunter2" });
 
     expect(await submitLogin(page, popup, tabId, "alice", "n3w-pass")).toMatchObject({ kind: "update", entryId: quark.seed.local });
@@ -41,8 +44,8 @@ test("offers to save a new login and to update a changed password", async ({ con
     const after = await entry(quark.seed.local);
     // Only the password changed: notes, the TOTP secret, the folder and the
     // custom fields all survived the PUT.
-    const { password, updatedAt, ...rest } = after;
-    const { password: oldPassword, updatedAt: _, ...restBefore } = before;
+    const { password, updatedAt: _updatedAt, ...rest } = after;
+    const { password: oldPassword, updatedAt: _oldUpdatedAt, ...restBefore } = before;
     expect(password).toBe("n3w-pass");
     expect(oldPassword).toBe("s3cret");
     expect(rest).toEqual(restBefore);

@@ -76,11 +76,15 @@ npm ci
 npm run dev            # WXT dev mode: builds .output/chrome-mv3-dev, opens Chrome with it loaded, reloads on change
 npm run dev:firefox    # the same in Firefox
 npm run build          # production builds in .output/chrome-mv3 and .output/firefox-mv3
-npm run check          # typecheck + unit tests
+npm run check          # typecheck + lint + unit tests
+npm run lint           # ESLint alone (type-aware typescript-eslint, eslint.config.js)
 QUARK_SRC=~/src/quark npm run test:e2e:quark   # builds that Quark checkout, then runs the e2e tests against it
 ```
 
 The build is [WXT](https://wxt.dev) (`wxt.config.ts`); `wxt build -b edge` also works.
+
+To lint before each commit, install [pre-commit](https://pre-commit.com) and run `pre-commit install` once: it runs
+ESLint on the staged files with the repo's own `node_modules` (`npm ci` first). There is no husky.
 
 ### End-to-end tests
 
