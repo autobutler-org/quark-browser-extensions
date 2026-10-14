@@ -40,16 +40,17 @@ const isContentScript = (sender: Sender): boolean =>
 
 const isTopFrame = (sender: Sender): boolean => sender.frameId === 0;
 
+const tabTopUrl = async (tabId: number): Promise<string> => {
+  const reply: unknown = await chrome.tabs.sendMessage(tabId, { type: "whereAmI" }, { frameId: 0 }).catch(() => undefined);
+  return typeof reply === "string" ? reply : "";
+};
+
 const topFrameUrl = async (sender: Sender): Promise<string> => {
   if (isTopFrame(sender)) {
     return sender.url ?? "";
   }
   const tabId = sender.tab?.id;
-  if (tabId === undefined) {
-    return "";
-  }
-  const reply: unknown = await chrome.tabs.sendMessage(tabId, { type: "whereAmI" }, { frameId: 0 }).catch(() => undefined);
-  return typeof reply === "string" ? reply : "";
+  return tabId === undefined ? "" : tabTopUrl(tabId);
 };
 
 const embeddedRefusal = (topUrl: string): string =>
@@ -145,7 +146,11 @@ const otpFor = async (entryId: number, sender: Sender | null): Promise<Responses
 };
 
 const fillInTab = async (tabId: number, entryId: number): Promise<Responses["fillInTab"]> => {
-  const [settings, entry] = await Promise.all([loadSettings(), withConnection((conn) => api.getEntry(conn, entryId))]);
+  const [settings, entry, topUrl] = await Promise.all([
+    loadSettings(),
+    withConnection((conn) => api.getEntry(conn, entryId)),
+    tabTopUrl(tabId),
+  ]);
   if (!entry.ok) {
     return entry;
   }
@@ -155,6 +160,7 @@ const fillInTab = async (tabId: number, entryId: number): Promise<Responses["fil
     entryUrl: entry.value.url,
     entryHost: entry.value.urlHost,
     autoSubmit: settings.autoSubmit,
+    topUrl,
   };
   try {
     const reply = (await chrome.tabs.sendMessage(tabId, command)) as PageReply | undefined;
