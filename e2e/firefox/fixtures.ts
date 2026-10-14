@@ -75,7 +75,8 @@ export { expect };
 // goto times out even though the page loads. Poll outside Puppeteer's
 // WaitTask: Firefox can replace the extension realm while it is evaluating a
 // waitForFunction, and BiDi reports a transient protocol error instead of
-// letting WaitTask retry in the new realm.
+// letting WaitTask retry in the new realm. A realm torn down mid-evaluate can
+// also leave the call unanswered, so each attempt gets its own timeout.
 export const openExtensionPage = async (page: Page, path: string) => {
   const url = `${origin}/${path}`;
   const navigation = page.goto(url, { timeout: 5_000 }).catch(() => undefined);
@@ -83,15 +84,23 @@ export const openExtensionPage = async (page: Page, path: string) => {
   let lastError: unknown;
   let loaded = false;
   while (Date.now() < deadline) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       // page.url() stays at about:blank for extension-process navigation.
-      const state = await page.evaluate(() => `${location.href}\n${document.readyState}`);
+      const state = await Promise.race([
+        page.evaluate(() => `${location.href}\n${document.readyState}`),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("page.evaluate never settled")), Math.min(1_000, deadline - Date.now()));
+        }),
+      ]);
       if (state === `${url}\ncomplete`) {
         loaded = true;
         break;
       }
     } catch (error) {
       lastError = error;
+    } finally {
+      clearTimeout(timer);
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
