@@ -142,9 +142,17 @@ describe("the closed-shadow policy, where closed roots can't be read", () => {
   });
 
   it("fills a target the user picked without a hit test", () => {
+    // Below the fold, where a hit test finds nothing: no proof for the closed-shadow policy, and no cover (#147).
+    Object.defineProperty(Document.prototype, "elementFromPoint", { value: () => null, configurable: true });
+    const doc = mount("<slot></slot>", "closed");
+    expect(fillLogin(doc, credentials).filled).toBe(false);
+    expect(fillLogin(doc, credentials, pw()).filled).toBe(true);
+  });
+
+  it("refuses a target the user picked once the hit test finds something else over it (#147)", () => {
     hitOnly([]);
     const doc = mount("<slot></slot>", "closed");
-    expect(fillLogin(doc, credentials, pw()).filled).toBe(true);
+    expect(fillLogin(doc, credentials, pw()).filled).toBe(false);
   });
 
   it("checks the username field the same way", () => {

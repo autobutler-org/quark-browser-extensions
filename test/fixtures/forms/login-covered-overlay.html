@@ -1,0 +1,15 @@
+<!-- Hostile page (#147): a sign-in form buried under an empty, opaque, absolutely positioned box, ahead of the
+     real form. The buried fields pass every style and size check; only a hit test shows the user can't reach
+     them. -->
+<div style="position: absolute; left: 0px; top: 300px; width: 400px; height: 120px">
+  <form action="/bait">
+    <input type="text" autocomplete="username" data-fx="bait-user">
+    <input type="password" data-fx="bait-pw">
+  </form>
+  <div style="position: absolute; left: 0px; top: 0px; width: 400px; height: 120px; background: #fff"></div>
+</div>
+<form method="post" action="/session">
+  <label>Email <input type="email" name="email" autocomplete="username" data-fx="user"></label>
+  <label>Password <input type="password" name="password" autocomplete="current-password" data-fx="pw"></label>
+  <button type="submit">Sign in</button>
+</form>

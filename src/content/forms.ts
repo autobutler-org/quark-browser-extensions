@@ -500,6 +500,37 @@ const outOfSight = (element: Element): boolean => {
 const inSight = (element: Element): boolean =>
   opacityOf(element) >= minOpacity && everyAncestor(element, isUnclipped, pass?.unclipped) && !outOfSight(element);
 
+// Where a hit test looks inside an element's box, as fractions of its width and height: the centre and a point
+// toward each corner, all clear of the inline button at the right edge.
+const probes: readonly Point[] = [
+  [0.5, 0.5],
+  [0.25, 0.25],
+  [0.6, 0.25],
+  [0.25, 0.75],
+  [0.6, 0.75],
+];
+
+// Whether another element is drawn over the whole of this one (#147): an empty opaque box laid over a login's
+// fields passes every style and size check, but the user can't see or click them. A hit test at any probe that
+// reaches the element, or one of its own labels floating over it (that label, not something inside it), shows the user can; a sticky header or a cookie
+// banner that covers part of it leaves some probe free. Probes outside the viewport can't be tested, and without
+// any (below the fold, or no hit testing in jsdom) nothing counts as covered.
+const covered = (element: Element): boolean => {
+  const root = element.getRootNode() as Partial<DocumentOrShadowRoot>;
+  const view = element.ownerDocument.defaultView;
+  if (typeof root.elementFromPoint !== "function" || view === null) {
+    return false;
+  }
+  const own = [element, ...((element as HTMLInputElement).labels ?? [])];
+  const { left, top, width, height } = element.getBoundingClientRect();
+  const results = probes
+    .map(([x, y]): Point => [left + x * width, top + y * height])
+    .filter(([x, y]) => x >= 0 && y >= 0 && x < view.innerWidth && y < view.innerHeight)
+    .map(([x, y]) => root.elementFromPoint?.call(root, x, y) ?? null)
+    .filter((hit) => hit !== null);
+  return results.length > 0 && !results.some((hit) => own.includes(hit));
+};
+
 const walk = (scope: ParentNode): readonly HTMLInputElement[] =>
   [...scope.querySelectorAll("*")].flatMap((element) => [
     ...(element.localName === "input" ? [element as HTMLInputElement] : []),
@@ -568,7 +599,7 @@ const isNewsletter = (input: HTMLInputElement): boolean =>
 
 // Whether a frame element is shown in its page: the field rules, less the honeypot marks (#141).
 export const frameShown = (frame: Element): boolean =>
-  isVisible(frame as HTMLElement) && inSight(frame) && documentShown(frame.ownerDocument);
+  isVisible(frame as HTMLElement) && inSight(frame) && !covered(frame) && documentShown(frame.ownerDocument);
 
 // Whether a document is drawn where the user can see it: the top page, or a frame whose <iframe> is shown, up
 // through every same-origin parent. A cross-origin parent hides frameElement; the worker asks that parent
@@ -589,10 +620,18 @@ const documentShown = (doc: Document): boolean => {
   return shown;
 };
 
-// A field login fill may put a username or password in: shown, reachable, in sight, still on the page, and in a
-// frame that is itself shown.
+// Whether a login field is under another element, answered once per pass: a hit test costs a layout.
+const isCovered = perPass(covered);
+
+// A field login fill may put a username or password in: shown, reachable, in sight, not buried under another
+// element, still on the page, and in a frame that is itself shown.
 export const isLoginField = (input: HTMLInputElement): boolean =>
-  input.isConnected && isVisible(input) && !isDecoy(input) && inSight(input) && documentShown(input.ownerDocument);
+  input.isConnected &&
+  isVisible(input) &&
+  !isDecoy(input) &&
+  inSight(input) &&
+  !isCovered(input) &&
+  documentShown(input.ownerDocument);
 
 const isPassword = (input: HTMLInputElement): boolean => input.type === "password" && isLoginField(input);
 
