@@ -10,22 +10,27 @@ type Attached = Readonly<{
   field: HTMLInputElement;
   matches: readonly EntrySummary[];
   onPick: (entry: EntrySummary) => Promise<string | null>;
+  onSuggest?: (() => Promise<string | null>) | undefined;
 }>;
 
 const attached: Attached[] = [];
 const opened: HTMLInputElement[] = [];
-
+const destroyed: HTMLInputElement[] = [];
 vi.mock("../src/content/picker", () => ({
   attachPicker: (field: HTMLInputElement, matches: readonly EntrySummary[], _host: string, handlers: Attached) => {
-    attached.push({ field, matches, onPick: handlers.onPick });
-    return { open: () => void opened.push(field), destroy: () => undefined };
+    attached.push({ field, matches, onPick: handlers.onPick, onSuggest: handlers.onSuggest });
+    return { open: () => void opened.push(field), destroy: () => void destroyed.push(field) };
   },
 }));
 
 const entry: EntrySummary = { id: 7, name: "Example", urlHost: "localhost", folderId: null, createdAt: "", updatedAt: "" };
 
-// Each test loads the content script afresh; disconnect the earlier copies' observers so they don't rescan.
+// Each test loads the content script afresh; disconnect the earlier copies' observers and cancel the scans they
+// have queued, so they don't rescan the next test's page.
 const observers: MutationObserver[] = [];
+const timers: ReturnType<typeof setTimeout>[] = [];
+const realSetTimeout = setTimeout;
+const listeners: (() => void)[] = [];
 class TrackedObserver extends MutationObserver {
   constructor(callback: MutationCallback) {
     super(callback);
@@ -58,6 +63,16 @@ const setup = async (fixture: string, worker: Worker): Promise<void> => {
       onMessage: { addListener: (added: typeof listener) => (listener = added) },
     },
   });
+  vi.stubGlobal("setTimeout", (...args: Parameters<typeof setTimeout>) => {
+    const timer = realSetTimeout(...args);
+    timers.push(timer);
+    return timer;
+  });
+  const add = document.addEventListener.bind(document);
+  vi.spyOn(document, "addEventListener").mockImplementation((...args: Parameters<typeof document.addEventListener>) => {
+    listeners.push(() => document.removeEventListener(...args));
+    add(...args);
+  });
   vi.resetModules();
   const { main } = await import("../src/content/index");
   main();
@@ -85,12 +100,16 @@ const command = (message: PageCommand): Promise<unknown> =>
 beforeEach(() => {
   attached.length = 0;
   opened.length = 0;
+  destroyed.length = 0;
   sent.length = 0;
   listener = undefined;
 });
 
 afterEach(() => {
   observers.splice(0).forEach((observer) => observer.disconnect());
+  timers.splice(0).forEach((timer) => clearTimeout(timer));
+  listeners.splice(0).forEach((remove) => remove());
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -211,5 +230,114 @@ describe("single-step forms keep their buttons", () => {
   it("decorates nothing on a page without login fields", async () => {
     await setup("checkout-card.html", (request) => (request.type === "hello" ? hello([entry]) : null));
     expect(attached).toEqual([]);
+  });
+});
+
+// Past the 400 ms a scan waits after the page changes, then long enough for the scan to finish.
+const rescan = async (): Promise<void> => {
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  await settle();
+};
+
+describe("a sign-up form revealed after load (#152)", () => {
+  const worker: Worker = (request) => (request.type === "hello" ? hello([entry]) : null);
+
+  it("gives the revealed sign-up tab the Suggest strong password picker, not the logins", async () => {
+    await setup("login-signup-tabs.html", worker);
+    expect(attached.map((found) => found.field)).toEqual([byTag("login-pw")]);
+    byTag("signin-panel").hidden = true;
+    byTag("signup-panel").hidden = false;
+    await rescan();
+    const signup = attached.filter((found) => found.field === byTag("signup-pw") || found.field === byTag("signup-confirm"));
+    expect(signup.map((found) => found.field)).toEqual([byTag("signup-pw"), byTag("signup-confirm")]);
+    expect(signup.map((found) => [found.matches, typeof found.onSuggest])).toEqual([
+      [[], "function"],
+      [[], "function"],
+    ]);
+  });
+
+  it("reclassifies a field already given the login picker once an attribute change makes it a new password", async () => {
+    await setup("login-signup-toggle.html", worker);
+    expect(attached.map((found) => [found.field, typeof found.onSuggest])).toEqual([[byTag("pw"), "undefined"]]);
+    byTag("confirm").hidden = false;
+    await rescan();
+    expect(destroyed).toEqual([byTag("pw")]);
+    expect(attached.slice(1).map((found) => [found.field, found.matches, typeof found.onSuggest])).toEqual([
+      [byTag("pw"), [], "function"],
+      [byTag("confirm"), [], "function"],
+    ]);
+  });
+
+  it("leaves a picker alone when a rescan finds its field unchanged", async () => {
+    await setup("login-basic.html", worker);
+    byTag("user").setAttribute("class", "touched");
+    await rescan();
+    expect(attached.map((found) => found.field)).toEqual([byTag("pw")]);
+    expect(destroyed).toEqual([]);
+  });
+});
+
+describe("a login modal that fades in (#150)", () => {
+  const worker: Worker = (request) => (request.type === "hello" ? hello([entry]) : null);
+  // The fade runs in the stylesheet: the page's DOM doesn't change when it ends. jsdom only restyles on a DOM
+  // change, so make one and drop the observer's record of it.
+  const fadeIn = (): void => {
+    byTag("modal").classList.add("shown");
+    observers.forEach((observer) => observer.takeRecords());
+  };
+
+  it("gives no icon while the modal is transparent, then the icon once its transition ends", async () => {
+    await setup("login-modal-fade.html", worker);
+    byTag("modal").classList.add("open");
+    await rescan();
+    expect(attached).toEqual([]);
+    fadeIn();
+    byTag("modal").dispatchEvent(new Event("transitionend", { bubbles: true }));
+    await rescan();
+    expect(attached.map((found) => found.field)).toEqual([byTag("pw")]);
+  });
+
+  it("rescans when a CSS animation ends", async () => {
+    await setup("login-modal-fade.html", worker);
+    byTag("modal").classList.add("open");
+    await rescan();
+    fadeIn();
+    byTag("modal").dispatchEvent(new Event("animationend", { bubbles: true }));
+    await rescan();
+    expect(attached.map((found) => found.field)).toEqual([byTag("pw")]);
+  });
+
+  it("rescans when the page's script sets the opacity", async () => {
+    await setup("login-modal-fade.html", worker);
+    byTag("modal").classList.add("open");
+    await rescan();
+    byTag("modal").style.opacity = "1";
+    await rescan();
+    expect(attached.map((found) => found.field)).toEqual([byTag("pw")]);
+  });
+
+  it("rescans when a Web Animations fade finishes, which fires no event", async () => {
+    let finish = (): void => undefined;
+    const finished = new Promise<void>((resolve) => (finish = resolve));
+    Object.defineProperty(document, "getAnimations", { value: () => [{ finished }], configurable: true });
+    try {
+      await setup("login-modal-fade.html", worker);
+      byTag("modal").classList.add("open");
+      await rescan();
+      expect(attached).toEqual([]);
+      fadeIn();
+      finish();
+      await rescan();
+      expect(attached.map((found) => found.field)).toEqual([byTag("pw")]);
+    } finally {
+      delete (document as Partial<Document>).getAnimations;
+    }
+  });
+
+  it("still gives no icon to the opacity: 0 decoys after a transition ends", async () => {
+    await setup("login-decoy-opacity.html", worker);
+    document.body.dispatchEvent(new Event("transitionend", { bubbles: true }));
+    await rescan();
+    expect(attached.map((found) => found.field)).toEqual([byTag("pw")]);
   });
 });

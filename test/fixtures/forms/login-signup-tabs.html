@@ -1,0 +1,18 @@
+<!-- Sign in and Sign up tabs on one page (#152): the sign-up panel carries the hidden attribute at load and a
+     tab button swaps it with the sign-in panel. Its password has no autocomplete, only a confirmation beside
+     it, so it reads as a new password only once both are shown. -->
+<div role="tablist">
+  <button type="button" role="tab" aria-selected="true">Sign in</button>
+  <button type="button" role="tab" aria-selected="false">Sign up</button>
+</div>
+<form action="/session" method="post" data-fx="signin-panel">
+  <input type="email" name="email" autocomplete="username" data-fx="login-email">
+  <input type="password" name="password" autocomplete="current-password" data-fx="login-pw">
+  <button type="submit">Sign in</button>
+</form>
+<form action="/register" method="post" hidden data-fx="signup-panel">
+  <input type="email" name="email" data-fx="signup-email">
+  <input type="password" name="password" data-fx="signup-pw">
+  <input type="password" name="password_confirm" data-fx="signup-confirm">
+  <button type="submit">Create account</button>
+</form>

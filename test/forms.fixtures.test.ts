@@ -57,7 +57,17 @@ const roughBox = (element: Element): DOMRect => {
   return DOMRect.fromRect({ x: left, y: top, width, height });
 };
 
+// And a rough hit test from the same boxes: the last box drawn opaque on top (positioned, with an inline
+// background) that holds the point, else null, which tells the hit test nothing.
+const roughHit = (x: number, y: number): Element | null =>
+  allElements(document).findLast((element) => {
+    const { position, background } = (element as HTMLElement).style ?? {};
+    const box = roughBox(element);
+    return (position === "absolute" || position === "fixed") && background !== "" && x >= box.left && x < box.right && y >= box.top && y < box.bottom;
+  }) ?? null;
+
 beforeEach(() => {
+  Object.defineProperty(document, "elementFromPoint", { value: roughHit, configurable: true });
   vi.stubGlobal("chrome", { ...chrome, dom: { openOrClosedShadowRoot: (host: HTMLElement) => host.shadowRoot ?? closedRoots.get(host) ?? null } });
   Object.defineProperty(Element.prototype, "checkVisibility", { value: () => true, configurable: true });
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
@@ -66,6 +76,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete (document as Partial<Document>).elementFromPoint;
   delete (Element.prototype as Partial<Element>).checkVisibility;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -124,6 +135,10 @@ const corpus: Readonly<Record<string, Expected>> = {
     otp: [],
     newPasswords: ["signup-pw", "signup-confirm"],
   },
+  "login-signup-tabs.html": { passwords: ["login-pw"], usernames: { "login-pw": "login-email" }, standalone: "login-email", otp: [], newPasswords: [] },
+  "login-signup-toggle.html": { passwords: ["pw"], usernames: { pw: "email" }, standalone: "email", otp: [], newPasswords: [] },
+  "login-modal-fade.html": { passwords: [], usernames: {}, standalone: null, otp: [], newPasswords: [] },
+  "login-covered-overlay.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "spa-formless-login.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "spa-formless-panels.html": {
     passwords: ["signup-pw", "signup-confirm", "login-pw"],
@@ -317,6 +332,41 @@ describe("filling and capturing fixtures", () => {
     const doc = load("login-decoy-opacity.html");
     expect(fillLogin(doc, credentials, field("bait-pw")).filled).toBe(false);
     expect(field("bait-pw").value).toBe("");
+  });
+
+  it("fills the real form, not the fields buried under an opaque box ahead of it (#147)", () => {
+    const doc = load("login-covered-overlay.html");
+    expect(fillLogin(doc, credentials).filled).toBe(true);
+    expect([field("bait-user").value, field("bait-pw").value, field("user").value, field("pw").value]).toEqual(["", "", "alice@example.com", "hunter2!"]);
+    expect(fillLogin(doc, credentials, field("bait-pw")).filled).toBe(false);
+  });
+
+  it("reads the revealed sign-up tab as new passwords (#152)", () => {
+    load("login-signup-tabs.html");
+    (field("signin-panel") as HTMLElement).hidden = true;
+    (field("signup-panel") as HTMLElement).hidden = false;
+    expect(tags(passwordFields(document))).toEqual(["signup-pw", "signup-confirm"]);
+    expect(tags(passwordFields(document).filter(isNewPasswordField))).toEqual(["signup-pw", "signup-confirm"]);
+    expect(tag(usernameFieldFor(field("signup-pw")))).toBe("signup-email");
+  });
+
+  it("reads the same password field as new once the form shows its confirmation (#152)", () => {
+    load("login-signup-toggle.html");
+    field("confirm").hidden = false;
+    expect(tags(passwordFields(document).filter(isNewPasswordField))).toEqual(["pw", "confirm"]);
+  });
+
+  it("finds and fills the fade-in modal's fields once the transition ends, and still not the transparent decoys (#150)", () => {
+    const doc = load("login-modal-fade.html");
+    field("modal").classList.add("open");
+    expect(tags(passwordFields(doc))).toEqual([]);
+    field("modal").classList.add("shown");
+    expect(tags(passwordFields(doc))).toEqual(["pw"]);
+    expect(fillLogin(doc, credentials).filled).toBe(true);
+    expect([field("user").value, field("pw").value]).toEqual(["alice@example.com", "hunter2!"]);
+
+    load("login-decoy-opacity.html");
+    expect(tags(passwordFields(document))).toEqual(["pw"]);
   });
 
   it.each(["login-floating-labels.html", "login-visually-hidden-labels.html"])("fills a real form with styled labels (%s)", (name) => {

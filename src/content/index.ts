@@ -16,6 +16,7 @@ import {
   isLoginField,
   isNewPasswordField,
   looksLikeSubmit,
+  markOwn,
   onePass,
   otpFields,
   passwordFields,
@@ -24,8 +25,23 @@ import {
 import { fillDecision, frameTopUrl } from "./frame";
 import { attachPicker, type PickerHandle } from "./picker";
 
+// Draws some of the extension's own UI, which appends its host to <body>, and tells the hit test to look past it.
+const drawOwn = <T>(draw: () => T): T => {
+  const before = document.body.lastElementChild;
+  const drawn = draw();
+  const host = document.body.lastElementChild;
+  if (host !== null && host !== before) {
+    markOwn(host);
+  }
+  return drawn;
+};
+
+// Which picker a field has: Suggest strong password on a new password, the site's logins on a login field, codes
+// on a one-time code field.
+type Kind = "signup" | "login" | "otp";
+
 // A Map, not a WeakMap: each scan destroys the pickers whose field the page has removed.
-const decorated = new Map<HTMLInputElement, PickerHandle>();
+const decorated = new Map<HTMLInputElement, Readonly<{ kind: Kind; handle: PickerHandle }>>();
 let hello: Promise<Hello | null> | null = null;
 
 // Kept only while the worker is connected: a failed or locked reply is asked again on the next scan with fields,
@@ -44,7 +60,7 @@ const greet = (): Promise<Hello | null> => {
 };
 
 const forgetDetached = (): void => {
-  decorated.forEach((handle, field) => {
+  decorated.forEach(({ handle }, field) => {
     if (!field.isConnected) {
       handle.destroy();
       decorated.delete(field);
@@ -103,46 +119,50 @@ const suggest = (field: HTMLInputElement) => async (): Promise<string | null> =>
   return isShort(result.value) ? t("pickerFilledShort", String(result.value.length)) : null;
 };
 
+// Every scan classifies the fields afresh, so a field the page changes after load gets the picker it now needs
+// (#152): a sign-up tab revealed beside the login, or a confirmation shown that makes a password a new one.
 const scan = async (): Promise<void> => {
   forgetDetached();
-  const [passwords, codes, identifier] = onePass(
-    () =>
-      [
-        passwordFields(document).filter((field) => !decorated.has(field)),
-        otpFields(document).filter((field) => !decorated.has(field)),
-        identifierField(document),
-      ] as const,
-  );
-  const identifiers = identifier === null || decorated.has(identifier) ? [] : [identifier];
-  const fields = [...passwords, ...codes, ...identifiers];
-  if (fields.length === 0) {
+  awaitAnimations();
+  const wanted = onePass((): readonly (readonly [HTMLInputElement, Kind])[] => {
+    const passwords = passwordFields(document);
+    const signups = passwords.filter(isNewPasswordField);
+    const identifier = identifierField(document);
+    return [
+      ...signups.map((field) => [field, "signup"] as const),
+      ...passwords.filter((field) => !signups.includes(field)).map((field) => [field, "login"] as const),
+      ...otpFields(document).map((field) => [field, "otp"] as const),
+      ...(identifier === null ? [] : [[identifier, "login"] as const]),
+    ];
+  });
+  const changed = wanted.filter(([field, kind]) => decorated.get(field)?.kind !== kind);
+  if (changed.length === 0) {
     return;
   }
   const greeting = await greet();
   if (greeting === null || !greeting.settings.inlineButton) {
     return;
   }
-  const signups = onePass(() => passwords.filter(isNewPasswordField));
-  if (greeting.connected) {
-    signups.forEach((field) => {
-      if (!decorated.has(field)) {
-        decorated.set(field, attachPicker(field, [], location.host, { onPick: pick(field), onSuggest: suggest(field) }));
-      }
-    });
-  }
-  if (greeting.matches.length === 0) {
-    return;
-  }
-  const attach = (onPick: (field: HTMLInputElement) => (entry: EntrySummary) => Promise<string | null>) =>
-    (field: HTMLInputElement): void => {
-      if (!decorated.has(field)) {
-        decorated.set(field, attachPicker(field, greeting.matches, location.host, { onPick: onPick(field) }));
-      }
-    };
-  passwords.filter((field) => !signups.includes(field)).forEach(attach(pick));
-  codes.forEach(attach(pickOtp));
-  // Only with matches: the button on an email field tells the user Quark can sign in here.
-  identifiers.forEach(attach(pick));
+  changed.forEach(([field, kind]) => {
+    const known = decorated.get(field);
+    // Another scan may have got here first while this one waited for the worker.
+    if (known?.kind === kind) {
+      return;
+    }
+    known?.handle.destroy();
+    decorated.delete(field);
+    // Suggest needs only the worker; logins and codes only where the site has some. The button on an email
+    // field tells the user Quark can sign in here.
+    if (kind === "signup" ? !greeting.connected : greeting.matches.length === 0) {
+      return;
+    }
+    const handle = drawOwn(() =>
+      kind === "signup"
+        ? attachPicker(field, [], location.host, { onPick: pick(field), onSuggest: suggest(field) })
+        : attachPicker(field, greeting.matches, location.host, { onPick: (kind === "otp" ? pickOtp : pick)(field) }),
+    );
+    decorated.set(field, { kind, handle });
+  });
 };
 
 const isTop = window === window.top;
@@ -155,11 +175,11 @@ const hasLoginFields = (): boolean =>
 
 const openPicker = (): PageReply | null => {
   const active = document.activeElement;
-  const focused = active instanceof HTMLInputElement ? decorated.get(active) : undefined;
+  const focused = active instanceof HTMLInputElement ? decorated.get(active)?.handle : undefined;
   const handle =
     focused ??
     [...passwordFields(document), identifierField(document)]
-      .map((field) => (field === null ? undefined : decorated.get(field)))
+      .map((field) => (field === null ? undefined : decorated.get(field)?.handle))
       .find((found) => found !== undefined);
   if (handle === undefined) {
     return null;
@@ -284,7 +304,7 @@ const resolveSave = async (action: SaveAction): Promise<string | null> => {
 const offerSave = async (known: SaveOffer | null | undefined): Promise<void> => {
   const offer = known === undefined ? await ask({ type: "myOffer" }).catch(() => null) : known;
   if (offer !== null) {
-    showSaveBar(document, offer, resolveSave);
+    drawOwn(() => showSaveBar(document, offer, resolveSave));
   }
 };
 
@@ -334,6 +354,22 @@ const scheduleScan = (): void => {
     timer = undefined;
     void scan();
   }, 400);
+};
+
+// The attributes that show, hide or reclassify a field without adding or removing a node: a tab's hidden, a
+// modal's class, a script's opacity (#150, #152).
+const shownBy = ["hidden", "class", "style", "open", "inert", "aria-hidden", "disabled", "type", "autocomplete"];
+
+// Web Animations fade elements in from script and fire no event when they finish; each is awaited once (#150).
+const awaited = new WeakSet<Animation>();
+const awaitAnimations = (): void => {
+  const running = (document as Partial<Pick<Document, "getAnimations">>).getAnimations?.() ?? [];
+  running
+    .filter((animation) => !awaited.has(animation))
+    .forEach((animation) => {
+      awaited.add(animation);
+      animation.finished.then(scheduleScan, () => undefined);
+    });
 };
 
 export const main = (): void => {
@@ -394,6 +430,13 @@ export const main = (): void => {
 
   window.addEventListener("message", onProbe, true);
 
-  new MutationObserver(scheduleScan).observe(document.documentElement, { childList: true, subtree: true });
+  new MutationObserver(scheduleScan).observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: shownBy,
+  });
+  // A fade or slide runs in the stylesheet and ends without a DOM change, so its end is a change too (#150).
+  ["transitionend", "animationend"].forEach((type) => document.addEventListener(type, scheduleScan, true));
   void scan();
 };

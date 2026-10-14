@@ -1,0 +1,15 @@
+<!-- Sign-in modal that fades in (#150): display: none until a button adds .open, then an opacity transition
+     from 0 to 1 over 0.4s. At the moment it is shown the fields are fully transparent; they are real. -->
+<style>
+  .modal { display: none; opacity: 0; transition: opacity 0.4s; }
+  .modal.open { display: block; }
+  .modal.open.shown { opacity: 1; }
+</style>
+<button type="button">Sign in</button>
+<div class="modal" role="dialog" aria-label="Sign in" data-fx="modal">
+  <form action="/session" method="post">
+    <input type="email" name="email" autocomplete="username" data-fx="user">
+    <input type="password" name="password" autocomplete="current-password" data-fx="pw">
+    <button type="submit">Sign in</button>
+  </form>
+</div>
