@@ -216,7 +216,7 @@ const fillInTab = async (tabId: number, entryId: number): Promise<Responses["fil
 };
 
 const setBadge = async (tabId: number, count: number, enabled: boolean): Promise<void> => {
-  await chrome.action.setBadgeBackgroundColor({ tabId, color: "#0284C7" });
+  await chrome.action.setBadgeBackgroundColor({ tabId, color: "#0369A1" });
   await chrome.action.setBadgeText({ tabId, text: enabled && count > 0 ? String(count) : "" });
 };
 
