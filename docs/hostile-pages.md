@@ -8,20 +8,20 @@ To run them: `npm run test:e2e:mock -- hostile/`.
 
 ## Results
 
-An attack **succeeds** if the password reaches page script without the user knowingly filling a visible field on the login's own site, or reaches another origin. Three of the attacks below succeed. Their tests are marked `test.fail` and point to the issue that tracks the fix. When a fix lands, the test starts to pass, Playwright reports it as unexpected, and the mark comes off.
+An attack **succeeds** if the password reaches page script without the user knowingly filling a visible field on the login's own site, or reaches another origin. None of the attacks below succeeds. Three did when these tests were written; #129 and #130 fixed them. If an attack is found to succeed, its test is marked `test.fail` and points to the issue that tracks the fix. When the fix lands, the test starts to pass, Playwright reports it as unexpected, and the mark comes off.
 
 | Attack | Result | Test |
 | --- | --- | --- |
 | Hidden decoy password fields, filled on load | Blocked | `decoy.spec.ts` › isn't filled on load |
 | Hidden decoy fields, inline picker on the real field | Blocked | `decoy.spec.ts` › doesn't catch a fill from the inline picker |
-| Hidden decoy fields, popup Fill or shortcut | **Succeeds**, [#129](https://github.com/autobutler-org/quark-browser-extensions/issues/129) | `decoy.spec.ts` › doesn't catch a fill from the popup or the shortcut |
+| Hidden decoy fields, popup Fill or shortcut | Blocked since [#129](https://github.com/autobutler-org/quark-browser-extensions/issues/129) | `decoy.spec.ts` › doesn't catch a fill from the popup or the shortcut |
 | Cross-origin parent framing the login form | Blocked | `cross-origin.spec.ts` › a cross-origin parent can't get a login filled |
 | Form whose action posts to another origin | Blocked by default | `cross-origin.spec.ts` › is filled but not submitted |
-| The same, with **Submit after filling** on | **Succeeds**, [#130](https://github.com/autobutler-org/quark-browser-extensions/issues/130) | `cross-origin.spec.ts` › a form posting to another origin isn't submitted |
+| The same, with **Submit after filling** on | Blocked since [#130](https://github.com/autobutler-org/quark-browser-extensions/issues/130) | `cross-origin.spec.ts` › a form posting to another origin isn't submitted |
 | Synthetic clicks and keys on the button and picker | Blocked | `picker.spec.ts` › synthetic clicks and keys |
 | Reading the picker through its shadow root host | Blocked | `picker.spec.ts` › can't read the open picker |
 | Listening for input and change events during a fill | Blocked | `events.spec.ts` |
-| Moving the field after the picker opens | **Succeeds**, [#129](https://github.com/autobutler-org/quark-browser-extensions/issues/129) | `picker.spec.ts` › a password field moved … isn't filled |
+| Moving the field after the picker opens | Blocked since [#129](https://github.com/autobutler-org/quark-browser-extensions/issues/129) | `picker.spec.ts` › a password field moved … isn't filled |
 
 Legitimate fills still work beside each attack: the picker on the real field of the decoy page, the same login frame under a same-site parent, a form posting to its own origin with **Submit after filling** on, a trusted Enter in a picker the page has been bombarding with synthetic events, and the listener page's own two fields.
 
@@ -35,9 +35,9 @@ Legitimate fills still work beside each attack: the picker on the real field of 
 
 - Nothing is filled on load. The extension fills only when the user acts: the inline picker, the popup, the keyboard shortcut or the context menu.
 - The inline picker, opened on the real password field, fills that field and its username. The decoys stay empty.
-- **The popup's Fill, the keyboard shortcut and the context menu fill the decoys, and the real form stays empty** (#129). These fill through `fillInTab`, which has no target field, so `fillLogin` takes the page's first password field. The content script's visibility checks (`isVisible`, `isDecoy` in `src/content/forms.ts`) skip `display:none`, `visibility:hidden`, `[hidden]`, `tabindex=-1` and `aria-hidden`, but none of these three styles.
+- The popup's Fill, the keyboard shortcut and the context menu fill the real form, and the decoys stay empty. Until #129 they filled the decoys: they have no target field, so `fillLogin` takes the page's first password field, and the visibility checks then caught `display:none`, `visibility:hidden`, `[hidden]`, `tabindex=-1` and `aria-hidden` but none of these three styles.
 
-**Defense:** no fill without a user action. Missing: a check that the field is on screen, opaque and bigger than a few pixels, like the one `fillGeneratedHere` already makes for generated passwords.
+**Defense:** no fill without a user action, and only into fields the user can see: opaque, at least 4px by 4px, not clipped away, and on the page (`isLoginField` in `src/content/forms.ts`; [security.md](security.md#which-fields-get-a-login) has the rules). `test/forms-hidden.test.ts` and the `login-decoy-*` fixtures cover each style without a browser.
 
 ### A cross-origin parent framing the login form
 
@@ -54,9 +54,9 @@ Legitimate fills still work beside each attack: the picker on the real field of 
 **Result:**
 
 - By default the form is filled and nothing is sent. The page doesn't navigate and `evil.test` gets no request until the user presses Sign in.
-- **With Submit after filling on, the fill submits the form at once and `evil.test` receives the username and password** (#130). The content script calls `submit(form)` whatever the form's action is. A form posting to its own origin submits as it should.
+- With Submit after filling on, the form is filled but not submitted, and `evil.test` gets nothing. Until #130 the fill submitted it at once, whatever its action. A form posting to its own origin submits as it should.
 
-**Defense:** auto-submit is off by default. Missing: auto-submit only to a form action on the page's own site.
+**Defense:** auto-submit is off by default, and when on it submits only to a form action (or button `formaction`) on the page's own site, over https unless the page itself is http (`sameSiteAction` in `src/shared/hostMatch.ts`; see [security.md](security.md#submit-after-filling)). Anywhere else, the user has to press Sign in.
 
 ### Synthetic clicks and keys on the Quark button or picker
 
@@ -89,6 +89,6 @@ Legitimate fills still work beside each attack: the picker on the real field of 
 
 **The page:** on the login's own site, a listener for focus moving into an inline button's host. When the picker opens and takes focus, the page moves the password field off-screen, or gives it `opacity:0`. The user then picks the login.
 
-**Result: the password still goes into the field the user can no longer see** (#129). The picker keeps the field it opened on and fills it at pick time without checking it again.
+**Result:** nothing is filled, and the page gets nothing. Until #129 the picker filled the field it opened on without checking it again.
 
-**Defense:** none yet. The fix for #129 should check the field again when the user picks.
+**Defense:** the picker checks its field again when the user picks, before it asks the worker for the login, and `fillLogin` checks it once more when the login arrives. A field the page has hidden in between is refused with "Couldn't find the login fields on this page."

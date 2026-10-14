@@ -52,9 +52,8 @@ for (const [kind, style] of Object.entries(decoys)) {
       expect(await values(page)).toEqual({ "bait-user": "", "bait-pw": "", user: login.username, pw: login.password });
     });
 
-    // The popup's Fill and the keyboard shortcut have no target field: they fill the page's first
-    // password field, and the decoy comes first. Fails until #129 is fixed.
-    test.fail("doesn't catch a fill from the popup or the shortcut", { annotation: { type: "issue", description: "https://github.com/autobutler-org/quark-browser-extensions/issues/129" } }, async ({ context, popup, quark, site, worker }) => {
+    // The popup's Fill and the keyboard shortcut have no target field, and the decoy comes first (#129).
+    test("doesn't catch a fill from the popup or the shortcut", async ({ context, popup, quark, site, worker }) => {
       const login = await seededLogin(quark);
       const url = `${site}/hostile/decoy`;
       await serve(context, url, decoyPage(style));

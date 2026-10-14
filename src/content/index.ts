@@ -11,6 +11,7 @@ import {
   fillOtp,
   generatedLength,
   identifierField,
+  isLoginField,
   isNewPasswordField,
   looksLikeSubmit,
   onePass,
@@ -57,9 +58,14 @@ const fill = (credentials: Credentials, autoSubmit: boolean, target: HTMLInputEl
   return outcome.filled;
 };
 
+// The picker stays open while the user chooses, so the page may hide the field meanwhile (#129): check it before
+// asking for the login, and fillLogin checks it again once the login arrives.
 const pick =
   (field: HTMLInputElement) =>
   async (entry: EntrySummary): Promise<string | null> => {
+    if (!isLoginField(field)) {
+      return t("refuseNoFields");
+    }
     const result = await ask({ type: "fillFromPage", entryId: entry.id });
     if (!result.ok) {
       return failureText(result.error);

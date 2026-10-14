@@ -1,0 +1,17 @@
+<!-- Hostile page (#129): decoy login fields shrunk to 1px, and a pair clipped away by a collapsed (zero-height) wrapper
+     and by clip-path, ahead of the real form. -->
+<form action="/bait">
+  <input type="text" autocomplete="username" style="width: 1px; height: 1px; padding: 0; border: 0" data-fx="bait-user">
+  <input type="password" style="width: 1px; height: 1px; padding: 0; border: 0" data-fx="bait-pw">
+</form>
+<div style="height: 0; overflow-y: hidden">
+  <form action="/bait2"><input type="text" name="login" data-fx="clipped-user"><input type="password" data-fx="clipped-pw"></form>
+</div>
+<form action="/bait3" style="clip-path: inset(50%)">
+  <input type="text" name="login" data-fx="inset-user"><input type="password" data-fx="inset-pw">
+</form>
+<form method="post" action="/session">
+  <label>Username <input type="text" name="username" autocomplete="username" data-fx="user"></label>
+  <label>Password <input type="password" name="password" autocomplete="current-password" data-fx="pw"></label>
+  <button type="submit">Sign in</button>
+</form>

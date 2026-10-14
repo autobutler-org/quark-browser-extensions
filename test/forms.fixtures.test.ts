@@ -26,6 +26,43 @@ const attachShadowRoots = (scope: ParentNode): void =>
     attachShadowRoots(shadow);
   });
 
+// jsdom has no layout, so give it a rough one from inline styles: every element starts at the page's top left,
+// is moved by its own and its positioned ancestors' left and top, and takes its own width and height, else
+// 200×30 for an input and 800×600 for anything else. Enough to tell a field moved off-screen or shrunk to 1px.
+const px = (value: string): number | null => (/^-?[\d.]+px$/.test(value) ? Number.parseFloat(value) : null);
+
+const parentOf = (element: Element): Element | null =>
+  element.parentElement ?? (element.getRootNode() as Partial<ShadowRoot>).host ?? null;
+
+const roughBox = (element: Element): DOMRect => {
+  let left = 8;
+  let top = 8;
+  for (let node: Element | null = element; node !== null; node = parentOf(node)) {
+    const { position, left: x, top: y } = (node as HTMLElement).style ?? {};
+    if (position === "absolute" || position === "fixed") {
+      left += px(x ?? "") ?? 0;
+      top += px(y ?? "") ?? 0;
+    }
+  }
+  const style = (element as HTMLElement).style as CSSStyleDeclaration | undefined;
+  const input = element.localName === "input";
+  const width = px(style?.width ?? "") ?? (input ? 200 : 800);
+  const height = px(style?.height ?? "") ?? (input ? 30 : 600);
+  return DOMRect.fromRect({ x: left, y: top, width, height });
+};
+
+beforeEach(() => {
+  Object.defineProperty(Element.prototype, "checkVisibility", { value: () => true, configurable: true });
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    return roughBox(this);
+  });
+});
+
+afterEach(() => {
+  delete (Element.prototype as Partial<Element>).checkVisibility;
+  vi.restoreAllMocks();
+});
+
 const load = (name: string): Document => {
   document.body.innerHTML = readFileSync(join(fixtures, name), "utf8");
   attachShadowRoots(document.body);
@@ -66,6 +103,11 @@ const corpus: Readonly<Record<string, Expected>> = {
   "login-unmarked.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "login-domain.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "login-honeypot.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: null, otp: [], newPasswords: [] },
+  "login-decoy-offscreen.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
+  "login-decoy-opacity.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
+  "login-decoy-tiny.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
+  "login-floating-labels.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
+  "login-visually-hidden-labels.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "login-webauthn.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "login-and-signup-forms.html": {
     passwords: ["login-pw", "signup-pw", "signup-confirm"],
@@ -89,6 +131,7 @@ const corpus: Readonly<Record<string, Expected>> = {
   "two-step-identifier-formless.html": { passwords: [], usernames: {}, standalone: "user", otp: [], newPasswords: [] },
   "two-step-identifier-hidden-password.html": { passwords: [], usernames: {}, standalone: "user", otp: [], newPasswords: [] },
   "two-step-password-hidden-username.html": { passwords: ["pw"], usernames: { pw: null }, standalone: null, otp: [], newPasswords: [] },
+  "two-step-password-visually-hidden-username.html": { passwords: ["pw"], usernames: { pw: null }, standalone: null, otp: [], newPasswords: [] },
   "two-step-password-readonly.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "two-step-password-formless.html": { passwords: ["pw"], usernames: { pw: null }, standalone: null, otp: [], newPasswords: [] },
   "signup-marked.html": {
@@ -242,6 +285,36 @@ describe("filling and capturing fixtures", () => {
     load("two-step-password-readonly.html");
     fillLogin(document, { username: "bob", password: "pw" });
     expect([field("user").value, field("pw").value]).toEqual(["alice@example.com", "pw"]);
+  });
+
+  it.each(["login-decoy-offscreen.html", "login-decoy-opacity.html", "login-decoy-tiny.html"])(
+    "fills the real form, not the hidden decoys ahead of it, when no field is targeted (%s)",
+    (name) => {
+      const doc = load(name);
+      expect(fillLogin(doc, credentials).filled).toBe(true);
+      expect([field("user").value, field("pw").value]).toEqual(["alice@example.com", "hunter2!"]);
+      const decoys = allElements(doc).filter((element) => element.localName === "input" && !["user", "pw"].includes(tag(element) ?? ""));
+      expect(decoys.map((decoy) => (decoy as HTMLInputElement).value)).toEqual(decoys.map(() => ""));
+    },
+  );
+
+  it("refuses a targeted field the page has hidden", () => {
+    const doc = load("login-decoy-opacity.html");
+    expect(fillLogin(doc, credentials, field("bait-pw")).filled).toBe(false);
+    expect(field("bait-pw").value).toBe("");
+  });
+
+  it.each(["login-floating-labels.html", "login-visually-hidden-labels.html"])("fills a real form with styled labels (%s)", (name) => {
+    const doc = load(name);
+    expect(fillLogin(doc, credentials).filled).toBe(true);
+    expect([field("user").value, field("pw").value]).toEqual(["alice@example.com", "hunter2!"]);
+  });
+
+  it("fills the password beside a visually hidden username, and captures that username", () => {
+    const doc = load("two-step-password-visually-hidden-username.html");
+    fillLogin(doc, { username: "bob", password: "hunter2!" });
+    expect([field("user").value, field("pw").value]).toEqual(["alice@example.com", "hunter2!"]);
+    expect(capturedLogin(doc, field("pw").form)).toEqual({ username: "alice@example.com", password: "hunter2!" });
   });
 
   it("captures the username kept in a hidden field on the password step", () => {

@@ -1,0 +1,14 @@
+<!-- Hostile page (#129): decoy login fields drawn fully transparent, one with opacity: 0 on the fields and
+     one under two faded wrappers whose opacities multiply to nearly nothing, ahead of the real form. -->
+<form action="/bait">
+  <input type="text" autocomplete="username" style="opacity: 0" data-fx="bait-user">
+  <input type="password" style="opacity: 0" data-fx="bait-pw">
+</form>
+<div style="opacity: 0.2"><div style="opacity: 0.2">
+  <form action="/bait2"><input type="email" name="email" data-fx="faded-user"><input type="password" data-fx="faded-pw"></form>
+</div></div>
+<form method="post" action="/session" style="opacity: 0.95">
+  <label>Email <input type="email" name="email" autocomplete="username" data-fx="user"></label>
+  <label>Password <input type="password" name="password" autocomplete="current-password" data-fx="pw"></label>
+  <button type="submit">Sign in</button>
+</form>
