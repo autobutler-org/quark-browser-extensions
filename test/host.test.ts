@@ -1,4 +1,4 @@
-import { frameMayFill, hostMatches, isSecurePage, matchEntries, mayFill, normalizeServer, searchEntries } from "../src/shared/host";
+import { frameMayFill, hostMatches, hostOf, isSecurePage, matchEntries, mayFill, normalizeServer, searchEntries } from "../src/shared/host";
 import type { EntrySummary } from "../src/shared/types";
 
 const entry = (id: number, name: string, urlHost: string): EntrySummary => ({
@@ -109,5 +109,116 @@ describe("frameMayFill", () => {
 
   it("refuses when the top frame is unknown", () => {
     expect(frameMayFill("https://example.com/frame", "", entryUrl, "example.com")).toBe(false);
+  });
+});
+
+describe("host matching edge cases", () => {
+  describe("IP literals", () => {
+    it.each([
+      ["192.168.1.1", "http://192.168.1.1/", true],
+      ["192.168.1.1", "http://192.168.1.1:8080/admin", true],
+      ["192.168.1.1", "http://192.168.1.10/", false],
+      ["192.168.1.1", "http://10.192.168.1.1.nip.io/", false],
+      ["10.0.0.1", "http://110.0.0.1/", false],
+      // The URL parser rewrites other IPv4 spellings to dotted quads before matching.
+      ["127.0.0.1", "http://2130706433/", true],
+      ["127.0.0.1", "http://0x7f.1/", true],
+      ["[::1]", "http://[::1]:8080/", true],
+      ["[2001:db8::1]", "https://[2001:db8::1]/", true],
+      ["[2001:db8::1]", "https://[2001:db8::2]/", false],
+    ])("entry %s on %s → %s", (entryHost, pageUrl, expected) => {
+      expect(hostMatches(entryHost, hostOf(pageUrl))).toBe(expected);
+    });
+
+    // Known gap: IP hosts go through the same suffix rule as domain names, so a partial address
+    // matches a full one. Quark's own URL parsing keeps such hosts as written.
+    it.fails("doesn't treat the tail of an IPv4 address as a parent domain", () => {
+      expect(hostMatches("168.1.1", "192.168.1.1")).toBe(false);
+    });
+
+    // Known gap: a bare IPv6 host (as Go's URL.Hostname() returns it) never matches the bracketed
+    // form the browser reports.
+    it.fails("matches a bare IPv6 entry host on the bracketed page host", () => {
+      expect(hostMatches("::1", hostOf("http://[::1]/"))).toBe(true);
+    });
+
+    it("treats only IPv4 loopback over http as secure", () => {
+      expect(isSecurePage("http://127.0.0.1:8080/")).toBe(true);
+      expect(isSecurePage("http://127.0.0.2/")).toBe(false);
+      expect(isSecurePage("http://[::1]/")).toBe(false);
+    });
+  });
+
+  describe("trailing dots", () => {
+    it.each([
+      ["github.com", "https://github.com./login", true],
+      ["github.com.", "https://github.com/login", true],
+      ["github.com.", "https://gist.github.com./", true],
+      ["github.com", "https://github.com../", false],
+      ["github.com", "https://evilgithub.com./", false],
+    ])("entry %s on %s → %s", (entryHost, pageUrl, expected) => {
+      expect(hostMatches(entryHost, hostOf(pageUrl))).toBe(expected);
+    });
+
+    it("fills a fully qualified page for the entry's site", () => {
+      expect(mayFill("https://github.com./login", "https://github.com", "github.com")).toBe(true);
+    });
+  });
+
+  describe("punycode and IDN hosts", () => {
+    it("reports page hosts in punycode", () => {
+      expect(hostOf("https://bücher.de/")).toBe("xn--bcher-kva.de");
+      expect(hostOf("https://BÜCHER.de/")).toBe("xn--bcher-kva.de");
+    });
+
+    it.each([
+      ["xn--bcher-kva.de", "https://bücher.de/", true],
+      ["xn--bcher-kva.de", "https://shop.bücher.de/", true],
+      ["xn--bcher-kva.de", "https://xn--bcher-kva.de/", true],
+      // Look-alikes: Cyrillic "а" in place of Latin "a".
+      ["apple.com", "https://аpple.com/", false],
+      ["xn--pple-43d.com", "https://apple.com/", false],
+      ["bucher.de", "https://bücher.de/", false],
+    ])("entry %s on %s → %s", (entryHost, pageUrl, expected) => {
+      expect(hostMatches(entryHost, hostOf(pageUrl))).toBe(expected);
+    });
+
+    // Known gap: entry hosts are compared as stored. If Quark stores an IDN host in Unicode, it
+    // never matches the punycode host the browser reports.
+    it.fails("matches a Unicode entry host on its punycode page", () => {
+      expect(hostMatches("bücher.de", hostOf("https://bücher.de/"))).toBe(true);
+    });
+
+    it("normalizes an IDN server address to punycode", () => {
+      expect(normalizeServer("bücher.de:8443")).toBe("https://xn--bcher-kva.de:8443");
+    });
+  });
+
+  describe("ports", () => {
+    it.each([
+      ["github.com", "https://github.com:8443/", true],
+      ["github.com", "https://GITHUB.com:443/", true],
+      ["github.com", "https://github.com.evil.io:443/", false],
+    ])("entry %s on %s → %s", (entryHost, pageUrl, expected) => {
+      expect(hostMatches(entryHost, hostOf(pageUrl))).toBe(expected);
+    });
+
+    it("ignores the port when filling", () => {
+      expect(mayFill("https://github.com:8443/login", "https://github.com", "github.com")).toBe(true);
+      expect(mayFill("http://192.168.1.1:8080/", "http://192.168.1.1:8080", "192.168.1.1")).toBe(true);
+    });
+
+    it("never matches an entry host that carries a port", () => {
+      expect(hostMatches("quark.local:8443", hostOf("https://quark.local:8443/"))).toBe(false);
+    });
+
+    it.each([
+      ["[::1]:8080", "https://[::1]:8080"],
+      ["quark.local:443", "https://quark.local"],
+      ["http://quark.local:80/", "http://quark.local"],
+      ["quark.local:99999", ""],
+    ])("normalizeServer %s → %s", (input, expected) => {
+      expect(normalizeServer(input)).toBe(expected);
+    });
   });
 });
