@@ -6,7 +6,7 @@ export type DeriveAuthKey = (password: string, salt: Uint8Array) => Promise<stri
 
 const encoder = new TextEncoder();
 
-const toBase64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes));
+export const toBase64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes));
 
 export const fromBase64 = (text: string): Uint8Array | null => {
   try {

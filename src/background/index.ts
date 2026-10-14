@@ -31,6 +31,7 @@ import {
   loadServer,
   loadNeverSave,
   loadSettings,
+  restrictSessionStorage,
   saveConnection,
   saveNeverSave,
   saveSettings,
@@ -414,6 +415,8 @@ const fillGenerated = async (tabId: number): Promise<void> => {
 };
 
 export const main = (): void => {
+  void restrictSessionStorage();
+
   chrome.commands.onCommand.addListener((command, tab) => {
     if (command === "fill-login") {
       void onShortcut(tab);

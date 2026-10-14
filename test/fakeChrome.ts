@@ -1,3 +1,5 @@
+import { fakeIndexedDB } from "./fakeIndexedDB";
+
 // A small in-memory stand-in for the parts of `chrome` the service worker uses.
 
 type Listener = (...args: never[]) => unknown;
@@ -33,8 +35,13 @@ export const extensionUrl = `chrome-extension://${extensionId}/`;
 
 export const fakeChrome = () => {
   const onMessage = event();
+  // The worker seals a "stay signed in" token with a key kept in its own IndexedDB.
+  const idb = fakeIndexedDB();
   const chrome = {
-    storage: { local: area(), session: area() },
+    storage: {
+      local: area(),
+      session: { ...area(), setAccessLevel: async (_options: { accessLevel: string }) => undefined as unknown },
+    },
     runtime: { id: extensionId, getURL: (path: string) => `${extensionUrl}${path}`, onMessage },
     commands: { onCommand: event() },
     contextMenus: { onClicked: event(), removeAll: async () => undefined, create: () => undefined },
@@ -60,5 +67,5 @@ export const fakeChrome = () => {
     });
     return listener(request, sender, respond) ? reply : undefined;
   };
-  return { chrome, send };
+  return { chrome, send, idb };
 };
