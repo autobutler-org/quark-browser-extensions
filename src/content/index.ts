@@ -1,5 +1,4 @@
 import { errorText } from "../shared/errors";
-import { frameMayFill } from "../shared/host";
 import { ask, type FillCommand, type Hello, type PageCommand, type PageReply } from "../shared/messages";
 import { err, ok, type ApiError, type Credentials, type EntrySummary } from "../shared/types";
 import type { SaveAction, SaveOffer } from "../background/save";
@@ -16,7 +15,7 @@ import {
   passwordFields,
   submit,
 } from "./forms";
-import { frameTopUrl } from "./frame";
+import { fillDecision, frameTopUrl } from "./frame";
 import { attachPicker, type PickerHandle } from "./picker";
 
 const decorated = new WeakMap<HTMLInputElement, PickerHandle>();
@@ -118,19 +117,36 @@ const openPicker = (): PageReply | null => {
   return ok(null);
 };
 
-const handleFill = (command: FillCommand): PageReply | null => {
-  if (!hasLoginFields()) {
-    return null;
+const fillFromWorker = async (entryId: number): Promise<PageReply> => {
+  const result = await ask({ type: "fillFromPage", entryId }).catch(() => null);
+  if (result === null) {
+    return err({ kind: "refused", reason: "This page can't be filled. Reload it and try again." });
   }
-  if (!frameMayFill(location.href, location.href, command.entryUrl, command.entryHost)) {
-    return isTop ? err({ kind: "refused", reason: "This login doesn't belong to this site." }) : null;
+  if (!result.ok) {
+    return result;
   }
-  if (!frameMayFill(location.href, topUrl(command.topUrl), command.entryUrl, command.entryHost)) {
-    return err({ kind: "refused", reason: "This login form is embedded in another site, so Quark Vault won't fill it." });
-  }
-  return fill(command.credentials, command.autoSubmit, null)
+  return fill(result.value, result.value.autoSubmit, null)
     ? ok(null)
     : err({ kind: "refused", reason: "Couldn't find the login fields on this page." });
+};
+
+const handleFill = (command: FillCommand): PageReply | Promise<PageReply> | null => {
+  const decision = fillDecision(
+    isTop,
+    hasLoginFields(),
+    location.href,
+    topUrl(command.topUrl),
+    command.entryUrl,
+    command.entryHost,
+  );
+  switch (decision.kind) {
+    case "silent":
+      return null;
+    case "refuse":
+      return err({ kind: "refused", reason: decision.reason });
+    case "ask":
+      return fillFromWorker(command.entryId);
+  }
 };
 
 const fillGeneratedHere = (password: string): PageReply | null => {
@@ -184,7 +200,7 @@ const capture = (form: HTMLFormElement | null): void => {
     .catch(() => null);
 };
 
-const handleCommand = (command: PageCommand): PageReply | string | null => {
+const handleCommand = (command: PageCommand): PageReply | Promise<PageReply> | string | null => {
   switch (command.type) {
     case "whereAmI":
       return isTop ? location.href : null;
@@ -212,6 +228,10 @@ export const main = (): void => {
       return false;
     }
     const reply = handleCommand(message);
+    if (reply instanceof Promise) {
+      void reply.then(sendResponse);
+      return true;
+    }
     if (reply !== null) {
       sendResponse(reply);
     }
