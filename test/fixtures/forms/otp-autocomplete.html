@@ -1,0 +1,6 @@
+<!-- Two-factor page with a single code field marked one-time-code. -->
+<form action="/sessions/two-factor" method="post">
+  <label for="app_totp">Authentication code</label>
+  <input type="text" name="app_otp" id="app_totp" autocomplete="one-time-code" inputmode="numeric" maxlength="6" data-fx="code">
+  <button type="submit">Verify</button>
+</form>

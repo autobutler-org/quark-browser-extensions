@@ -1,0 +1,10 @@
+<!-- Sign-up with every field marked, including separate email and username. -->
+<form action="/join" method="post">
+  <input type="text" name="name" autocomplete="name" data-fx="name">
+  <input type="email" name="email" autocomplete="email" data-fx="email">
+  <input type="text" name="handle" autocomplete="username" data-fx="user">
+  <input type="password" name="password" autocomplete="new-password" data-fx="pw">
+  <input type="password" name="password_confirm" autocomplete="new-password" data-fx="confirm">
+  <label><input type="checkbox" name="terms" required checked> I agree</label>
+  <button type="submit">Create account</button>
+</form>

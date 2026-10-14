@@ -1,0 +1,11 @@
+<!-- Digit boxes inside a form, the first marked one-time-code, posting through a hidden field. -->
+<form action="/mfa" method="post">
+  <input type="hidden" name="code">
+  <input type="tel" maxlength="1" autocomplete="one-time-code" data-fx="d1">
+  <input type="tel" maxlength="1" data-fx="d2">
+  <input type="tel" maxlength="1" data-fx="d3">
+  <input type="tel" maxlength="1" data-fx="d4">
+  <input type="tel" maxlength="1" data-fx="d5">
+  <input type="tel" maxlength="1" data-fx="d6">
+  <button type="submit">Continue</button>
+</form>

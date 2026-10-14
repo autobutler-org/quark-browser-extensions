@@ -1,0 +1,16 @@
+<!-- Design-system inputs: each native input lives in its own component's shadow root, so none of
+     them belong to the light-DOM <form>. A collapsed panel hides another password via its host. -->
+<form action="/login" method="post">
+  <ui-input label="Email">
+    <template shadowrootmode="open"><label part="label">Email</label><input type="email" autocomplete="username" data-fx="user"></template>
+  </ui-input>
+  <ui-input label="Password">
+    <template shadowrootmode="open"><label part="label">Password</label><input type="password" autocomplete="current-password" data-fx="pw"></template>
+  </ui-input>
+  <ui-button type="submit">Sign in</ui-button>
+</form>
+<div class="reset-panel" hidden>
+  <ui-input label="New password">
+    <template shadowrootmode="open"><input type="password" autocomplete="new-password" data-fx="hidden-pw"></template>
+  </ui-input>
+</div>

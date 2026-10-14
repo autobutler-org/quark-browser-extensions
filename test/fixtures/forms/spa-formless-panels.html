@@ -1,0 +1,17 @@
+<!-- Single-page app with sign-up and login panels side by side, neither inside a <form>. -->
+<div id="root">
+  <header><input type="text" placeholder="Search" data-fx="search"></header>
+  <section class="panel signup">
+    <h2>Create an account</h2>
+    <div class="row"><input type="email" placeholder="Email" data-fx="signup-email"></div>
+    <div class="row"><input type="password" placeholder="Password" data-fx="signup-pw"></div>
+    <div class="row"><input type="password" placeholder="Repeat password" data-fx="signup-confirm"></div>
+    <button type="button">Sign up</button>
+  </section>
+  <section class="panel login">
+    <h2>Log in</h2>
+    <div class="row"><input type="text" name="username" placeholder="Username" data-fx="login-user"></div>
+    <div class="row"><input type="password" name="password" placeholder="Password" data-fx="login-pw"></div>
+    <button type="button">Log in</button>
+  </section>
+</div>

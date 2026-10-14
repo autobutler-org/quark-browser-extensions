@@ -1,0 +1,15 @@
+<!-- Server-rendered login with a site search in the header. Fields marked with autocomplete. -->
+<header>
+  <form role="search" action="/search"><input type="search" name="q" placeholder="Search"></form>
+</header>
+<main>
+  <form method="post" action="/session">
+    <input type="hidden" name="csrf_token" value="abc123">
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username" autocomplete="username" autofocus data-fx="user">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" data-fx="pw">
+    <label><input type="checkbox" name="remember"> Remember me</label>
+    <button type="submit">Sign in</button>
+  </form>
+</main>

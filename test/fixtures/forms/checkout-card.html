@@ -1,0 +1,10 @@
+<!-- Checkout payment form: card security codes and a promo code are not one-time codes. -->
+<form action="/checkout/pay" method="post">
+  <input type="text" name="cardNumber" autocomplete="cc-number" inputmode="numeric" data-fx="number">
+  <input type="text" name="expiry" autocomplete="cc-exp" placeholder="MM / YY" data-fx="expiry">
+  <input type="text" name="securityCode" autocomplete="cc-csc" placeholder="Security code" data-fx="csc">
+  <label for="gift-cvc">Gift card security code</label>
+  <input type="text" id="gift-cvc" name="gift_cvc" data-fx="gift-csc">
+  <input type="text" name="promo" placeholder="Promo code" data-fx="promo">
+  <button type="submit">Pay</button>
+</form>
