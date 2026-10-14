@@ -66,3 +66,15 @@ That click sends `fillAnyway` to the worker. The gate (`src/background/gate.ts`)
 - Never auto-submits a manual fill, even with **Submit after filling** on.
 
 The keyboard shortcut, the context menu and the inline picker keep their host checks. They have no manual path.
+
+## Which hosts match
+
+`hostMatches` in `src/shared/host.ts` decides whether a page may use an entry, in the worker and again in the page:
+
+- The same host, ignoring a leading `www.` (unless what's left is a public suffix, so `www.github.io` stays a site).
+- Or a subdomain of the entry's host inside the same registrable domain (`login.example.com` for `example.com`).
+- A suffix on the public suffix list, private entries such as `github.io` included, is never a parent: an entry for `co.uk` or `github.io` matches no other site.
+- An IP address matches only itself.
+- A single-label host that isn't on the list (`localhost`, an intranet name) stays a parent of its subdomains.
+
+Scheme and port don't widen the match. A different port or scheme is shown as a labelled fallback and is never filled without a pick. A plain `http://` page is refused unless it is loopback or the entry itself was saved with an `http://` URL (`mayFill`).
