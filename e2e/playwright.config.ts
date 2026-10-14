@@ -5,6 +5,8 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   testMatch: "*.spec.ts",
+  // The Firefox smoke test has its own config: firefox/playwright.config.ts.
+  testIgnore: "firefox/**",
   globalSetup: "./global-setup.ts",
   outputDir: "./test-results",
   fullyParallel: false,
