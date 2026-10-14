@@ -3,7 +3,7 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: [".output/", ".wxt/", "node_modules/", "coverage/", "e2e/test-results/", "e2e/playwright-report/", "e2e/.quark/"] },
+  { ignores: [".output/", ".wxt/", "node_modules/", "coverage/", "e2e/test-results/", "e2e/playwright-report/", "e2e/.quark/", "e2e/.firefox/"] },
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
   {
