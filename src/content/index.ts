@@ -16,6 +16,7 @@ import {
   isLoginField,
   isNewPasswordField,
   looksLikeSubmit,
+  markOwn,
   onePass,
   otpFields,
   passwordFields,
@@ -23,6 +24,17 @@ import {
 } from "./forms";
 import { fillDecision, frameTopUrl } from "./frame";
 import { attachPicker, type PickerHandle } from "./picker";
+
+// Draws some of the extension's own UI, which appends its host to <body>, and tells the hit test to look past it.
+const drawOwn = <T>(draw: () => T): T => {
+  const before = document.body.lastElementChild;
+  const drawn = draw();
+  const host = document.body.lastElementChild;
+  if (host !== null && host !== before) {
+    markOwn(host);
+  }
+  return drawn;
+};
 
 // Which picker a field has: Suggest strong password on a new password, the site's logins on a login field, codes
 // on a one-time code field.
@@ -144,10 +156,11 @@ const scan = async (): Promise<void> => {
     if (kind === "signup" ? !greeting.connected : greeting.matches.length === 0) {
       return;
     }
-    const handle =
+    const handle = drawOwn(() =>
       kind === "signup"
         ? attachPicker(field, [], location.host, { onPick: pick(field), onSuggest: suggest(field) })
-        : attachPicker(field, greeting.matches, location.host, { onPick: (kind === "otp" ? pickOtp : pick)(field) });
+        : attachPicker(field, greeting.matches, location.host, { onPick: (kind === "otp" ? pickOtp : pick)(field) }),
+    );
     decorated.set(field, { kind, handle });
   });
 };
@@ -291,7 +304,7 @@ const resolveSave = async (action: SaveAction): Promise<string | null> => {
 const offerSave = async (known: SaveOffer | null | undefined): Promise<void> => {
   const offer = known === undefined ? await ask({ type: "myOffer" }).catch(() => null) : known;
   if (offer !== null) {
-    showSaveBar(document, offer, resolveSave);
+    drawOwn(() => showSaveBar(document, offer, resolveSave));
   }
 };
 

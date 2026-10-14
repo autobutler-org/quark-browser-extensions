@@ -1,4 +1,4 @@
-import { fillLogin, passwordFields } from "../src/content/forms";
+import { fillLogin, markOwn, passwordFields } from "../src/content/forms";
 
 // Login fields buried under another element (#147): style and size say they are shown, but the user can't
 // click them, so the hit test at their own points must reach them.
@@ -113,6 +113,14 @@ describe("login fields under another element", () => {
     mount('<input id="user"><input id="pw" type="password"><label id="label" for="user">Email</label>');
     place("label", pw);
     expect(ids(passwordFields(document))).toEqual([]);
+  });
+
+  it("looks past the extension's own picker open over a field", () => {
+    mount(`${form}<div id="picker"></div>`);
+    place("picker", { left: 0, top: 130, width: 400, height: 300 });
+    expect(ids(passwordFields(document))).toEqual([]);
+    markOwn(input("picker"));
+    expect(ids(passwordFields(document))).toEqual(["pw"]);
   });
 
   it("keeps a field below the fold, where nothing can be hit-tested yet", () => {

@@ -510,10 +510,19 @@ const probes: readonly Point[] = [
   [0.6, 0.75],
 ];
 
+// The extension's own UI drawn on the page: inline buttons, their open pickers, the save bar. A hit test that
+// lands on one says nothing about the page, so an open picker over the confirmation field doesn't hide it.
+const ownHosts = new WeakSet<Element>();
+
+export const markOwn = (host: Element): void => {
+  ownHosts.add(host);
+};
+
 // Whether another element is drawn over the whole of this one (#147): an empty opaque box laid over a login's
 // fields passes every style and size check, but the user can't see or click them. A hit test at any probe that
 // reaches the element, or one of its own labels floating over it (that label, not something inside it), shows the user can; a sticky header or a cookie
-// banner that covers part of it leaves some probe free. Probes outside the viewport can't be tested, and without
+// banner that covers part of it leaves some probe free. Probes outside the viewport or on the extension's own UI
+// can't be tested, and without
 // any (below the fold, or no hit testing in jsdom) nothing counts as covered.
 const covered = (element: Element): boolean => {
   const root = element.getRootNode() as Partial<DocumentOrShadowRoot>;
@@ -527,7 +536,7 @@ const covered = (element: Element): boolean => {
     .map(([x, y]): Point => [left + x * width, top + y * height])
     .filter(([x, y]) => x >= 0 && y >= 0 && x < view.innerWidth && y < view.innerHeight)
     .map(([x, y]) => root.elementFromPoint?.call(root, x, y) ?? null)
-    .filter((hit) => hit !== null);
+    .filter((hit): hit is Element => hit !== null && !ownHosts.has(hit));
   return results.length > 0 && !results.some((hit) => own.includes(hit));
 };
 
