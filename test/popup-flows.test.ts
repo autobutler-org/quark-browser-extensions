@@ -369,6 +369,15 @@ describe("the first-run welcome", () => {
     expect(app.textContent).not.toContain("New here?");
   });
 
+  it("leaves focus on the address, not the banner, and returns it there after Dismiss (#109)", async () => {
+    const app = await openPopup();
+    expect(app.textContent).toContain("New here?");
+    expect(document.activeElement?.id).toBe("server");
+    buttonNamed(app, "Dismiss")!.focus();
+    await click(app, "Dismiss");
+    expect(document.activeElement?.id).toBe("server");
+  });
+
   it("isn't offered to someone already signed in", async () => {
     worker.state = locked;
     const app = await openPopup();
