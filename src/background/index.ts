@@ -28,6 +28,7 @@ import {
   type SaveOffer,
 } from "./save";
 import { isTopFrame, route, type ContentScriptHandlers, type ExtensionPageHandlers, type Sender } from "./gate";
+import { frameIsShown, frameReport } from "./frames";
 import { grantAllows, grantFor, manualFillCommand, manualFillRefusal, type ManualGrant } from "./manual";
 import { upgradeLedger } from "./keyedAccounts";
 import { createCache, deriveState, stateFromError } from "./state";
@@ -58,6 +59,9 @@ const forgetEntries = (): void => {
   entryUrls.clear();
   manualGrants.clear();
 };
+
+const sendToFrame = (tabId: number, message: PageCommand, options: { frameId: number }): Promise<unknown> =>
+  chrome.tabs.sendMessage(tabId, message, options);
 
 const tabTopUrl = async (tabId: number): Promise<string> => {
   const reply: unknown = await chrome.tabs.sendMessage(tabId, { type: "whereAmI" }, { frameId: 0 }).catch(() => undefined);
@@ -182,6 +186,11 @@ const fillFromPage = async (
   }
   if (!frameMayFill(pageUrl, topUrl, entry.value.url, entry.value.urlHost)) {
     return refused(embeddedRefusal(topUrl));
+  }
+  // A subframe gets the login only if its <iframe>, and each one above it, is shown in its parent (#141).
+  const tabId = sender.tab?.id;
+  if (!isTopFrame(sender) && (tabId === undefined || !(await frameIsShown(sendToFrame, tabId, sender.frameId ?? -1)))) {
+    return refused(t("refuseHiddenFrame"));
   }
   return ok({ username: entry.value.username, password: entry.value.password, autoSubmit: settings.autoSubmit });
 };
@@ -508,6 +517,10 @@ const forContentScripts: ContentScriptHandlers = {
   resolveSave: (request, tabId) => resolveSave(tabId, request.action),
   matches: (sender) => matchesFor(sender.url ?? ""),
   fillFromPage: (request, sender) => fillFromPage(sender, request.entryId),
+  frameReport: (request, sender) => {
+    frameReport(sender, request.nonce, request.shown);
+    return Promise.resolve(null);
+  },
 };
 
 const applyIdleInterval = (settings: Settings): Settings => {

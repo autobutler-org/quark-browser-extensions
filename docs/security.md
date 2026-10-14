@@ -63,6 +63,25 @@ Each frame decides what to do with the message using `fillDecision` in `src/cont
 
 The worker answers `fillFromPage` only after it checks the requesting frame. It uses the frame URL and frame id that the browser reports, not anything the page says. For a subframe it also checks the top frame's URL, which it gets by asking frame 0. These are the same checks the inline picker and one-time codes use. A frame that lies in its own check still gets refused by the worker.
 
+### Frames the user can't see
+
+A frame can be hidden as a whole: an `<iframe>` at 0×0, transparent, clipped or moved off-screen, whose document looks normal from inside (issue #141). A login field in a frame must also be in a frame the user can see. Each `<iframe>` (or `<frame>` or `<object>`) from the field's frame up to the top is held to the field rules below, except the honeypot marks. Those rules are the box size, opacity, clipping and position in the parent's page.
+
+- **Same origin:** the frame reads its own `frameElement` and checks it, with each same-origin frame element above it (`documentShown` in `src/content/forms.ts`).
+- **Another origin:** `frameElement` is null, and nothing a frame says about itself counts. When a subframe asks for a login with `fillFromPage`, the worker (`src/background/frames.ts`):
+  1. sends that frame a random nonce (`announceFrame`);
+  2. the frame's content script posts the nonce to `window.parent`;
+  3. the parent's content script finds the frame element whose `contentWindow` is the message's `source`, which the page can't forge, checks it and sends `frameReport`;
+  4. the worker takes the first report for that nonce, from that tab, with the frame id the browser gives it, and repeats from that frame until it reaches the top.
+
+  A hidden frame anywhere on the way, no report within a second, or a chain that loops is refused with "This login form is in a frame you can't see on this page". This covers the popup's Fill, the shortcut, the context menu and the inline picker, since they all ask through `fillFromPage`.
+
+Limits:
+
+- The nonce passes through the parent page as a `message` event. A parent page running hostile script can stop that event before the content script sees it, which only refuses the fill. It can also repost the nonce from a visible frame it controls, so that the visible frame is reported in place of the hidden one. That takes script on a page the login matches, and such a page can already draw a barely visible form of its own.
+- One-time codes (`otpFromPage`) and the generated password still go to subframes without this check.
+- The extension asks for no `webNavigation` permission, so the worker learns a frame's parent only from that parent's report.
+
 ## Which fields get a login
 
 A page on the login's own site can still run hostile script: a third-party tag, an XSS. It can lay out decoy fields the user never sees, ahead of the real form, to catch a fill that has no target field, or hide the real field once the inline picker is open (issue #129). So a username or password field is filled only when the user can see it (`isLoginField` in `src/content/forms.ts`). It must be:

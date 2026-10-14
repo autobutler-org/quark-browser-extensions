@@ -50,6 +50,7 @@ const requests: { [K in Request["type"]]: Extract<Request, { type: K }> } = {
   entries: { type: "entries" },
   matches: { type: "matches", pageUrl: "https://github.com/" },
   fillFromPage: { type: "fillFromPage", entryId: 1 },
+  frameReport: { type: "frameReport", nonce: "n", shown: true },
   fillInTab: { type: "fillInTab", entryId: 1, tabId: 7 },
   fillAnyway: { type: "fillAnyway", entryId: 1, tabId: 7, pageHost: "github.com" },
   reveal: { type: "reveal", entryId: 1 },
@@ -83,6 +84,7 @@ const audience: Record<Request["type"], Audience> = {
   entries: "pages",
   matches: "both",
   fillFromPage: "content",
+  frameReport: "content",
   fillInTab: "pages",
   fillAnyway: "pages",
   reveal: "pages",
@@ -153,6 +155,7 @@ const contentHandlerNames = [
   "resolveSave",
   "matches",
   "fillFromPage",
+  "frameReport",
 ] as const satisfies readonly (keyof ContentScriptHandlers)[];
 
 const setup = () => {

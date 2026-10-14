@@ -49,6 +49,7 @@ export const messagePlaceholders = {
   refuseEmbeddedIn: ["host"],
   refuseEmbeddedInPage: [],
   refuseEmbeddedInSite: [],
+  refuseHiddenFrame: [],
   refuseNoOtp: [],
   refuseNoFieldsReload: [],
   refuseNoFields: [],

@@ -198,6 +198,9 @@
   "refuseEmbeddedInSite": {
     "message": "This login form is embedded in another site, so Quark Vault won't fill it."
   },
+  "refuseHiddenFrame": {
+    "message": "This login form is in a frame you can't see on this page, so Quark Vault won't fill it."
+  },
   "refuseNoOtp": {
     "message": "This login has no one-time code saved."
   },

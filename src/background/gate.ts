@@ -57,6 +57,7 @@ export type ContentScriptHandlers = Readonly<{
   resolveSave: (request: Of<"resolveSave">, tabId: number) => Promise<unknown>;
   matches: (sender: Sender) => Promise<unknown>;
   fillFromPage: (request: Of<"fillFromPage">, sender: Sender) => Promise<unknown>;
+  frameReport: (request: Of<"frameReport">, sender: Sender) => Promise<unknown>;
 }>;
 
 export type Handlers = Readonly<{ pages: ExtensionPageHandlers; content: ContentScriptHandlers }>;
@@ -140,6 +141,8 @@ export const forContentScripts = (
       return handlers.matches(sender);
     case "fillFromPage":
       return handlers.fillFromPage(request, sender);
+    case "frameReport":
+      return handlers.frameReport(request, sender);
     default:
       return null;
   }

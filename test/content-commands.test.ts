@@ -64,11 +64,20 @@ document.addEventListener = (type: string, handler: EventListenerOrEventListener
   addEventListener(type, handler, options);
 };
 
+const windowAdded: [string, EventListenerOrEventListenerObject, boolean | AddEventListenerOptions | undefined][] = [];
+const addWindowListener = window.addEventListener.bind(window);
+window.addEventListener = ((type: string, handler: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => {
+  windowAdded.push([type, handler, options]);
+  addWindowListener(type, handler, options);
+}) as typeof window.addEventListener;
+
 const hello = (matches: readonly EntrySummary[], connected = true) => ({ settings: { inlineButton: true }, matches, connected });
 
 // `framed` loads the script as if it ran in a child frame: window.top is another window.
-const setup = async (fixture: string, worker: Worker, { framed = false } = {}): Promise<void> => {
+// `prepare` changes the page before the script loads, so the change doesn't schedule a scan.
+const setup = async (fixture: string, worker: Worker, { framed = false, prepare = (): void => undefined } = {}): Promise<void> => {
   document.body.innerHTML = readFileSync(join(import.meta.dirname, "fixtures", "forms", fixture), "utf8");
+  prepare();
   if (framed) {
     const parent = {};
     Object.defineProperty(window, "top", { get: () => parent, configurable: true });
@@ -120,6 +129,7 @@ beforeEach(() => {
 afterEach(() => {
   observers.splice(0).forEach((observer) => observer.disconnect());
   added.splice(0).forEach(([type, handler, options]) => document.removeEventListener(type, handler, options));
+  windowAdded.splice(0).forEach(([type, handler, options]) => window.removeEventListener(type, handler, options));
   vi.unstubAllGlobals();
   if (topDescriptor !== undefined) {
     Object.defineProperty(window, "top", topDescriptor);
@@ -251,6 +261,109 @@ describe("the popup's Fill in a child frame", () => {
     expect(reply).toEqual({ ok: true, value: null });
     expect(ofType("fillFromPage")).toEqual([{ type: "fillFromPage", entryId: 7 }]);
     expect(byTag("pw").value).toBe("hunter2!");
+  });
+});
+
+describe("the worker's probe of a child frame (#141)", () => {
+  const parentDescriptor = Object.getOwnPropertyDescriptor(window, "parent");
+
+  afterEach(() => {
+    if (parentDescriptor !== undefined) {
+      Object.defineProperty(window, "parent", parentDescriptor);
+    }
+  });
+
+  it("posts the nonce to the parent window from a child frame", async () => {
+    await setup("login-basic.html", () => null, { framed: true });
+    const postMessage = vi.fn();
+    Object.defineProperty(window, "parent", { get: () => ({ postMessage }), configurable: true });
+    await expect(command({ type: "announceFrame", nonce: "n-1" })).resolves.toEqual({ ok: true, value: null });
+    expect(postMessage).toHaveBeenCalledWith({ quarkFrameProbe: "n-1" }, "*");
+  });
+
+  it("posts nothing from the top frame", async () => {
+    await setup("login-basic.html", () => null);
+    const postMessage = vi.spyOn(window, "postMessage");
+    try {
+      await command({ type: "announceFrame", nonce: "n-1" });
+      expect(postMessage).not.toHaveBeenCalled();
+    } finally {
+      postMessage.mockRestore();
+    }
+  });
+
+  const probe = (source: MessageEventSource | null, data: unknown): void => {
+    window.dispatchEvent(new MessageEvent("message", { data, source }));
+  };
+
+  // A login page with one child frame, drawn with `style`.
+  const withChildFrame = async (style: string): Promise<HTMLIFrameElement> => {
+    const frame = document.createElement("iframe");
+    frame.setAttribute("style", style);
+    await setup("login-basic.html", () => null, { prepare: () => void document.body.append(frame) });
+    return frame;
+  };
+
+  it.each([
+    ["shown", "width: 400px; height: 300px", true],
+    ["opacity: 0", "opacity: 0", false],
+    ["visibility: hidden", "visibility: hidden", false],
+    ["filter: opacity(0)", "filter: opacity(0)", false],
+  ])("reports a child frame drawn %s", async (_, style, shown) => {
+    const frame = await withChildFrame(style);
+    probe(frame.contentWindow, { quarkFrameProbe: "n-2" });
+    await settle();
+    expect(ofType("frameReport")).toEqual([{ type: "frameReport", nonce: "n-2", shown }]);
+  });
+
+  it("finds a child frame inside an open shadow root", async () => {
+    const frame = document.createElement("iframe");
+    await setup("login-basic.html", () => null, {
+      prepare: () => {
+        const host = document.createElement("div");
+        document.body.append(host);
+        host.attachShadow({ mode: "open" }).append(frame);
+      },
+    });
+    probe(frame.contentWindow, { quarkFrameProbe: "n-3" });
+    await settle();
+    expect(ofType("frameReport")).toEqual([{ type: "frameReport", nonce: "n-3", shown: true }]);
+  });
+
+  it.each([
+    ["this window", () => window, { quarkFrameProbe: "n-4" }],
+    ["no window", () => null, { quarkFrameProbe: "n-4" }],
+    ["a child frame, without a nonce", (frame: HTMLIFrameElement) => frame.contentWindow, { quarkFrameProbe: 4 }],
+    ["a child frame, with other data", (frame: HTMLIFrameElement) => frame.contentWindow, "hello"],
+  ] as const)("ignores a message from %s", async (_, source, data) => {
+    const frame = await withChildFrame("");
+    probe(source(frame), data);
+    await settle();
+    expect(ofType("frameReport")).toEqual([]);
+  });
+
+  it("reports on a nonce once", async () => {
+    const frame = await withChildFrame("");
+    probe(frame.contentWindow, { quarkFrameProbe: "n-5" });
+    probe(frame.contentWindow, { quarkFrameProbe: "n-5" });
+    await settle();
+    expect(ofType("frameReport")).toHaveLength(1);
+  });
+
+  it("holds a child frame's refusal back, so a frame that filled answers first", async () => {
+    const refusal = { ok: false, error: { kind: "refused", reason: "hidden" } };
+    await setup("login-basic.html", (request) => (request.type === "hello" ? hello([entry]) : refusal), { framed: true });
+    vi.useFakeTimers();
+    try {
+      let reply: unknown = noReply;
+      void command({ type: "fill", entryId: 7, entryUrl: location.href, entryHost: location.host, topUrl: location.origin }).then((value) => (reply = value));
+      await vi.advanceTimersByTimeAsync(400);
+      expect(reply).toBe(noReply);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(reply).toEqual(refusal);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

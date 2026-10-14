@@ -70,6 +70,7 @@ type Pass = Readonly<{
   unclipped: Map<Element, boolean>;
   exposed: Map<Element, boolean>;
   slots: Map<Element, Slotting>;
+  frames: Map<Document, boolean>;
   checks: Map<object, Map<HTMLInputElement, boolean>>;
 }>;
 let pass: Pass | null = null;
@@ -79,7 +80,7 @@ export const onePass = <T>(detect: () => T): T => {
   if (pass !== null) {
     return detect();
   }
-  pass = { inputs: new Map(), styles: new Map(), opacity: new Map(), shown: new Map(), unclipped: new Map(), exposed: new Map(), slots: new Map(), checks: new Map() };
+  pass = { inputs: new Map(), styles: new Map(), opacity: new Map(), shown: new Map(), unclipped: new Map(), exposed: new Map(), slots: new Map(), frames: new Map(), checks: new Map() };
   try {
     return detect();
   } finally {
@@ -564,9 +565,33 @@ const isNewsletter = (input: HTMLInputElement): boolean =>
     [input.name, input.id, input.placeholder, input.form?.id, input.form?.className, input.form?.getAttribute("action")].join(" "),
   );
 
-// A field login fill may put a username or password in: shown, reachable, in sight, and still on the page.
+// Whether a frame element is shown in its page: the field rules, less the honeypot marks (#141).
+export const frameShown = (frame: Element): boolean =>
+  isVisible(frame as HTMLElement) && inSight(frame) && documentShown(frame.ownerDocument);
+
+// Whether a document is drawn where the user can see it: the top page, or a frame whose <iframe> is shown, up
+// through every same-origin parent. A cross-origin parent hides frameElement; the worker asks that parent
+// instead before it hands a subframe a login (src/background/frames.ts).
+const documentShown = (doc: Document): boolean => {
+  const known = pass?.frames.get(doc);
+  if (known !== undefined) {
+    return known;
+  }
+  let frame: Element | null = null;
+  try {
+    frame = doc.defaultView?.frameElement ?? null;
+  } catch {
+    // Cross-origin: the worker's probe covers it.
+  }
+  const shown = frame === null || frameShown(frame);
+  pass?.frames.set(doc, shown);
+  return shown;
+};
+
+// A field login fill may put a username or password in: shown, reachable, in sight, still on the page, and in a
+// frame that is itself shown.
 export const isLoginField = (input: HTMLInputElement): boolean =>
-  input.isConnected && isVisible(input) && !isDecoy(input) && inSight(input);
+  input.isConnected && isVisible(input) && !isDecoy(input) && inSight(input) && documentShown(input.ownerDocument);
 
 const isPassword = (input: HTMLInputElement): boolean => input.type === "password" && isLoginField(input);
 

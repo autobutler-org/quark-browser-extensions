@@ -9,6 +9,7 @@ import {
   fillLogin,
   fillNewPassword,
   fillOtp,
+  frameShown,
   generatedLength,
   identifierField,
   isLoginField,
@@ -161,12 +162,19 @@ const openPicker = (): PageReply | null => {
   return ok(null);
 };
 
+// How long a subframe the worker refused waits before saying so, so that a frame that did fill answers the
+// broadcast fill command first.
+export const subframeRefusalDelayMs = 500;
+
 const fillFromWorker = async (entryId: number): Promise<PageReply> => {
   const result = await ask({ type: "fillFromPage", entryId }).catch(() => null);
   if (result === null) {
     return err({ kind: "refused", reason: t("refuseReload") });
   }
   if (!result.ok) {
+    if (!isTop) {
+      await new Promise((resolve) => setTimeout(resolve, subframeRefusalDelayMs));
+    }
     return result;
   }
   return fill(result.value, result.value.autoSubmit, null)
@@ -191,6 +199,40 @@ const handleFill = (command: FillCommand): PageReply | Promise<PageReply> | null
     case "ask":
       return fillFromWorker(command.entryId);
   }
+};
+
+// The frame elements in this document, inside open shadow roots too.
+const frameElements = (scope: ParentNode): readonly Element[] =>
+  [...scope.querySelectorAll("*")].flatMap((element) => [
+    ...(["iframe", "frame", "object"].includes(element.localName) ? [element] : []),
+    ...(element.shadowRoot === null ? [] : frameElements(element.shadowRoot)),
+  ]);
+
+// The worker's probe of a child frame (#141): the child posts its nonce here, and this frame reports whether the
+// element that frame is drawn in is shown. The page sees the nonce too, but event.source can't be forged: it is
+// the window that posted. A message from no child frame of ours is ignored.
+const reported = new Set<string>();
+
+const onProbe = (event: MessageEvent): void => {
+  const nonce: unknown = (event.data as Partial<{ quarkFrameProbe: unknown }> | null)?.quarkFrameProbe;
+  if (typeof nonce !== "string" || event.source === null || reported.has(nonce)) {
+    return;
+  }
+  const frame = frameElements(document).find(
+    (element) => (element as HTMLIFrameElement | HTMLObjectElement).contentWindow === event.source,
+  );
+  if (frame === undefined) {
+    return;
+  }
+  reported.add(nonce);
+  void ask({ type: "frameReport", nonce, shown: onePass(() => frameShown(frame)) }).catch(() => null);
+};
+
+const announceFrame = (nonce: string): PageReply => {
+  if (!isTop) {
+    window.parent.postMessage({ quarkFrameProbe: nonce }, "*");
+  }
+  return ok(null);
 };
 
 // The focused element, looking inside open shadow roots.
@@ -268,6 +310,8 @@ const handleCommand = (command: PageCommand): PageReply | Promise<PageReply> | s
       return openPicker();
     case "fillGenerated":
       return fillGeneratedHere(command.password);
+    case "announceFrame":
+      return announceFrame(command.nonce);
   }
 };
 
@@ -336,6 +380,8 @@ export const main = (): void => {
     },
     true,
   );
+
+  window.addEventListener("message", onProbe, true);
 
   new MutationObserver(scheduleScan).observe(document.documentElement, { childList: true, subtree: true });
   void scan();
