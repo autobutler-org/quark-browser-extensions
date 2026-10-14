@@ -145,7 +145,7 @@ const click = async (app: ParentNode, name: string): Promise<void> => {
 };
 
 const heading = (app: HTMLElement): string => app.querySelector("h1")?.textContent ?? "";
-const alertText = (app: HTMLElement): string => app.querySelector('.error-box[role="alert"]')?.textContent ?? "";
+const alertText = (app: HTMLElement): string => app.querySelector('.error-box[role="alert"]:not([hidden])')?.textContent ?? "";
 const asked = (type: Request["type"]) => worker.asked.filter((request) => request.type === type);
 
 const typeInto = (app: HTMLElement, id: string, value: string): void => {
@@ -206,6 +206,87 @@ describe("connecting", () => {
     expect(heading(app)).toBe("Connect to your Quark");
     expect(alertText(app)).not.toBe("");
     expect(buttonNamed(app, "Connect")?.disabled).toBe(false);
+  });
+});
+
+describe("the connect form", () => {
+  beforeEach(() => {
+    worker.state = { kind: "disconnected" };
+  });
+
+  const fill = (app: HTMLElement, address = "quark.local"): void => {
+    typeInto(app, "server", address);
+    typeInto(app, "username", "admin");
+    typeInto(app, "password", "pw");
+    app.querySelector<HTMLInputElement>("#persist")!.checked = true;
+  };
+
+  it("takes an address without a scheme (#99)", async () => {
+    const app = await openPopup();
+    const address = app.querySelector<HTMLInputElement>("#server")!;
+    expect(address.type).toBe("text");
+    expect(address.getAttribute("inputmode")).toBe("url");
+    expect(address.getAttribute("spellcheck")).toBe("false");
+    fill(app, "192.168.1.20:8080");
+    await submitForm(app);
+    expect(asked("connect")[0]).toMatchObject({ server: "192.168.1.20:8080", allowInsecure: false });
+  });
+
+  it("starts on the address, or on the first empty field after it (#109)", async () => {
+    await openPopup();
+    expect(document.activeElement?.id).toBe("server");
+    worker.state = { kind: "unreachable", server, message: "fetch failed" };
+    const unreachable = await openPopup();
+    await click(unreachable, "Edit address");
+    expect(document.activeElement?.id).toBe("username");
+  });
+
+  it("keeps the address, username and Stay signed in after bad credentials, and goes to the password (#98)", async () => {
+    worker.connect = err({ kind: "badCredentials" });
+    const app = await openPopup();
+    fill(app);
+    await submitForm(app);
+    expect(alertText(app)).toBe("Invalid username or password.");
+    expect(app.querySelector<HTMLInputElement>("#server")!.value).toBe("quark.local");
+    expect(app.querySelector<HTMLInputElement>("#username")!.value).toBe("admin");
+    expect(app.querySelector<HTMLInputElement>("#password")!.value).toBe("");
+    expect(app.querySelector<HTMLInputElement>("#persist")!.checked).toBe(true);
+    expect(document.activeElement?.id).toBe("password");
+  });
+
+  it("keeps the whole form after a network error, goes to the address, and says which address it tried (#98, #100)", async () => {
+    worker.connect = err({ kind: "network", message: "fetch failed" });
+    const app = await openPopup();
+    fill(app);
+    await submitForm(app);
+    expect(app.querySelector<HTMLInputElement>("#password")!.value).toBe("pw");
+    expect(app.querySelector<HTMLInputElement>("#persist")!.checked).toBe(true);
+    expect(document.activeElement?.id).toBe("server");
+    expect(alertText(app)).toContain("Can't reach your Quark");
+    expect(alertText(app)).toContain("Tried https://quark.local");
+  });
+
+  it("keeps Stay signed in and the password when the Quark asks for a legacy upgrade (#98)", async () => {
+    const legacyUpgrade = { server: "https://quark.local", username: "admin" };
+    worker.connect = err({ kind: "refused", reason: legacyUpgradeNeeded(legacyUpgrade.server), legacyUpgrade });
+    const app = await openPopup();
+    fill(app);
+    await submitForm(app);
+    expect(app.querySelector<HTMLInputElement>("#password")!.value).toBe("pw");
+    expect(app.querySelector<HTMLInputElement>("#persist")!.checked).toBe(true);
+    expect(document.activeElement?.id).toBe("legacy-upgrade");
+  });
+
+  it("keeps the username and Stay signed in when editing an unreachable address (#98)", async () => {
+    worker.state = { kind: "unreachable", server, message: "fetch failed" };
+    worker.connect = err({ kind: "network", message: "fetch failed" });
+    const app = await openPopup();
+    await click(app, "Edit address");
+    fill(app, "quark.lan");
+    await submitForm(app);
+    expect(app.querySelector<HTMLInputElement>("#server")!.value).toBe("quark.lan");
+    expect(app.querySelector<HTMLInputElement>("#username")!.value).toBe("admin");
+    expect(app.querySelector<HTMLInputElement>("#persist")!.checked).toBe(true);
   });
 });
 
@@ -467,7 +548,10 @@ describe("screens for a Quark that can't open the vault", () => {
   it("offers to fix the address of an unreachable Quark", async () => {
     worker.state = { kind: "unreachable", server: "https://192.168.1.10", message: "fetch failed" };
     const app = await openPopup();
+    expect(heading(app)).toBe("Can't reach your Quark");
+    expect(app.querySelector(".intro p")?.textContent).toMatch(/^Tried https:\/\/192\.168\.1\.10\./);
     expect(app.textContent).toContain("http://192.168.1.10");
+    expect(app.textContent).not.toContain("Check the address and that it's online");
     await click(app, "Edit address");
     expect(heading(app)).toBe("Connect to your Quark");
     expect(app.querySelector<HTMLInputElement>("#server")?.value).toBe("https://192.168.1.10");

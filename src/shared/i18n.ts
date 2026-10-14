@@ -193,6 +193,7 @@ export const messagePlaceholders = {
   popupSearch: [],
   popupAllEntries: ["count"],
   popupLock: [],
+  popupUnreachable: [],
   popupTryAgain: [],
   popupEditAddress: [],
 } as const satisfies Record<string, readonly string[]>;

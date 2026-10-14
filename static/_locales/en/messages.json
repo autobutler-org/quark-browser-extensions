@@ -825,6 +825,9 @@
   "popupLock": {
     "message": "Lock vault"
   },
+  "popupUnreachable": {
+    "message": "Can't reach your Quark"
+  },
   "popupTryAgain": {
     "message": "Try again"
   },

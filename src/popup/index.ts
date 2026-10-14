@@ -25,10 +25,17 @@ import type { ApiError, EntrySummary, LegacyUpgrade, Result, VaultState } from "
 
 type Tab = Readonly<{ id: number | null; url: string }>;
 
+// What the connect form held when it was last sent, so a failed attempt doesn't make the user type it again.
+type Draft = Readonly<{ server: string; username: string; password: string; persist: boolean }>;
+
+type ConnectField = "server" | "username" | "password" | "legacy-upgrade";
+
 type Model = Readonly<{
   state: VaultState | null;
   tab: Tab;
   error: string;
+  // A second line under the error, such as which address the connect form tried.
+  hint: string;
   busy: boolean;
   entries: readonly EntrySummary[];
   matches: readonly SiteMatch[];
@@ -47,6 +54,7 @@ type Model = Readonly<{
   confirming: number | null;
   // The Quark called this account legacy and wants its password once; the connect form asks before sending it.
   legacyUpgrade: LegacyUpgrade | null;
+  draft: Draft | null;
 }>;
 
 document.title = t("extName");
@@ -59,6 +67,7 @@ let model: Model = {
   state: null,
   tab: { id: null, url: "" },
   error: "",
+  hint: "",
   busy: false,
   entries: [],
   matches: [],
@@ -73,10 +82,18 @@ let model: Model = {
   welcome: "hidden",
   confirming: null,
   legacyUpgrade: null,
+  draft: null,
 };
 
+// A new error replaces the hint that went with the last one, and any success notice, so the two never sit together.
 const update = (patch: Partial<Model>): void => {
-  model = { ...model, ...patch };
+  const newError = patch.error !== undefined;
+  model = {
+    ...model,
+    ...(newError ? { hint: "" } : {}),
+    ...(newError && patch.error !== "" ? { notice: "" } : {}),
+    ...patch,
+  };
   render();
 };
 
@@ -100,7 +117,8 @@ const header = (actions: readonly HTMLElement[] = [], subtitle = ""): HTMLElemen
 const field = (id: string, label: string, input: HTMLInputElement): HTMLElement =>
   h("div", { className: "field" }, h("label", { for: id }, label), input);
 
-const errorBox = (): HTMLElement | null => (model.error === "" ? null : h("div", { className: "error-box", role: "alert" }, model.error));
+const errorBox = (): HTMLElement | null =>
+  model.error === "" ? null : h("div", { className: "error-box", role: "alert" }, h("div", {}, model.error), model.hint === "" ? null : h("div", {}, model.hint));
 
 const serverOf = (state: VaultState | null): string => (state !== null && "server" in state ? state.server : "");
 
@@ -124,13 +142,38 @@ const loadEntries = async (): Promise<void> => {
   });
 };
 
+// The field to fix after a failed connect: the password after bad credentials, the address when the Quark
+// couldn't be reached, and the consent when the Quark asks for a legacy account's password.
+const fieldFor = (error: ApiError, legacyUpgrade: LegacyUpgrade | null): ConnectField | null =>
+  legacyUpgrade !== null ? "legacy-upgrade" : error.kind === "badCredentials" ? "password" : error.kind === "network" ? "server" : null;
+
+const connectFailed = (error: ApiError): void => {
+  const legacyUpgrade = (error.kind === "refused" ? error.legacyUpgrade : undefined) ?? null;
+  const draft = model.draft === null || error.kind !== "badCredentials" ? model.draft : { ...model.draft, password: "" };
+  const unreachable = error.kind === "network" && draft !== null;
+  update({
+    busy: false,
+    error: legacyUpgrade !== null ? "" : unreachable ? t("popupUnreachable") : errorText(error),
+    hint: unreachable ? unreachableHint(normalizeServer(draft.server)) : "",
+    legacyUpgrade,
+    draft,
+  });
+  const field = fieldFor(error, legacyUpgrade);
+  if (field !== null) {
+    root.querySelector<HTMLElement>(`#${field}`)?.focus();
+  }
+};
+
 const applyState = async (result: Result<VaultState>): Promise<void> => {
   if (!result.ok) {
-    const legacyUpgrade = (result.error.kind === "refused" ? result.error.legacyUpgrade : undefined) ?? null;
-    update({ busy: false, error: legacyUpgrade === null ? errorText(result.error) : "", legacyUpgrade });
+    if (model.draft === null) {
+      update({ busy: false, error: errorText(result.error) });
+    } else {
+      connectFailed(result.error);
+    }
     return;
   }
-  update({ busy: false, error: "", state: result.value, editingAddress: false, legacyUpgrade: null });
+  update({ busy: false, error: "", state: result.value, editingAddress: false, legacyUpgrade: null, draft: null });
   if (result.value.kind === "unlocked") {
     await loadEntries();
   }
@@ -138,10 +181,24 @@ const applyState = async (result: Result<VaultState>): Promise<void> => {
 
 const connectView = (): HTMLElement => {
   const legacy = model.legacyUpgrade;
-  const server = h("input", { id: "server", type: "url", placeholder: "https://quark.local", value: legacy?.server ?? serverOf(model.state), autocomplete: "url", required: true });
-  const username = h("input", { id: "username", type: "text", autocomplete: "username", value: legacy?.username ?? "", required: true });
-  const password = h("input", { id: "password", type: "password", autocomplete: "current-password", required: true });
-  const persist = h("input", { id: "persist", type: "checkbox" });
+  const draft = model.draft;
+  // A text field, not type="url", so an address without a scheme gets to normalizeServer instead of the browser's
+  // "Please enter a URL."
+  const server = h("input", {
+    id: "server",
+    type: "text",
+    inputmode: "url",
+    spellcheck: "false",
+    placeholder: "https://quark.local",
+    value: legacy?.server ?? draft?.server ?? serverOf(model.state),
+    autocomplete: "url",
+    required: true,
+  });
+  const username = h("input", { id: "username", type: "text", autocomplete: "username", value: legacy?.username ?? draft?.username ?? "", required: true });
+  const password = h("input", { id: "password", type: "password", autocomplete: "current-password", value: draft?.password ?? "", required: true });
+  const persist = h("input", { id: "persist", type: "checkbox", checked: draft?.persist ?? false });
+  // Focus starts on the first field still to fill.
+  [server, username, password].find((input) => input.value === "")?.setAttribute("data-autofocus", "");
   const allowInsecure = h("input", { id: "allow-insecure", type: "checkbox" });
   const insecure = h(
     "div",
@@ -177,7 +234,7 @@ const connectView = (): HTMLElement => {
   syncUpgrade();
   const submit = async (event: Event): Promise<void> => {
     event.preventDefault();
-    update({ busy: true, error: "" });
+    update({ busy: true, error: "", draft: { server: server.value, username: username.value, password: password.value, persist: persist.checked } });
     if (legacy !== null && upgrade?.hidden === false && allowUpgrade.checked) {
       await upgradeLedger.giveConsent(legacy.server, legacy.username);
     }
@@ -221,7 +278,7 @@ const connectView = (): HTMLElement => {
       h("div", { className: "spacer" }),
       h("button", { className: "primary", type: "submit", disabled: model.busy }, model.busy ? t("popupConnecting") : t("popupConnect")),
       model.editingAddress
-        ? h("button", { className: "secondary", type: "button", onclick: (() => update({ editingAddress: false, error: "" })) as EventListener }, t("cancel"))
+        ? h("button", { className: "secondary", type: "button", onclick: (() => update({ editingAddress: false, error: "", draft: null })) as EventListener }, t("cancel"))
         : null,
     ),
   );
@@ -602,7 +659,8 @@ const messageView = (state: VaultState): HTMLElement =>
       h(
         "div",
         { className: "intro" },
-        h("h1", {}, stateText(state)),
+        // The hint says what to check, so the heading stays short.
+        h("h1", {}, state.kind === "unreachable" ? t("popupUnreachable") : stateText(state)),
         state.kind === "unreachable" ? h("p", { className: "muted" }, unreachableHint(state.server)) : null,
       ),
       h("div", { className: "spacer" }),
