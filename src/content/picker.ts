@@ -1,6 +1,7 @@
 import { h$, icon, icons } from "../shared/dom";
 import { t } from "../shared/i18n";
 import { adoptStyles } from "./styles";
+import { placePanel } from "./position";
 import { isFallback, type SiteMatch } from "../shared/host";
 import type { EntrySummary } from "../shared/types";
 
@@ -15,7 +16,7 @@ const css = `
 .trigger:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .panel {
   position: absolute; top: 30px; right: 0; width: 300px; max-width: calc(100vw - 16px);
-  max-height: calc(100vh - 48px); overflow-y: auto; box-sizing: border-box; padding: 6px;
+  max-height: calc(100vh - 48px); overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; padding: 6px;
   background: var(--card); border: 1px solid var(--border); border-radius: 12px;
   box-shadow: 0 16px 40px rgba(2, 6, 23, 0.35);
   display: flex; flex-direction: column; gap: 2px;
@@ -82,8 +83,8 @@ export const menuTarget = (key: string, current: number, count: number): number 
   }
 };
 
-// Keeps the panel inside the viewport when the field sits near the left edge of a narrow window.
-const gutter = 8;
+// The width the panel asks for; position.ts narrows it to fit a small frame.
+const panelWidth = 300;
 
 export const attachPicker = (
   field: HTMLInputElement,
@@ -123,12 +124,23 @@ export const attachPicker = (
     anchor.style.left = `${rect.right + view.scrollX - 22 - 6}px`;
   };
 
+  // Keeps the whole panel inside this frame's viewport: below the trigger, flipped above it, or over it in a
+  // frame too small for either, scrolling inside when it still doesn't fit. The CSS top/right stay as a fallback.
   const fit = (panel: HTMLElement): void => {
-    panel.style.right = "0px";
-    const left = panel.getBoundingClientRect().left;
-    if (left < gutter) {
-      panel.style.right = `${left - gutter}px`;
-    }
+    const root = doc.documentElement;
+    const viewport = { width: root.clientWidth || view.innerWidth, height: root.clientHeight || view.innerHeight };
+    const border = panel.offsetHeight - panel.clientHeight;
+    const spot = placePanel(trigger.getBoundingClientRect(), viewport, { width: panelWidth, height: panel.scrollHeight + border });
+    const origin = anchor.getBoundingClientRect();
+    panel.dataset.side = spot.side;
+    Object.assign(panel.style, {
+      top: `${spot.top - origin.top}px`,
+      left: `${spot.left - origin.left}px`,
+      right: "auto",
+      width: `${spot.width}px`,
+      maxWidth: "none",
+      maxHeight: `${spot.maxHeight}px`,
+    });
   };
 
   const items = (): HTMLButtonElement[] => [...shadow.querySelectorAll<HTMLButtonElement>(".item")];
