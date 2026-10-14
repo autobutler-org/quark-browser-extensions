@@ -4,6 +4,7 @@ import { ask } from "../shared/messages";
 import { idleMinuteChoices, type BooleanSetting, type IdleMinutes, type Settings, type VaultState } from "../shared/types";
 import { currentBrowser } from "../shared/platform";
 import { fillShortcut, shortcutHelp } from "../shared/shortcut";
+import { replaceKeepingFocus } from "../popup/focus";
 import { othersSection } from "./others";
 
 const root = document.getElementById("app") as HTMLElement;
@@ -15,14 +16,22 @@ const toggle = (
   title: string,
   hint: string,
 ): HTMLElement => {
-  const input = h("input", { type: "checkbox", checked: settings[key] });
+  // The setting key names the checkbox, so focus finds it again after the page re-renders; the hint is
+  // read as its description rather than run into its name.
+  const input = h("input", {
+    id: key,
+    type: "checkbox",
+    checked: settings[key],
+    "aria-labelledby": `${key}-title`,
+    "aria-describedby": hint === "" ? undefined : `${key}-hint`,
+  });
   input.addEventListener("change", () => {
     void ask({ type: "saveSettings", settings: { ...settings, [key]: input.checked } }).then(render);
   });
   return h(
     "label",
     { className: "toggle" },
-    h("div", { className: "grow" }, h("div", {}, title), hint === "" ? null : h("div", { className: "muted small" }, hint)),
+    h("div", { className: "grow" }, h("div", { id: `${key}-title` }, title), hint === "" ? null : h("div", { className: "muted small", id: `${key}-hint` }, hint)),
     input,
   );
 };
@@ -51,7 +60,7 @@ const idleMinutesSelect = (settings: Settings): HTMLElement => {
 const lockingSection = (settings: Settings): HTMLElement =>
   h(
     "section",
-    { className: "card" },
+    { className: "card", id: "locking" },
     h("h2", {}, "Locking"),
     h("p", { className: "muted small" }, "Locking from this browser locks the vault on your Quark for every device. The vault always locks when this computer's screen locks."),
     toggle(settings, "lockOnIdle", "Lock the vault when this computer is idle", "Off by default, so someone else mid-task isn't locked out"),
@@ -88,7 +97,7 @@ const shortcutSection = (shortcut: string): HTMLElement => {
 const neverSaveSection = (hosts: readonly string[]): HTMLElement =>
   h(
     "section",
-    { className: "card" },
+    { className: "card", id: "never-save" },
     h("h2", {}, "Never save on these sites"),
     ...(hosts.length === 0
       ? [h("p", { className: "muted small" }, "None yet. Choose \"Never for this site\" when Quark Vault offers to save a login.")]
@@ -97,7 +106,11 @@ const neverSaveSection = (hosts: readonly string[]): HTMLElement =>
             "div",
             { className: "toggle" },
             h("div", { className: "grow mono" }, host),
-            h("button", { className: "secondary", type: "button", onclick: (() => void ask({ type: "removeNeverSave", host }).then(render)) as EventListener }, "Remove"),
+            h(
+              "button",
+              { className: "secondary", type: "button", "aria-label": `Remove ${host}`, onclick: (() => void ask({ type: "removeNeverSave", host }).then(render)) as EventListener },
+              "Remove",
+            ),
           ),
         )),
   );
@@ -106,7 +119,7 @@ const connection = (state: VaultState): HTMLElement => {
   const signedIn = state.kind !== "disconnected" && state.kind !== "signedOut";
   return h(
     "section",
-    { className: "card" },
+    { className: "card", id: "connection" },
     h("h2", {}, "Connection"),
     h(
       "div",
@@ -132,7 +145,8 @@ const render = async (): Promise<void> => {
     ask({ type: "neverSaveList" }),
   ]);
   const shortcut = fillShortcut(commands);
-  root.replaceChildren(
+  replaceKeepingFocus(
+    root,
     h(
       "main",
       { className: "page" },
@@ -140,7 +154,7 @@ const render = async (): Promise<void> => {
       connection(state),
       h(
         "section",
-        { className: "card" },
+        { className: "card", id: "autofill" },
         h("h2", {}, "Autofill"),
         toggle(settings, "inlineButton", "Show the Quark button in password fields", "Only when the vault has an entry for the site"),
         toggle(settings, "badge", "Show the match count on the toolbar icon", ""),
@@ -155,11 +169,21 @@ const render = async (): Promise<void> => {
   );
 };
 
+// A link from the popup lands on its section with focus there too, so keyboard and screen-reader users start in the right place.
+const showSection = (section: HTMLElement | null): void => {
+  if (section === null) {
+    return;
+  }
+  section.tabIndex = -1;
+  section.scrollIntoView();
+  section.focus({ preventScroll: true });
+};
+
 void render().then(() => {
   if (location.hash === "#others") {
-    others.scrollIntoView();
+    showSection(others);
   } else if (location.hash === "#shortcut") {
-    document.getElementById("shortcut")?.scrollIntoView();
+    showSection(document.getElementById("shortcut"));
   }
   void ask({ type: "settings" }).then((settings) =>
     settings.othersReviewed ? settings : ask({ type: "saveSettings", settings: { ...settings, othersReviewed: true } }),

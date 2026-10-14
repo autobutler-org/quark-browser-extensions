@@ -1,7 +1,9 @@
+/* The popup's preferred size. When zoom or a large default font leaves less room than this, the page
+   scrolls instead of clipping (WCAG 1.4.4 / 1.4.10). */
 body {
   width: 360px;
   height: 580px;
-  overflow: hidden;
+  overflow: auto;
 }
 
 #app,
@@ -15,7 +17,7 @@ body {
 }
 
 .bar {
-  height: 56px;
+  min-height: 56px;
   flex-shrink: 0;
   padding: 0 12px 0 16px;
   border-bottom: 1px solid var(--border);
@@ -97,11 +99,12 @@ body {
 }
 
 .search {
+  flex-shrink: 0;
   margin: 12px 16px 8px;
-  height: 40px;
+  min-height: 40px;
   padding: 0 12px;
   background: var(--input);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control);
   border-radius: 10px;
   color: var(--muted);
   display: flex;
@@ -122,6 +125,12 @@ body {
   outline: none;
 }
 
+/* The field itself has no edge, so the ring goes on the box around it. */
+.search:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
 .notice {
   margin: 0 16px 8px;
   font-size: 12px;
@@ -134,6 +143,7 @@ body {
 
 .scroll {
   flex-grow: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -193,9 +203,10 @@ body {
 }
 
 .fill {
-  height: 36px;
+  min-height: 36px;
+  flex-shrink: 0;
   padding: 0 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control);
   border-radius: 8px;
   background: var(--input);
   font-size: 13px;
@@ -235,7 +246,7 @@ body {
 }
 
 .status {
-  height: 36px;
+  min-height: 36px;
   flex-shrink: 0;
   padding: 0 16px;
   border-top: 1px solid var(--border);

@@ -1,11 +1,15 @@
+/* Text pairs stay at 4.5:1 or more, and control edges (--control) and the focus ring (--focus) at 3:1
+   or more, in both themes (WCAG 1.4.3 / 1.4.11). test/contrast.test.ts checks the ratios; the in-page
+   UI uses the same values in src/content/styles.ts. */
 :root {
   --bg: #070d19;
   --card: #0f172a;
   --border: #1e293b;
+  --control: #64748b;
   --input: #131c2e;
   --fg: #e2e8f0;
   --muted: #94a3b8;
-  --primary: #0284c7;
+  --primary: #0369a1;
   --primary-fg: #ffffff;
   --accent: #38bdf8;
   --error-bg: #2a0f13;
@@ -13,6 +17,7 @@
   --error-fg: #fca5a5;
   --success: #10b981;
   --mark: #0ea5e9;
+  --focus: #7dd3fc;
   color-scheme: dark;
 }
 
@@ -20,7 +25,8 @@
   :root {
     --bg: #f8fafc;
     --card: #ffffff;
-    --border: #e2e8f0;
+    --border: #cbd5e1;
+    --control: #64748b;
     --input: #ffffff;
     --fg: #0f172a;
     --muted: #475569;
@@ -28,6 +34,7 @@
     --error-bg: #fef2f2;
     --error-border: #fecaca;
     --error-fg: #b91c1c;
+    --focus: #0369a1;
     color-scheme: light;
   }
 }
@@ -73,21 +80,23 @@ input[type="search"] {
   height: 44px;
   padding: 0 12px;
   background: var(--input);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control);
   border-radius: 10px;
   color: var(--fg);
 }
 
 input:focus-visible,
-button:focus-visible {
-  outline: 2px solid var(--mark);
+button:focus-visible,
+select:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
 input[type="checkbox"] {
   width: 18px;
   height: 18px;
-  accent-color: var(--mark);
+  accent-color: var(--primary);
 }
 
 button {
@@ -100,7 +109,7 @@ button:disabled {
 }
 
 .primary {
-  height: 44px;
+  min-height: 44px;
   border: none;
   border-radius: 10px;
   background: var(--primary);
@@ -109,9 +118,9 @@ button:disabled {
 }
 
 .secondary {
-  height: 44px;
+  min-height: 44px;
   padding: 0 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control);
   border-radius: 10px;
   background: var(--input);
   font-weight: 600;
@@ -121,7 +130,7 @@ button:disabled {
   width: 40px;
   height: 40px;
   flex-shrink: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control);
   border-radius: 10px;
   background: var(--card);
   color: var(--muted);
