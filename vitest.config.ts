@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "jsdom",
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.ts", "e2e/firefox/**/*.test.ts"],
     setupFiles: ["test/setup.ts"],
     coverage: {
       provider: "v8",
