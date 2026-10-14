@@ -12,8 +12,11 @@ export default defineConfig({
       reporter: ["text", "html"],
       // Floors for the code that guards the vault, a little under what the tests reach today.
       thresholds: {
-        "src/background/**": { statements: 50, branches: 39, functions: 37, lines: 51 },
-        "src/shared/**": { statements: 74, branches: 70, functions: 76, lines: 74 },
+        "src/background/**": { statements: 90, branches: 83, functions: 89, lines: 91 },
+        "src/shared/**": { statements: 96, branches: 92, functions: 95, lines: 96 },
+        "src/content/**": { statements: 96, branches: 91, functions: 95, lines: 96 },
+        "src/popup/**": { statements: 95, branches: 88, functions: 96, lines: 94 },
+        "src/options/**": { statements: 98, branches: 95, functions: 99, lines: 98 },
       },
     },
   },
