@@ -333,6 +333,18 @@ describe("a legacy account's one-time upgrade (#76)", () => {
     expect(app.querySelector("#search")).not.toBeNull();
   });
 
+  it("ignores a second submit while the first is still connecting (#140)", async () => {
+    const app = await askedForUpgrade();
+    worker.connect = null;
+    app.querySelector<HTMLInputElement>("#legacy-upgrade")!.checked = true;
+    typeInto(app, "password", "pw");
+    const form = app.querySelector("form")!;
+    form.dispatchEvent(new Event("submit", { cancelable: true }));
+    form.dispatchEvent(new Event("submit", { cancelable: true }));
+    await settle();
+    expect(asked("connect")).toHaveLength(2);
+  });
+
   it("drops the question once the form names another account", async () => {
     const app = await askedForUpgrade();
     const confirm = app.querySelector<HTMLInputElement>("#legacy-upgrade")!;
