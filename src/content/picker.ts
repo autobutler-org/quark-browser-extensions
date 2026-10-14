@@ -7,7 +7,7 @@ import type { EntrySummary } from "../shared/types";
 
 const css = `
 :host { all: initial; }
-.anchor { position: absolute; z-index: 2147483646; font-family: "IBM Plex Sans", system-ui, sans-serif; }
+.anchor { position: absolute; font-family: "IBM Plex Sans", system-ui, sans-serif; }
 .trigger {
   width: 22px; height: 22px; padding: 0; border: none; border-radius: 6px;
   background: var(--primary); color: var(--primary-fg); cursor: pointer;
@@ -83,6 +83,11 @@ export const menuTarget = (key: string, current: number, count: number): number 
   }
 };
 
+// Every field's button is its own host at the same level, so a later one in the DOM paints over an earlier one's
+// panel. The open picker steps up to the top level, above every inline button, and back down when it closes.
+const buttonLayer = "2147483646";
+const openLayer = "2147483647";
+
 // The width the panel asks for; position.ts narrows it to fit a small frame.
 const panelWidth = 300;
 
@@ -99,6 +104,7 @@ export const attachPicker = (
   adoptStyles(shadow, css);
 
   const anchor = h$(doc, "div", { className: "anchor" });
+  anchor.style.zIndex = buttonLayer;
   const trigger = h$(doc, "button", {
     className: "trigger",
     type: "button",
@@ -153,6 +159,7 @@ export const attachPicker = (
   const closePanel = (): void => {
     shadow.querySelector(".panel")?.remove();
     trigger.setAttribute("aria-expanded", "false");
+    anchor.style.zIndex = buttonLayer;
   };
 
   const showError = (panel: HTMLElement, message: string): void => {
@@ -238,6 +245,7 @@ export const attachPicker = (
       menu.append(group);
     }
     anchor.append(panel);
+    anchor.style.zIndex = openLayer;
     fit(panel);
     trigger.setAttribute("aria-expanded", "true");
     const count = items().length;
