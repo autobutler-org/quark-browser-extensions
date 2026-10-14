@@ -1,6 +1,6 @@
 import { authKey } from "./authKey.ts";
 
-export type Reply = Readonly<{ status: number; body: any }>;
+export type Reply = Readonly<{ status: number; body: unknown }>;
 
 // A bare client for Quark's /api/v0, used to seed the server and to check what
 // the extension did to it. It goes straight to the server, never through the
@@ -19,21 +19,21 @@ export const client = (server: string) => {
     let parsed: unknown = text;
     try {
       parsed = JSON.parse(text);
-    } catch {}
+    } catch {
+      // Not JSON: keep the text as the body.
+    }
     return { status: response.status, body: parsed };
   };
 
-  const expectOk = async (reply: Promise<Reply>, what: string): Promise<any> => {
+  // Resolves to the reply's body, which the caller says the shape of.
+  const expectOk = async <T = unknown>(reply: Promise<Reply>, what: string): Promise<T> => {
     const { status, body } = await reply;
     if (status !== 200) throw new Error(`${what}: HTTP ${status} ${JSON.stringify(body)}`);
-    return body;
+    return body as T;
   };
 
   const salt = async (username: string) =>
-    expectOk(call("GET", `/auth/salt?${new URLSearchParams({ username })}`), "GET /auth/salt") as Promise<{
-      salt: string;
-      legacy: boolean;
-    }>;
+    expectOk<{ salt: string; legacy: boolean }>(call("GET", `/auth/salt?${new URLSearchParams({ username })}`), "GET /auth/salt");
 
   return {
     call,
@@ -42,8 +42,8 @@ export const client = (server: string) => {
     // Signs in the way a current Quark app does: salt, then the auth key.
     login: async (username: string, password: string): Promise<string> => {
       const { salt: s } = await salt(username);
-      const body = await expectOk(call("POST", "/auth/login", { username, authKey: authKey(password, s) }), "login");
-      return body.token as string;
+      const body = await expectOk<{ token: string }>(call("POST", "/auth/login", { username, authKey: authKey(password, s) }), "login");
+      return body.token;
     },
   };
 };

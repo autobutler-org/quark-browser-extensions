@@ -1,7 +1,7 @@
 import http from "node:http";
 import { listen } from "./listen.ts";
 
-export type Logged = Readonly<{ method: string; path: string; body: any }>;
+export type Logged = Readonly<{ method: string; path: string; body: unknown }>;
 
 export const logPath = "/__e2e/log";
 
@@ -28,7 +28,9 @@ export const startProxy = async (target: string, port?: number) => {
         let body: unknown = null;
         try {
           body = raw.length > 0 ? JSON.parse(raw.toString()) : null;
-        } catch {}
+        } catch {
+          // Not JSON: log the request with no body.
+        }
         log.push({ method: req.method ?? "GET", path: req.url ?? "/", body });
       }
       const forward = http.request(

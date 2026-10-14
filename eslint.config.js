@@ -22,6 +22,12 @@ export default tseslint.config(
     },
   },
   {
+    // Playwright reads a fixture's dependencies from its first parameter, which
+    // has to be a destructuring pattern even when it needs none: `async ({}, use)`.
+    files: ["e2e/**/*.ts"],
+    rules: { "no-empty-pattern": ["error", { allowObjectPatternsAsParameters: true }] },
+  },
+  {
     files: ["**/*.js"],
     extends: [tseslint.configs.disableTypeChecked],
   },
