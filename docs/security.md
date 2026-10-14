@@ -31,8 +31,18 @@ The Quark session token belongs to an admin account, so it can do anything an ad
   - After a browser restart, the first request for the connection decrypts the token back into `storage.session`.
   - If the ciphertext has been tampered with, has been moved to another server address, or its key is gone, the extension signs out cleanly instead.
 - **Signing out, or a 401 from Quark,** removes the session copy and the ciphertext, and deletes the key.
-- **Upgrading from an older build:** a plaintext `connection` left in `storage.local` is moved under a seal the first time the worker reads it, so the plaintext copy is deleted.
+- **Upgrading from an older build:** builds before the seal kept the token in plaintext under `connection` in `storage.local`. That copy is deleted, not adopted, and those users sign in once more. An older build's `server` key in `storage.local` is deleted the same way.
 - **If sealing fails,** for example when IndexedDB is unavailable in a private-only profile, you stay signed in for this browser session only.
+
+### Nothing in `storage.local` picks the Quark
+
+Content scripts can **write** `storage.local` as well as read it. If the worker trusted anything there, a compromised renderer could plant `{ server: "https://evil.example", token: "x" }` and the worker would send the master password there on the next unlock (issue #75). So:
+
+- The worker connects only to a server from a sealed record that decrypts with the key in IndexedDB, or from a sign-in on the extension's own pages (`connect`, which the gate accepts only from them). The sealed record's server is bound in as associated data, so it can't be swapped without failing to decrypt.
+- A plaintext `connection` in `storage.local` is never used. The worker deletes it when it next restores the session, and never deletes the real sealed record or its key because of it.
+- The address the popup shows comes from the live connection. When signed out, it is the last address signed in to, which the worker keeps in the extension's IndexedDB next to the seal key, not in `storage.local`.
+
+A content script can still delete or corrupt `sealedConnection`, which signs you out. It can't sign you in somewhere else.
 
 ### What this does and doesn't protect
 
