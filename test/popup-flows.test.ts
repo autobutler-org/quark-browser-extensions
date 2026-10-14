@@ -664,6 +664,16 @@ describe("screens for a Quark that can't open the vault", () => {
     expect(buttonNamed(app, "Edit address")).toBeDefined();
   });
 
+  it("keeps the unreachable heading short and leaves the advice to the hint", async () => {
+    worker.state = { kind: "unreachable", server: "http://quark.local:8080", message: "fetch failed" };
+    const app = await openPopup();
+    expect(heading(app)).toBe("Can't reach your Quark");
+    const paragraphs = [...app.querySelectorAll(".intro p")].map((p) => p.textContent);
+    expect(paragraphs).toEqual([
+      "Tried http://quark.local:8080. Check the address and port, and that your Quark is online.",
+    ]);
+  });
+
   it("tries again", async () => {
     worker.state = { kind: "unreachable", server, message: "fetch failed" };
     const app = await openPopup();
