@@ -115,6 +115,39 @@ describe("the popup's match cards", () => {
   });
 });
 
+// A login saved for another port or scheme is another origin's. A one-click Fill closed the popup with nothing
+// filled (#120); it now takes the Fill anyway warning, and a fill that fails says why.
+describe("a Different port match", () => {
+  const fillsSent = () => worker.sent.filter((request) => request.type === "fillInTab" || request.type === "fillAnyway");
+
+  beforeEach(() => {
+    worker.fallbacks = [{ ...match(4, "Admin"), kind: "otherPort", where: "example.com:8443/login", note: "Different port" }];
+    worker.entries = [...worker.entries, entry(4, "Admin", "example.com")];
+  });
+
+  it("asks from the all entries list too, naming where it is saved", async () => {
+    const app = await openPopup(unlocked);
+    const fill = [...app.querySelectorAll<HTMLButtonElement>(".list .fill")].find((found) => found.getAttribute("aria-label") === "Fill anyway Admin")!;
+    fill.click();
+    await settle();
+    expect(fillsSent()).toEqual([]);
+    expect(app.querySelectorAll("#fill-anyway-4")).toHaveLength(1);
+    expect(app.querySelector("#fill-anyway-4")?.textContent).toContain("Admin is saved for example.com:8443/login, not example.com.");
+  });
+
+  it("says why nothing filled instead of closing", async () => {
+    worker.refuseFill = "No login form on this page. Reload it and try again.";
+    const close = vi.fn();
+    vi.stubGlobal("close", close);
+    const app = await openPopup(unlocked);
+    button(app, "Fill anyway Admin").click();
+    await settle();
+    button(app, "Fill on example.com").click();
+    await vi.waitFor(() => expect(app.querySelector(".error-box")?.textContent).toContain("No login form"));
+    expect(close).not.toHaveBeenCalled();
+  });
+});
+
 describe("focus across re-renders", () => {
   it("starts on the search field", async () => {
     await openPopup(unlocked);
