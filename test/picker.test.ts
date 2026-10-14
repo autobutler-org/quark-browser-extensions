@@ -293,7 +293,7 @@ describe("attachPicker", () => {
     picker.open();
     const panel = root.querySelector<HTMLElement>(".panel") as HTMLElement;
     panel.scrollTop = 120;
-    items()[2]?.click();
+    items()[1]?.click();
     await vi.waitFor(() => expect(root.querySelector("[role=alert]")?.textContent).toBe(reason));
     const alert = root.querySelector("[role=alert]");
     expect(alert?.nextElementSibling?.getAttribute("role")).toBe("menu");
