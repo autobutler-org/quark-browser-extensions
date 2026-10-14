@@ -195,7 +195,7 @@ const fillInTab = async (tabId: number, entryId: number): Promise<Responses["fil
     topUrl,
   };
   try {
-    const reply = (await chrome.tabs.sendMessage(tabId, command)) as PageReply | undefined;
+    const reply = await chrome.tabs.sendMessage<PageCommand, PageReply | undefined>(tabId, command);
     if (reply === undefined) {
       return refused("Couldn't find login fields on this page. If it just loaded, reload it and try again.");
     }
@@ -485,7 +485,7 @@ export const main = (): void => {
     pendings.delete(tabId);
   });
 
-  chrome.idle.onStateChanged.addListener((state) => void onIdleState(state as IdleState));
+  chrome.idle.onStateChanged.addListener((state) => void onIdleState(state));
   void loadSettings().then(applyIdleInterval);
 
   chrome.runtime.onMessage.addListener((request: Request, sender, sendResponse) => {

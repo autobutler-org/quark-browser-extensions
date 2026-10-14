@@ -40,12 +40,12 @@ export const standaloneUsernameField = (doc: Document): HTMLInputElement | null 
   inputs(doc).find((input) => usernameTypes.has(input.type) && looksLikeUsername(input) && isVisible(input)) ?? null;
 
 export const setValue = (input: HTMLInputElement, value: string): void => {
-  const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input) as object, "value")?.set;
+  const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input) as object, "value");
   input.focus();
-  if (setter === undefined) {
+  if (descriptor?.set === undefined) {
     input.value = value;
   } else {
-    setter.call(input, value);
+    descriptor.set.call(input, value);
   }
   input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
   input.dispatchEvent(new Event("change", { bubbles: true }));

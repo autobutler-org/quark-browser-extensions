@@ -84,4 +84,4 @@ export type PageCommand =
 export type PageReply = Result<null>;
 
 export const ask = <R extends Request>(request: R): Promise<Responses[R["type"]]> =>
-  chrome.runtime.sendMessage(request) as Promise<Responses[R["type"]]>;
+  chrome.runtime.sendMessage<R, Responses[R["type"]]>(request);

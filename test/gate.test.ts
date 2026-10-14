@@ -248,16 +248,16 @@ describe("route", () => {
       }
     });
 
-    it("passes the sender, not the request's own claims, to the handlers", () => {
+    it("passes the sender, not the request's own claims, to the handlers", async () => {
       const { content, handlers } = setup();
-      route({ type: "matches", pageUrl: "https://bank.example/" }, topFrame, self, handlers);
-      route(requests.fillFromPage, topFrame, self, handlers);
-      route(requests.otpFromPage, topFrame, self, handlers);
-      route(requests.captured, topFrame, self, handlers);
-      route(requests.hello, topFrame, self, handlers);
-      route(requests.fieldFocused, topFrame, self, handlers);
-      route(requests.myOffer, topFrame, self, handlers);
-      route(requests.generateForPage, topFrame, self, handlers);
+      await route({ type: "matches", pageUrl: "https://bank.example/" }, topFrame, self, handlers);
+      await route(requests.fillFromPage, topFrame, self, handlers);
+      await route(requests.otpFromPage, topFrame, self, handlers);
+      await route(requests.captured, topFrame, self, handlers);
+      await route(requests.hello, topFrame, self, handlers);
+      await route(requests.fieldFocused, topFrame, self, handlers);
+      await route(requests.myOffer, topFrame, self, handlers);
+      await route(requests.generateForPage, topFrame, self, handlers);
       expect(content).toEqual([
         { handler: "matches", args: [topFrame] },
         { handler: "fillFromPage", args: [requests.fillFromPage, topFrame] },
@@ -270,9 +270,9 @@ describe("route", () => {
       ]);
     });
 
-    it("saves for the sender's tab, ignoring a tab id in the request", () => {
+    it("saves for the sender's tab, ignoring a tab id in the request", async () => {
       const { content, handlers } = setup();
-      route({ type: "resolveSave", action: "never", tabId: 99 }, topFrame, self, handlers);
+      await route({ type: "resolveSave", action: "never", tabId: 99 }, topFrame, self, handlers);
       expect(content).toEqual([{ handler: "resolveSave", args: [{ type: "resolveSave", action: "never", tabId: 99 }, 7] }]);
     });
 
