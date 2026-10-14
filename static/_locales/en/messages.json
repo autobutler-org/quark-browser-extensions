@@ -242,18 +242,6 @@
   "menuNoLogins": {
     "message": "No saved logins for this site"
   },
-  "menuFillWhere": {
-    "message": "Fill $NAME$ ($WHERE$)",
-    "description": "WHERE says where a login for another port or scheme was saved.",
-    "placeholders": {
-      "name": {
-        "content": "$1"
-      },
-      "where": {
-        "content": "$2"
-      }
-    }
-  },
   "pickerTrigger": {
     "message": "Fill from Quark Vault"
   },
@@ -295,6 +283,20 @@
   },
   "pickerFallbacks": {
     "message": "Saved for another port or scheme"
+  },
+  "pickerFallbackInPopup": {
+    "message": "$NAME$ is saved for $SAVED$, not $PAGE$. To fill it here, open Quark Vault from the toolbar and choose Fill on $PAGE$.",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      },
+      "saved": {
+        "content": "$2"
+      },
+      "page": {
+        "content": "$3"
+      }
+    }
   },
   "pickerNoLogins": {
     "message": "No logins saved for this site"

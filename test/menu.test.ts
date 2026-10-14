@@ -24,8 +24,11 @@ describe("menuItems", () => {
     expect(items[0]).toEqual({ id: "fill:1", title: "Fill Tom && Jerry", enabled: true });
   });
 
-  it("names where a fallback was saved", () => {
-    expect(menuItems([entry(1, "Admin", "otherPort")])).toEqual([{ id: "fill:1", title: "Fill Admin (example.com:8443)", enabled: true }]);
+  it("leaves out fallbacks, which need the popup's confirmation", () => {
+    expect(menuItems([entry(1, "Admin", "otherPort"), entry(2, "Old", "otherScheme")])).toEqual([
+      { id: "none", title: "No saved logins for this site", enabled: false },
+    ]);
+    expect(menuItems([entry(1, "Admin", "otherPort"), entry(3, "Site")])).toEqual([{ id: "fill:3", title: "Fill Site", enabled: true }]);
   });
 });
 
@@ -52,8 +55,8 @@ describe("shortcutPlan", () => {
     expect(shortcutPlan([entry(3, "A"), entry(4, "B", "otherPort")])).toEqual({ kind: "fill", entryId: 3 });
   });
 
-  it("never fills a fallback without a pick", () => {
-    expect(shortcutPlan([entry(4, "B", "otherPort")])).toEqual({ kind: "picker" });
-    expect(shortcutPlan([entry(4, "B", "otherScheme")])).toEqual({ kind: "picker" });
+  it("opens the popup, where a fallback can be confirmed, when there are only fallbacks", () => {
+    expect(shortcutPlan([entry(4, "B", "otherPort")])).toEqual({ kind: "popup" });
+    expect(shortcutPlan([entry(4, "B", "otherScheme"), entry(5, "C", "otherPort")])).toEqual({ kind: "popup" });
   });
 });

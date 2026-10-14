@@ -137,6 +137,19 @@ describe("fillAnyway", () => {
     expect(sent).toEqual([]);
   });
 
+  it("fills an entry saved for another port on the same host only through the grant", async () => {
+    const otherPort = "https://github.com:8443/login";
+    const collected: unknown[] = [];
+    const sent = await setup(otherPort, async () => {
+      collected.push(await fillFromPage(frame(otherPort, 0)));
+      return { ok: true, value: null };
+    });
+    expect(await fillFromPage(frame(otherPort, 0))).toMatchObject({ ok: false, error: { kind: "refused" } });
+    expect(await fillAnyway("github.com:8443")).toEqual({ ok: true, value: null });
+    expect(collected).toEqual([{ ok: true, value: { username: entry.username, password: entry.password, autoSubmit: false } }]);
+    expect(sent.find((s) => s.message.type === "fill")).toMatchObject({ message: { entryUrl: otherPort }, options: { frameId: 0 } });
+  });
+
   it("takes the usual path for an entry that matches the page after all", async () => {
     const sent = await setup("https://github.com/login", () => Promise.resolve({ ok: true, value: null }));
     expect(await fillAnyway("github.com")).toEqual({ ok: true, value: null });

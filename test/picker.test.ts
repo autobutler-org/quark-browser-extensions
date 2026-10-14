@@ -185,6 +185,39 @@ describe("attachPicker", () => {
     picker.destroy();
   });
 
+  it("never puts focus on a fallback when nothing matches this origin", () => {
+    const roots = openShadows();
+    const field = document.createElement("input");
+    document.body.append(field);
+    const picker = attachPicker(field, [match(2, "Router", "otherPort", "localhost:9502", "Different port")], "localhost:9503", {
+      onPick: () => Promise.resolve(null),
+    });
+    picker.open();
+    const root = roots[0]!;
+    const item = root.querySelector<HTMLButtonElement>(".item");
+    expect(item).not.toBeNull();
+    expect(root.activeElement).not.toBe(item);
+    expect(root.activeElement).toBe(root.querySelector(".trigger"));
+    picker.destroy();
+  });
+
+  it("sends a picked fallback to the popup's confirmation instead of filling it", () => {
+    const roots = openShadows();
+    const field = document.createElement("input");
+    document.body.append(field);
+    const onPick = vi.fn(() => Promise.resolve(null));
+    const picker = attachPicker(field, [match(2, "Router", "otherPort", "localhost:9502", "Different port")], "localhost:9503", { onPick });
+    picker.open();
+    const root = roots[0]!;
+    root.querySelector<HTMLButtonElement>(".item")?.click();
+    expect(onPick).not.toHaveBeenCalled();
+    expect(root.querySelector("[role=alert]")?.textContent).toBe(
+      "Router is saved for localhost:9502, not localhost:9503. To fill it here, open Quark Vault from the toolbar and choose Fill on localhost:9503.",
+    );
+    expect(root.querySelector(".panel")).not.toBeNull();
+    picker.destroy();
+  });
+
   it("announces when there is nothing to fill", () => {
     const roots = openShadows();
     const field = document.createElement("input");

@@ -161,6 +161,17 @@ describe("mayFill", () => {
     expect(mayFill("http://github.com/login", "https://github.com", "github.com")).toBe(false);
     expect(mayFill("http://192.168.1.1/", "http://192.168.1.1", "192.168.1.1")).toBe(true);
   });
+
+  it("fills only on the scheme the entry was saved with", () => {
+    expect(mayFill("https://192.168.1.1/", "http://192.168.1.1", "192.168.1.1")).toBe(false);
+    expect(mayFill("http://localhost/login", "https://localhost", "localhost")).toBe(false);
+    expect(mayFill("https://localhost/login", "https://localhost", "localhost")).toBe(true);
+  });
+
+  it("still fills a subdomain on the entry's scheme and port", () => {
+    expect(mayFill("http://sub.example.com:9502/", "http://example.com:9502/", "example.com")).toBe(true);
+    expect(mayFill("https://login.example.com/", "https://example.com", "example.com")).toBe(true);
+  });
 });
 
 describe("normalizeServer", () => {
@@ -294,9 +305,24 @@ describe("host matching edge cases", () => {
       expect(hostMatches(entryHost, hostOf(pageUrl))).toBe(expected);
     });
 
-    it("ignores the port when filling", () => {
-      expect(mayFill("https://github.com:8443/login", "https://github.com", "github.com")).toBe(true);
+    it("fills only on the port the entry was saved with", () => {
+      expect(mayFill("https://github.com:8443/login", "https://github.com", "github.com")).toBe(false);
+      expect(mayFill("https://github.com:443/login", "https://github.com", "github.com")).toBe(true);
       expect(mayFill("http://192.168.1.1:8080/", "http://192.168.1.1:8080", "192.168.1.1")).toBe(true);
+      expect(mayFill("http://localhost:9503/", "http://localhost:9502/", "localhost")).toBe(false);
+      expect(mayFill("http://example.com:9503/", "http://example.com:9502/", "example.com")).toBe(false);
+      expect(mayFill("http://sub.example.com:9503/", "http://example.com:9502/", "example.com")).toBe(false);
+    });
+
+    it("takes an entry with no known URL as https on the default port", () => {
+      expect(mayFill("https://github.com/login", "", "github.com")).toBe(true);
+      expect(mayFill("https://github.com:8443/login", "", "github.com")).toBe(false);
+      expect(mayFill("http://localhost/login", "", "localhost")).toBe(false);
+    });
+
+    it("refuses a frame whose top page is on another port", () => {
+      expect(frameMayFill("http://localhost:9502/", "http://localhost:9503/", "http://localhost:9502", "localhost")).toBe(false);
+      expect(frameMayFill("http://localhost:9502/", "http://localhost:9502/", "http://localhost:9502", "localhost")).toBe(true);
     });
 
     it("matches an entry host that carries a port on its host", () => {

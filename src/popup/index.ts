@@ -568,10 +568,11 @@ const shortcutBadge = (): HTMLElement =>
 
 const initial = (name: string): string => (name.trim()[0] ?? "?").toUpperCase();
 
-// The first exact or same-site match is the one to fill; a fallback is never highlighted.
-const matchCard = (entry: SiteMatch, index: number): HTMLElement => {
+// The first exact or same-site match is the one to fill; a fallback is never highlighted, and filling one takes the
+// same confirmation as an entry for another site.
+const matchCard = (entry: SiteMatch, index: number): readonly HTMLElement[] => {
   const first = index === 0 && !isFallback(entry);
-  return h(
+  const card = h(
     "div",
     { className: first ? "match first" : "match" },
     h("div", { className: "avatar", "aria-hidden": "true" }, initial(entry.name)),
@@ -582,12 +583,15 @@ const matchCard = (entry: SiteMatch, index: number): HTMLElement => {
       h("div", { className: "mono muted small" }, entry.note === "" ? entry.where : `${entry.where} · ${entry.note}`),
     ),
     mayHaveOtp(entry) ? iconButton(t("popupCopyCode", entry.name), icons.clock, () => void copyCode(entry)) : null,
-    h(
-      "button",
-      { className: first ? "fill primary" : "fill", type: "button", "aria-label": t("fillName", entry.name), onclick: (() => void fillEntry(entry)) as EventListener },
-      t("fill"),
-    ),
+    isFallback(entry)
+      ? fillAnywayToggle(entry)
+      : h(
+          "button",
+          { className: first ? "fill primary" : "fill", type: "button", "aria-label": t("fillName", entry.name), onclick: (() => void fillEntry(entry)) as EventListener },
+          t("fill"),
+        ),
   );
+  return [card, ...(isFallback(entry) && model.confirming === entry.id && isWebPage(model.tab.url) ? [fillAnywayBox(entry, entry.where)] : [])];
 };
 
 const pageSite = (url: string): string => {
@@ -607,7 +611,7 @@ const matchSections = (): readonly HTMLElement[] => {
       "section",
       { className: "matches" },
       h("div", { className: "section-head" }, h("div", { className: "section-label grow" }, label), h("div", { className: "mono accent small" }, pageHost)),
-      ...matches.map(matchCard),
+      ...matches.flatMap(matchCard),
     );
   return [
     ...(primary.length === 0 ? [] : [section(t("popupOnThisSite"), primary)]),
@@ -617,17 +621,21 @@ const matchSections = (): readonly HTMLElement[] => {
 
 const isWebPage = (url: string): boolean => /^https?:\/\//i.test(url) && pageSite(url) !== "";
 
-// An entry that matches this page fills with one click, as on its match card. Any other entry needs "Fill anyway"
+// An entry that matches this page fills with one click, as on its match card. A fallback or any other entry needs "Fill anyway"
 // and then a second click on a warning that names both hosts.
 const fillButton = (entry: EntrySummary): HTMLElement | null => {
   if (model.tab.id === null || !isWebPage(model.tab.url)) {
     return null;
   }
   const match = model.matches.find((found) => found.id === entry.id);
-  if (match !== undefined) {
+  if (match !== undefined && !isFallback(match)) {
     return h("button", { className: "fill", type: "button", "aria-label": t("fillName", entry.name), onclick: (() => void fillEntry(match)) as EventListener }, t("fill"));
   }
-  return h(
+  return fillAnywayToggle(entry);
+};
+
+const fillAnywayToggle = (entry: EntrySummary): HTMLElement =>
+  h(
     "button",
     {
       className: "fill",
@@ -638,7 +646,6 @@ const fillButton = (entry: EntrySummary): HTMLElement | null => {
     },
     t("popupFillAnyway"),
   );
-};
 
 // Opens below its row, which may be at the bottom of the list, so it's brought into view.
 const toggleFillAnyway = (entry: EntrySummary): void => {
@@ -649,12 +656,12 @@ const toggleFillAnyway = (entry: EntrySummary): void => {
   }
 };
 
-const fillAnywayBox = (entry: EntrySummary): HTMLElement => {
+const fillAnywayBox = (entry: EntrySummary, savedFor: string): HTMLElement => {
   const pageHost = pageSite(model.tab.url);
   return h(
     "div",
     { className: "error-box confirm", role: "alert", id: `fill-anyway-${entry.id}` },
-    h("p", {}, entry.urlHost === "" ? t("popupFillAnywayNoSite", entry.name, pageHost) : t("popupFillAnywaySavedFor", entry.name, entry.urlHost, pageHost)),
+    h("p", {}, savedFor === "" ? t("popupFillAnywayNoSite", entry.name, pageHost) : t("popupFillAnywaySavedFor", entry.name, savedFor, pageHost)),
     /^http:/i.test(model.tab.url) ? h("p", {}, t("popupFillAnywayHttp", pageHost)) : null,
     h("p", {}, t("popupFillAnywayTrust", pageHost)),
     h(
@@ -683,7 +690,9 @@ const entryRow = (entry: EntrySummary): readonly HTMLElement[] => [
     mayHaveOtp(entry) ? iconButton(t("popupCopyCode", entry.name), icons.clock, () => void copyCode(entry)) : null,
     fillButton(entry),
   ),
-  ...(model.confirming === entry.id && isWebPage(model.tab.url) ? [fillAnywayBox(entry)] : []),
+  ...(model.confirming === entry.id && isWebPage(model.tab.url) && !model.matches.some((found) => found.id === entry.id)
+    ? [fillAnywayBox(entry, entry.urlHost)]
+    : []),
 ];
 
 const autoLockText = (state: VaultState): string =>
