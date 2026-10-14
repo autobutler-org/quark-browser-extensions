@@ -8,7 +8,7 @@ To run them: `npm run test:e2e:mock -- hostile/`.
 
 ## Results
 
-An attack **succeeds** if the password reaches page script without the user knowingly filling a visible field on the login's own site, or reaches another origin. None of the attacks below succeeds. Three did when these tests were written; #129 and #130 fixed them. The second security review found more ways around the #129 checks; #142 fixed those. If an attack is found to succeed, its test is marked `test.fail` and points to the issue that tracks the fix. When the fix lands, the test starts to pass, Playwright reports it as unexpected, and the mark comes off.
+An attack **succeeds** if the password reaches page script without the user knowingly filling a visible field on the login's own site, or reaches another origin. None of the attacks below succeeds. Three did when these tests were written; #129 and #130 fixed them. The second security review found more ways around the #129 checks; #142 fixed those, and #147 the one that stacks an element over the fields instead of styling them. If an attack is found to succeed, its test is marked `test.fail` and points to the issue that tracks the fix. When the fix lands, the test starts to pass, Playwright reports it as unexpected, and the mark comes off.
 
 | Attack | Result | Test |
 | --- | --- | --- |
@@ -24,9 +24,10 @@ An attack **succeeds** if the password reaches page script without the user know
 | Synthetic clicks and keys on the button and picker | Blocked | `picker.spec.ts` › synthetic clicks and keys |
 | Reading the picker through its shadow root host | Blocked | `picker.spec.ts` › can't read the open picker |
 | Listening for input and change events during a fill | Blocked | `events.spec.ts` |
+| A login form under an opaque overlay, popup Fill or shortcut | Blocked since [#147](https://github.com/autobutler-org/quark-browser-extensions/issues/147) | `overlay.spec.ts` › a login form under an opaque overlay |
 | Moving the field after the picker opens | Blocked since [#129](https://github.com/autobutler-org/quark-browser-extensions/issues/129) | `picker.spec.ts` › a password field moved … isn't filled |
 
-Legitimate fills still work beside each attack: the picker on the real field of the decoy page, a sign-in card component that slots the page's own fields into an open or closed shadow root, a visible login frame from another origin on the same site, the same login frame under a same-site parent, a form posting to its own origin with **Submit after filling** on, a trusted Enter in a picker the page has been bombarding with synthetic events, and the listener page's own two fields.
+Legitimate fills still work beside each attack: the picker on the real field of the decoy page, a sign-in card component that slots the page's own fields into an open or closed shadow root, a visible login frame from another origin on the same site, the same login frame under a same-site parent, a form posting to its own origin with **Submit after filling** on, a trusted Enter in a picker the page has been bombarding with synthetic events, the listener page's own two fields, and a login form a sticky header and a cookie banner partly cover.
 
 ## The attacks
 
@@ -41,6 +42,16 @@ Legitimate fills still work beside each attack: the picker on the real field of 
 - The popup's Fill, the keyboard shortcut and the context menu fill the real form, and the decoys stay empty. Until #129 they filled the decoys: they have no target field, so `fillLogin` takes the page's first password field, and the visibility checks then caught `display:none`, `visibility:hidden`, `[hidden]`, `tabindex=-1` and `aria-hidden` but none of these three styles. Until #142 the same went for the seven styles added then: the checks read `visibility: hidden` but not `collapse`, the `opacity` property but not `filter`, no masks, and only a leading percentage `inset()` or a zero-radius circle in `clip-path`.
 
 **Defense:** no fill without a user action, and only into fields the user can see: opaque (filters included), at least 4px by 4px, not clipped or masked away, and on the page (`isLoginField` in `src/content/forms.ts`; [security.md](security.md#which-fields-get-a-login) has the rules). `test/forms-hidden.test.ts` and the `login-decoy-*` fixtures cover each style without a browser.
+
+### A login form under an opaque overlay
+
+**The page:** on the login's own site, an ordinary sign-in form with a `<div style="position:absolute; inset:0; background:#fff">` after it, drawn over the whole page, and listeners on the fields that keep what lands in them. The fields have no style of their own: `checkVisibility()` passes, their boxes are full size and fully opaque. Only stacking hides them. The markup alone does it, with no script.
+
+**Result:** the popup's Fill is refused and the fields stay empty; no inline button is drawn. Once the overlay is removed, the same Fill fills both fields. A form with a sticky header over the top of the username and a cookie banner over the bottom of the password still fills from the popup and from the inline picker. Until #147 the Fill wrote the login into the buried fields: in headless Chromium, `elementFromPoint` at the field's centre returned the covering `<div>`, and nothing asked.
+
+**Defense:** a hit test (`covered` in `src/content/forms.ts`). `elementFromPoint` runs at five points inside the field, the centre and a point toward each corner, clear of the inline button. If every point in the viewport lands on something other than the field or one of its own labels, the field counts as covered and isn't a login field: no inline button, no fill from any path. One point that reaches the field is enough, so a header, banner or badge over part of it doesn't block the user. The same test runs on each frame element above a field in a same-origin frame. The extension's own inline buttons, pickers and save bar don't count as covering. `test/forms-covered.test.ts` and the `login-covered-overlay` fixture cover it without a browser.
+
+**What it doesn't cover:** a field wholly outside the viewport can't be hit-tested, so it is judged by the style and size rules alone, as before; scrolling it into view brings the test back. An overlay with `pointer-events:none` is invisible to `elementFromPoint`, so a field under one passes, though the user can still click through it to the field.
 
 ### Decoy fields slotted into a clipping shadow tree
 
