@@ -1,10 +1,15 @@
 /* The popup's preferred size. When zoom or a large default font leaves less room than this, the page
-   scrolls instead of clipping (WCAG 1.4.4 / 1.4.10). */
+   scrolls instead of clipping (WCAG 1.4.4 / 1.4.10). Chrome sizes the toolbar popup from this width while
+   the viewport is still tiny, so it must never depend on the viewport (#135). */
 body {
   width: 360px;
-  max-width: 100vw;
   height: 580px;
   overflow: auto;
+}
+
+/* Open in a tab (Firefox for Android, or a narrow window), the viewport sets the width instead (#108). */
+:root[data-in-tab] body {
+  width: auto;
 }
 
 #app,

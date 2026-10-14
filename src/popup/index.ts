@@ -828,6 +828,14 @@ const refresh = async (): Promise<void> => {
 };
 
 render();
+
+// popup.css lets the page fit a narrow tab, but never the toolbar popup, which sizes itself from its content (#135).
+void chrome.tabs.getCurrent().then((tab) => {
+  if (tab !== undefined) {
+    document.documentElement.dataset.inTab = "";
+  }
+});
+
 const needsSiteAccess = async (): Promise<boolean> =>
   currentBrowser() === "firefox" && !(await chrome.permissions.contains({ origins: [...siteOrigins] }));
 

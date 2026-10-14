@@ -80,7 +80,7 @@ beforeEach(() => {
   vi.stubGlobal("chrome", {
     i18n: fakeI18n(),
     runtime: { getURL: (path: string) => `chrome-extension://quark/${path}`, openOptionsPage: () => Promise.resolve() },
-    tabs: { query: () => Promise.resolve([{ id: 7, url: tabUrl }]), create: () => Promise.resolve() },
+    tabs: { query: () => Promise.resolve([{ id: 7, url: tabUrl }]), create: () => Promise.resolve(), getCurrent: () => Promise.resolve(undefined) },
     commands: { getAll: () => Promise.resolve([]) },
     permissions: { contains: () => Promise.resolve(true), request: () => Promise.resolve(true) },
   });
@@ -202,8 +202,23 @@ describe("popup.css", () => {
     expect(rule(".search:focus-within")).toMatch(/outline: 2px solid var\(--focus\)/);
   });
 
-  it("reflows below 360px instead of scrolling sideways (#108)", () => {
-    expect(rule("body")).toMatch(/max-width:\s*100vw/);
+  // Chrome sizes the toolbar popup from its content, and the viewport is tiny while it measures, so a width tied
+  // to the viewport collapses the popup to a sliver (#135).
+  it("never ties the popup's own width to the viewport (#135)", () => {
+    const rootRules = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/(^|\})\s*((?:html|body|:root)[^{]*)\{([^}]*)\}/g)];
+    expect(rootRules.length).toBeGreaterThan(0);
+    for (const [, , selector = "", body = ""] of rootRules) {
+      if (selector.includes("[data-in-tab]")) {
+        continue;
+      }
+      expect(body, selector).not.toMatch(/width:[^;]*\dv(w|i|min|max)\b/);
+      expect(body, selector).not.toMatch(/width:\s*(auto|[\d.]+%)/);
+    }
+    expect(rule("body")).toMatch(/(^|[^-])width:\s*360px/);
+  });
+
+  it("reflows below 360px instead of scrolling sideways when open in a tab (#108)", () => {
+    expect(rule(":root[data-in-tab] body")).toMatch(/(^|[^-])width:\s*auto/);
     expect(rule(".brand")).toMatch(/min-width:\s*0/);
     expect(rule(".brand-name")).toMatch(/text-overflow:\s*ellipsis/);
     expect(rule(".status")).toMatch(/flex-wrap:\s*wrap/);
@@ -373,6 +388,21 @@ describe("all entries", () => {
     tabUrl = "chrome://settings";
     const app = await openPopup(unlocked);
     expect(app.querySelectorAll(".list .fill")).toHaveLength(0);
+  });
+});
+
+describe("where the popup is open", () => {
+  afterEach(() => document.documentElement.removeAttribute("data-in-tab"));
+
+  it("keeps its own width in the toolbar, where it isn't in a tab (#135)", async () => {
+    await openPopup(unlocked);
+    expect(document.documentElement.hasAttribute("data-in-tab")).toBe(false);
+  });
+
+  it("marks itself when it is open in a tab, so it fits a narrow one (#108)", async () => {
+    vi.stubGlobal("chrome", { ...chrome, tabs: { ...chrome.tabs, getCurrent: () => Promise.resolve({ id: 9 }) } });
+    await openPopup(unlocked);
+    await vi.waitFor(() => expect(document.documentElement.hasAttribute("data-in-tab")).toBe(true));
   });
 });
 
