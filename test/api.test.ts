@@ -11,7 +11,7 @@ const respond = (status: number, body: unknown) => {
     calls.push({ url, init });
     return Promise.resolve(new Response(body === undefined ? "" : JSON.stringify(body), { status }));
   };
-  return { calls, api: createApi(fetchFn) };
+  return { calls, api: createApi(fetchFn, memoryLedger()) };
 };
 
 const connection = { server: "https://quark.local", token: "t0k3n" };
@@ -44,13 +44,15 @@ const quark = (
         })();
     return Promise.resolve(new Response(typeof body === "string" ? body : JSON.stringify(body), { status }));
   };
-  return { calls, ledger, api: createApi(fetchFn, fakeDerive, ledger) };
+  return { calls, ledger, api: createApi(fetchFn, ledger, fakeDerive) };
 };
 
-const memoryLedger = () => {
+function memoryLedger() {
   const { storage } = fakeChrome().chrome;
-  return createUpgradeLedger(() => storage.local, () => storage.session);
-};
+  let ids: readonly string[] = [];
+  const keyed = { load: () => Promise.resolve(ids), save: (next: readonly string[]) => Promise.resolve(void (ids = next)) };
+  return createUpgradeLedger(keyed, () => storage.session);
+}
 
 const bodyOf = (call: Call | undefined) => JSON.parse(call?.init?.body as string) as unknown;
 
@@ -152,6 +154,34 @@ describe("login", () => {
     });
   });
 
+  describe("overlapping sign-ins (#140)", () => {
+    const legacySalt = [200, { salt: saltBase64, legacy: true }] as const;
+    const passwordBodies = (calls: readonly Call[]) =>
+      calls.filter((call) => call.init?.method === "POST" && "password" in (bodyOf(call) as object));
+
+    it("lets one consent send the password in one body", async () => {
+      const { api, calls, ledger } = quark(() => [200, { token: "abc" }], legacySalt);
+      await ledger.giveConsent("https://quark.local", "brandon");
+      const results = await Promise.all([
+        api.login("https://quark.local", "brandon", "pw"),
+        api.login("https://quark.local", "brandon", "pw"),
+      ]);
+      expect(results.filter((result) => result.ok)).toHaveLength(1);
+      expect(passwordBodies(calls)).toHaveLength(1);
+    });
+
+    it("sends the password once when the connect form is submitted twice", async () => {
+      const { api, calls, ledger } = quark(() => [200, { token: "abc" }], legacySalt);
+      await ledger.giveConsent("https://quark.local", "brandon");
+      const first = api.login("https://quark.local", "brandon", "pw");
+      await ledger.giveConsent("https://quark.local", "brandon");
+      const second = api.login("https://quark.local", "brandon", "pw");
+      expect((await first).ok).toBe(true);
+      expect(await second).toEqual({ ok: false, error: { kind: "refused", reason: legacyAgain("https://quark.local") } });
+      expect(passwordBodies(calls)).toHaveLength(1);
+    });
+  });
+
   it.each([
     ["404", [404, { error: "not found" }]],
     ["401 for an unknown path", [401, { error: "authentication required" }]],
@@ -227,7 +257,7 @@ describe("the request path (#144)", () => {
       Object.defineProperty(response, "url", { value: "https://elsewhere.example/api/v0/vault/unlock" });
       return Promise.resolve(response);
     };
-    const result = await createApi(fetchFn).unlock(connection, "master");
+    const result = await createApi(fetchFn, memoryLedger()).unlock(connection, "master");
     expect(result).toEqual({ ok: false, error: { kind: "network", message: expect.stringContaining("elsewhere.example") as unknown } });
   });
 });
@@ -258,7 +288,7 @@ describe("authenticated requests", () => {
   });
 
   it("reports a network failure", async () => {
-    const api = createApi(() => Promise.reject(new TypeError("Failed to fetch")));
+    const api = createApi(() => Promise.reject(new TypeError("Failed to fetch")), memoryLedger());
     expect(await api.status(connection)).toEqual({ ok: false, error: { kind: "network", message: "Failed to fetch" } });
   });
 });

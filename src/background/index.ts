@@ -29,6 +29,7 @@ import {
 } from "./save";
 import { isTopFrame, route, type ContentScriptHandlers, type ExtensionPageHandlers, type Sender } from "./gate";
 import { grantAllows, grantFor, manualFillCommand, manualFillRefusal, type ManualGrant } from "./manual";
+import { upgradeLedger } from "./keyedAccounts";
 import { createCache, deriveState, stateFromError } from "./state";
 import {
   clearConnection,
@@ -42,7 +43,7 @@ import {
   saveSettings,
 } from "./storage";
 
-const api = createApi((input, init) => fetch(input, init));
+const api = createApi((input, init) => fetch(input, init), upgradeLedger);
 const entriesCache = createCache<readonly EntrySummary[]>(30_000);
 // Each entry's full URL and whether it has a one-time code, which the list leaves out, so matches can be
 // ranked by origin and the popup offers a code only where there is one. Kept in memory only and dropped with

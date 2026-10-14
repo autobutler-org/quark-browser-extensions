@@ -62,7 +62,9 @@ const redirectingQuark = async (to: (origin: string) => string) => {
 
 const memoryLedger = () => {
   const { storage } = fakeChrome().chrome;
-  return createUpgradeLedger(() => storage.local, () => storage.session);
+  let ids: readonly string[] = [];
+  const keyed = { load: () => Promise.resolve(ids), save: (next: readonly string[]) => Promise.resolve(void (ids = next)) };
+  return createUpgradeLedger(keyed, () => storage.session);
 };
 
 describe("a redirect from the Quark (#144)", () => {
@@ -70,7 +72,7 @@ describe("a redirect from the Quark (#144)", () => {
     const elsewhere = await thief();
     const quark = await redirectingQuark(() => elsewhere.origin);
     const ledger = memoryLedger();
-    const api = createApi((input, init) => fetch(input, init), fakeDerive, ledger);
+    const api = createApi((input, init) => fetch(input, init), ledger, fakeDerive);
     await ledger.giveConsent(quark.origin, "brandon");
     const result = await api.login(quark.origin, "brandon", "s3cret-password");
     expect(result.ok).toBe(false);
@@ -81,7 +83,7 @@ describe("a redirect from the Quark (#144)", () => {
   it("never carries a master password to another origin", async () => {
     const elsewhere = await thief();
     const quark = await redirectingQuark(() => elsewhere.origin);
-    const api = createApi((input, init) => fetch(input, init), fakeDerive, memoryLedger());
+    const api = createApi((input, init) => fetch(input, init), memoryLedger(), fakeDerive);
     const result = await api.unlock({ server: quark.origin, token: "t0k3n" }, "master");
     expect(result.ok).toBe(false);
     expect(elsewhere.bodies).toEqual([]);
@@ -89,7 +91,7 @@ describe("a redirect from the Quark (#144)", () => {
 
   it("doesn't follow a redirect even to its own origin", async () => {
     const quark = await redirectingQuark((origin) => origin);
-    const api = createApi((input, init) => fetch(input, init), fakeDerive, memoryLedger());
+    const api = createApi((input, init) => fetch(input, init), memoryLedger(), fakeDerive);
     expect((await api.unlock({ server: quark.origin, token: "t0k3n" }, "master")).ok).toBe(false);
     expect(quark.bodies).toEqual([JSON.stringify({ masterPassword: "master" })]);
   });
