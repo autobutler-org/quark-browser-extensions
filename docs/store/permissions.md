@@ -46,7 +46,7 @@ repeats these).
 **Host access: content script on all http and https pages** (Chrome's "host permission" box; Firefox's `host_permissions`)
 > A password manager has to work on whatever site the user signs in to, so the content script runs on every http and https page and frame. It looks for login, sign-up and one-time-code fields, draws the Quark button in them when the vault has a login for that site, fills a login the user picks, and notices a submitted sign-in so it can offer to save it. It never receives a password until the background has checked the frame's browser-reported address against the login's site. It reads nothing else from the page and sends nothing from the page anywhere except a submitted username and password, to the background, so it can offer to save them.
 >
-> Firefox only: Firefox 128+ lets the user withhold access to websites. When it is withheld, the popup offers an "Allow" button that asks for these host permissions. Chrome grants the content script's access at install and needs no host_permissions.
+> Firefox only: Firefox lets the user withhold access to websites. When it is withheld, the popup offers an "Allow" button that asks for these host permissions. Chrome grants the content script's access at install and needs no host_permissions.
 
 **Remote code (Chrome: "Are you using remote code?")**
 > No. All JavaScript is in the package. The extension pages' content security policy is script-src 'self'; object-src 'none'; base-uri 'none'. The only network requests go to the Quark server address the user typed in, and they carry JSON, never code.
@@ -119,6 +119,13 @@ All three are true: the only recipient is the user's own Quark.
 The Firefox manifest declares
 `browser_specific_settings.gecko.data_collection_permissions: { required: ["none"] }`,
 so the install prompt says the developer says it doesn't require data collection.
+Firefox reads that key from version 140 (Firefox for Android from 142), so
+`strict_min_version` is 140.0; an older Firefox would install the add-on without
+the consent prompt. The add-on is desktop-only: the manifest has no
+`gecko_android` block and the AMO listing doesn't tick Firefox for Android.
+`web-ext lint` therefore still prints `KEY_FIREFOX_ANDROID_UNSUPPORTED_BY_MIN_VERSION`;
+it goes away if Android support is added with `gecko_android.strict_min_version`
+142.0.
 
 **Owner decision before the first AMO submission.** Mozilla's
 [definition](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/)

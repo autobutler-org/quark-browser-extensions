@@ -53,7 +53,7 @@ exits 1 if there are any.
 | Every `src`/`href` in the packaged HTML pages exists (the Vite chunks and stylesheets) | ✔ | ✔ | ✔ |
 | `default_locale` "en" has `_locales/en/messages.json`, every locale file parses, and every `__MSG_x__` in the manifest has a message | ✔ | ✔ | ✔ |
 | Zip under 5 MB (our own flag; the Chrome Web Store allows 2 GB and AMO 200 MB) | ✔ | ✔ | ✔ |
-| `browser_specific_settings.gecko.id` (`vault@autobutler.org`) and `strict_min_version` (128.0) | – | ✔ | – |
+| `browser_specific_settings.gecko.id` (`vault@autobutler.org`) and `strict_min_version` (140.0 or later) | – | ✔ | – |
 
 The sources zip has its own checks. It has to hold `package.json`,
 `package-lock.json`, `wxt.config.ts` and `docs/store/amo-notes.md`, and it
@@ -92,19 +92,19 @@ for an `eslint@9` that a dependency pulls in. They don't affect the build.
 
 ## `web-ext lint`
 
-0 errors and 0 notices, both as listed and with `--self-hosted`. There are two
-warnings:
+0 errors and 0 notices, both as listed and with `--self-hosted`. The dry run
+found two warnings:
 
-- `KEY_FIREFOX_UNSUPPORTED_BY_MIN_VERSION`: `strict_min_version` 128 is older
+- `KEY_FIREFOX_UNSUPPORTED_BY_MIN_VERSION`: `strict_min_version` 128 was older
   than Firefox 140, the first version that reads `data_collection_permissions`.
 - `KEY_FIREFOX_ANDROID_UNSUPPORTED_BY_MIN_VERSION`: the same for Firefox for
   Android, which reads it from 142.
 
-AMO accepts the package with these warnings. Firefox 128–139 ignores the key.
-Raising the minimum version is a decision about which Firefox versions we
-support, and it touches the config, the manifest tests and the docs. It is
-filed as [#153](https://github.com/autobutler-org/quark-browser-extensions/issues/153)
-rather than changed here.
+[#153](https://github.com/autobutler-org/quark-browser-extensions/issues/153)
+raised `strict_min_version` to 140.0 (and the Vite target to `firefox140`), so
+the first warning is gone and `verify-zip.js` now refuses a Firefox zip below
+140. The Android warning remains on purpose: the add-on is desktop-only and
+declares no `gecko_android` block (see [store/permissions.md](store/permissions.md)).
 
 ## Changes made
 

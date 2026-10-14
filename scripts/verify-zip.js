@@ -7,9 +7,9 @@
 //     sourcemaps or test files, no localhost host permissions or CSP sources,
 //     every icon at its declared size, every file the manifest and its HTML
 //     pages name, and the default locale's messages for every __MSG_x__; a
-//     Firefox zip also needs the gecko id and strict_min_version. The sources
-//     zip has to hold what docs/store/amo-notes.md builds from. Anything over
-//     5 MB is flagged.
+//     Firefox zip also needs the gecko id and a strict_min_version of 140 or
+//     later. The sources zip has to hold what docs/store/amo-notes.md builds
+//     from. Anything over 5 MB is flagged.
 //
 //   node scripts/verify-zip.js --rebuild-sources
 //     Also follows the build steps in docs/store/amo-notes.md in a scratch
@@ -27,6 +27,8 @@ import { basename, dirname, join, posix, resolve } from "node:path";
 import { inflateRawSync } from "node:zlib";
 
 export const MAX_ZIP_BYTES = 5 * 1024 * 1024;
+// The first Firefox that reads browser_specific_settings.gecko.data_collection_permissions (#153).
+const MIN_FIREFOX = 140;
 
 // Reads every file in a zip into a Map of path → contents. Stored and deflated
 // entries only, no zip64: all `wxt zip` writes.
@@ -212,6 +214,11 @@ export function checkExtension(files, { version, browser, zipBytes }) {
     const gecko = manifest.browser_specific_settings?.gecko;
     if (!gecko?.id) problems.push("has no browser_specific_settings.gecko.id");
     if (!gecko?.strict_min_version) problems.push("has no browser_specific_settings.gecko.strict_min_version");
+    else if (parseInt(gecko.strict_min_version, 10) < MIN_FIREFOX) {
+      problems.push(
+        `has browser_specific_settings.gecko.strict_min_version ${gecko.strict_min_version}; Firefox before ${MIN_FIREFOX} ignores data_collection_permissions`,
+      );
+    }
   }
   return problems;
 }
