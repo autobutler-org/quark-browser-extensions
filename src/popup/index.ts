@@ -542,7 +542,7 @@ const entryRow = (entry: EntrySummary): readonly HTMLElement[] => [
     h("div", { className: "grow" }, h("div", { className: "name" }, entry.name), h("div", { className: "mono muted small" }, entry.urlHost === "" ? t("popupNoSite") : entry.urlHost)),
     iconButton(t("popupCopyUsername", entry.name), icons.user, () => void copy(entry, "username")),
     iconButton(t("popupCopyPassword", entry.name), icons.copy, () => void copy(entry)),
-    iconButton(t("popupCopyCode", entry.name), icons.clock, () => void copyCode(entry)),
+    mayHaveOtp(entry) ? iconButton(t("popupCopyCode", entry.name), icons.clock, () => void copyCode(entry)) : null,
     fillButton(entry),
   ),
   ...(model.confirming === entry.id && isWebPage(model.tab.url) ? [fillAnywayBox(entry)] : []),

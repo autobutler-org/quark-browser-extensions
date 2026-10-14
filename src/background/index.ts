@@ -11,7 +11,7 @@ import {
 } from "../shared/host";
 import { frameMayFill, hostMatches, matchEntries } from "../shared/hostMatch";
 import type { Hello, PageCommand, PageReply, Request, Responses } from "../shared/messages";
-import { err, ok, type Connection, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
+import { err, ok, type Connection, type EntryDetail, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
 import { parseOtpSecret, totp } from "../shared/totp";
 import { entryIdFromMenu, generateMenuId, menuItems, menuRoot, shortcutPlan } from "../shared/menu";
 import { detectionIntervalSeconds, idleAction, type IdleState } from "./idle";
@@ -122,17 +122,24 @@ const knownUrl = (entry: EntrySummary): string | undefined => {
   return known?.updatedAt === entry.updatedAt ? known.url : undefined;
 };
 
+const remember = (entry: EntrySummary, detail: EntryDetail): void => {
+  entryUrls.set(entry.id, { updatedAt: entry.updatedAt, url: detail.url, hasTotp: parseOtpSecret(detail.totpSecret) !== null });
+};
+
+// The summaries with hasTotp wherever an entry's detail has been looked up, for the popup's full list.
+const withKnownTotp = (list: readonly EntrySummary[]): readonly EntrySummary[] =>
+  list.map((entry) => {
+    const known = entryUrls.get(entry.id);
+    return known?.updatedAt === entry.updatedAt ? { ...entry, hasTotp: known.hasTotp } : entry;
+  });
+
 const learnUrls = async (candidates: readonly EntrySummary[]): Promise<void> => {
   const missing = candidates.filter((entry) => knownUrl(entry) === undefined);
   await Promise.all(
     missing.map(async (entry) => {
       const detail = await withConnection((conn) => api.getEntry(conn, entry.id));
       if (detail.ok) {
-        entryUrls.set(entry.id, {
-          updatedAt: entry.updatedAt,
-          url: detail.value.url,
-          hasTotp: parseOtpSecret(detail.value.totpSecret) !== null,
-        });
+        remember(entry, detail.value);
       }
     }),
   );
@@ -145,12 +152,7 @@ const matchesFor = async (pageUrl: string): Promise<Result<readonly SiteMatch[]>
   }
   const pageHost = hostOf(pageUrl);
   await learnUrls(result.value.filter((entry) => hostMatches(entry.urlHost, pageHost)));
-  return ok(
-    matchEntries(result.value, pageUrl, knownUrl).map((match) => {
-      const known = entryUrls.get(match.id);
-      return known?.updatedAt === match.updatedAt ? { ...match, hasTotp: known.hasTotp } : match;
-    }),
-  );
+  return ok(matchEntries(withKnownTotp(result.value), pageUrl, knownUrl));
 };
 
 const refused = (reason: string) => err({ kind: "refused", reason } as const);
@@ -197,6 +199,10 @@ const otpFor = async (entryId: number, sender: Sender | null): Promise<Responses
   }
   if (sender !== null && !frameMayFill(pageUrl, topUrl, entry.value.url, entry.value.urlHost)) {
     return refused(embeddedRefusal(topUrl));
+  }
+  const summary = entriesCache.get()?.find((found) => found.id === entryId);
+  if (summary !== undefined) {
+    remember(summary, entry.value);
   }
   const params = parseOtpSecret(entry.value.totpSecret);
   return params === null ? refused(t("refuseNoOtp")) : ok(await totp(params, Date.now()));
@@ -472,7 +478,7 @@ const forExtensionPages: ExtensionPageHandlers = {
         : ok(stateFromError(await loadServer(), result.error)),
     ),
   lock: () => withConnection((conn) => api.lock(conn)).then(stateAfter),
-  entries: () => entries(),
+  entries: () => entries().then((result) => (result.ok ? ok(withKnownTotp(result.value)) : result)),
   matches: (request) => matchesFor(request.pageUrl ?? ""),
   fillInTab: (request) => fillInTab(request.tabId, request.entryId),
   fillAnyway: (request) => fillAnyway(request.tabId, request.entryId, request.pageHost),

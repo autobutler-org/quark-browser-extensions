@@ -221,6 +221,19 @@ describe("one-time codes", () => {
     server.locked = true;
     expect(await fake.send({ type: "otp", entryId: 1 }, popup)).toMatchObject({ ok: false, error: { kind: "locked" } });
   });
+
+  // #103: the popup offers "Copy one-time code" in the full list only where an entry may have one.
+  it("tells the popup which listed entries have a code, once it has looked them up", async () => {
+    await start();
+    const hasTotp = async (): Promise<Record<string, boolean | undefined>> => {
+      const reply = (await fake.send({ type: "entries" }, popup)) as { ok: true; value: { name: string; hasTotp?: boolean }[] };
+      return Object.fromEntries(reply.value.map((entry) => [entry.name, entry.hasTotp]));
+    };
+    expect(await hasTotp()).toEqual({ GitHub: undefined, GitLab: undefined, "Forum one": undefined, "Forum two": undefined });
+    await fake.send({ type: "matches", pageUrl: "https://github.com/login" }, popup);
+    await fake.send({ type: "otp", entryId: 2 }, popup);
+    expect(await hasTotp()).toEqual({ GitHub: true, GitLab: false, "Forum one": undefined, "Forum two": undefined });
+  });
 });
 
 describe("locking and unlocking", () => {

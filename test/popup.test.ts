@@ -6,7 +6,13 @@ import type { SiteMatch } from "../src/shared/host";
 import { defaultSettings, ok, type EntrySummary, type VaultState } from "../src/shared/types";
 
 // The popup talks to the worker only through ask(), so the tests answer for it.
-const worker = vi.hoisted((): { state: unknown; welcomeSeen: boolean; sent: Request[]; refuseFill: string } => ({ state: null, welcomeSeen: true, sent: [], refuseFill: "" }));
+const worker = vi.hoisted((): { state: unknown; welcomeSeen: boolean; sent: Request[]; refuseFill: string; entries: EntrySummary[] } => ({
+  state: null,
+  welcomeSeen: true,
+  sent: [],
+  refuseFill: "",
+  entries: [],
+}));
 vi.mock("../src/shared/messages", () => ({
   ask: (request: Request) => {
     worker.sent.push(request);
@@ -24,7 +30,7 @@ const answer = (request: Request): unknown => {
     case "settings":
       return { ...defaultSettings, othersReviewed: true, welcomeSeen: worker.welcomeSeen };
     case "entries":
-      return ok([entry(1, "Work mail", "example.com"), entry(2, "Bank", "bank.test")]);
+      return ok(worker.entries);
     case "matches":
       return ok([match(1, "Work mail"), match(3, "Old work mail")]);
     case "pendingOffer":
@@ -80,6 +86,10 @@ beforeEach(() => {
 });
 
 const clipboard: string[] = [];
+
+beforeEach(() => {
+  worker.entries = [entry(1, "Work mail", "example.com"), entry(2, "Bank", "bank.test")];
+});
 
 afterEach(() => {
   worker.welcomeSeen = true;
@@ -203,6 +213,13 @@ describe("all entries", () => {
     button(app, "Copy one-time code for Bank").click();
     await vi.waitFor(() => expect(app.querySelector(".notice")?.textContent).toBe("Copied the code for Bank. It changes in 20s."));
     expect(clipboard).toEqual(["ana", "hunter2", "123456"]);
+  });
+
+  it("offers a one-time code only for entries not known to lack one (#103)", async () => {
+    worker.entries = [{ ...entry(2, "Bank", "bank.test"), hasTotp: false }, { ...entry(4, "Shop", "shop.test"), hasTotp: true }, entry(5, "Forum", "forum.test")];
+    const app = await openPopup(unlocked);
+    const codeButtons = [...app.querySelectorAll(".list button")].map((found) => found.getAttribute("aria-label")).filter((label) => label?.startsWith("Copy one-time code"));
+    expect(codeButtons).toEqual(["Copy one-time code for Forum", "Copy one-time code for Shop"]);
   });
 
   it("fills an entry that matches this page with one click", async () => {
