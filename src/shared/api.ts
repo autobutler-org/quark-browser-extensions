@@ -1,3 +1,5 @@
+import { deriveAuthKey, fromBase64, type DeriveAuthKey } from "./authKey";
+import { extensionTooOld, quarkTooOld } from "./errors";
 import {
   err,
   ok,
@@ -75,6 +77,8 @@ export const toApiError = ({ status, message }: Failure): ApiError => {
       return { kind: "notFound" };
     case 423:
       return { kind: "locked", reason: message.replace(/^vault is locked:?\s*/i, "") };
+    case 426:
+      return { kind: "refused", reason: extensionTooOld };
     case 429:
       return { kind: "rateLimited" };
     case 503:
@@ -145,16 +149,43 @@ const asStatus = (value: unknown): VaultStatus => ({
   lockReason: stringField(value, "lockReason"),
 });
 
-export const createApi = (fetchFn: FetchFn) => {
+type AuthSalt = Readonly<{ salt: Uint8Array; legacy: boolean }>;
+
+// GET /auth/salt answers 401 or 404 on a Quark from before auth keys, or 200
+// with its web app's index.html before setup, so anything without a salt in it
+// means the Quark is too old to take an auth key.
+const asAuthSalt = (payload: unknown): AuthSalt | null => {
+  const salt = field(payload, "salt");
+  const bytes = typeof salt === "string" ? fromBase64(salt) : null;
+  return bytes === null ? null : { salt: bytes, legacy: field(payload, "legacy") === true };
+};
+
+export const createApi = (fetchFn: FetchFn, deriveKey: DeriveAuthKey = deriveAuthKey) => {
   const request = send(fetchFn);
   const authed = (connection: Connection, req: Request) => request(connection.server, connection.token, req);
 
   return {
+    // Quark v0.47.0+ takes an auth key derived from the password, never the
+    // password alone (autobutler-org/quark#2430). An account the Quark marks
+    // legacy has no auth key yet, so it is sent the password beside the key
+    // once, which moves it to the key.
     login: async (server: string, username: string, password: string): Promise<Result<string>> => {
+      const saltReply = await request(server, null, {
+        method: "GET",
+        path: `/auth/salt?${new URLSearchParams({ username })}`,
+      });
+      if (!saltReply.ok && !(isFailure(saltReply.error) && [401, 404].includes(saltReply.error.status))) {
+        return err(normalizeError(saltReply.error));
+      }
+      const salt = saltReply.ok ? asAuthSalt(saltReply.value) : null;
+      if (salt === null) {
+        return err({ kind: "refused", reason: quarkTooOld });
+      }
+      const authKey = await deriveKey(password, salt.salt);
       const result = await request(server, null, {
         method: "POST",
         path: "/auth/login",
-        body: { username, password },
+        body: salt.legacy ? { username, password, authKey } : { username, authKey },
       });
       if (result.ok) {
         const token = stringField(result.value, "token");

@@ -1,4 +1,5 @@
-import { createApi, type FetchFn } from "../src/shared/api";
+import { createApi, toApiError, type FetchFn } from "../src/shared/api";
+import { errorText, extensionTooOld, quarkTooOld } from "../src/shared/errors";
 
 type Call = Readonly<{ url: string; init: RequestInit | undefined }>;
 
@@ -13,17 +14,83 @@ const respond = (status: number, body: unknown) => {
 
 const connection = { server: "https://quark.local", token: "t0k3n" };
 
+const salt = Uint8Array.from({ length: 16 }, (_, i) => i);
+const saltBase64 = btoa(String.fromCharCode(...salt));
+
+// Stands in for the Argon2id derivation, which takes seconds; deriveAuthKey
+// itself is pinned by the vector in authKey.test.ts.
+const fakeDerive = async (password: string, from: Uint8Array) => `key(${password},${from.join(".")})`;
+
+// A Quark v0.47.0+ sign-in: GET /auth/salt, then POST /auth/login, which
+// refuses a password sent without an auth key with 426 (quark#2430).
+const quark = (
+  login: (body: Record<string, unknown>) => readonly [number, unknown],
+  saltReply: readonly [number, unknown] = [200, { salt: saltBase64, legacy: false, legacyRecovery: false }],
+) => {
+  const calls: Call[] = [];
+  const fetchFn: FetchFn = async (url, init) => {
+    calls.push({ url, init });
+    const [status, body] = url.includes("/auth/salt")
+      ? saltReply
+      : (() => {
+          const sent = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return "password" in sent && !("authKey" in sent)
+            ? ([426, { error: "update the app to sign in" }] as const)
+            : login(sent);
+        })();
+    return new Response(typeof body === "string" ? body : JSON.stringify(body), { status });
+  };
+  return { calls, api: createApi(fetchFn, fakeDerive) };
+};
+
+const bodyOf = (call: Call | undefined) => JSON.parse(String(call?.init?.body)) as unknown;
+
 describe("login", () => {
-  it("returns the session token and sends no credentials cookie", async () => {
-    const { api, calls } = respond(200, { token: "abc" });
+  it("signs in with the auth key alone and sends no credentials cookie", async () => {
+    const { api, calls } = quark(() => [200, { token: "abc" }]);
+    expect(await api.login("https://quark.local", "Brandon Apol", "pw")).toEqual({ ok: true, value: "abc" });
+    expect(calls.map((c) => [c.init?.method, c.url])).toEqual([
+      ["GET", "https://quark.local/api/v0/auth/salt?username=Brandon+Apol"],
+      ["POST", "https://quark.local/api/v0/auth/login"],
+    ]);
+    expect(calls.every((c) => c.init?.credentials === "omit")).toBe(true);
+    expect(bodyOf(calls[1])).toEqual({ username: "Brandon Apol", authKey: `key(pw,${salt.join(".")})` });
+  });
+
+  it("sends the password beside the auth key once for a legacy account", async () => {
+    const { api, calls } = quark(() => [200, { token: "abc" }], [200, { salt: saltBase64, legacy: true }]);
     expect(await api.login("https://quark.local", "brandon", "pw")).toEqual({ ok: true, value: "abc" });
-    expect(calls[0]?.url).toBe("https://quark.local/api/v0/auth/login");
-    expect(calls[0]?.init?.credentials).toBe("omit");
-    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ username: "brandon", password: "pw" });
+    expect(bodyOf(calls[1])).toEqual({ username: "brandon", password: "pw", authKey: `key(pw,${salt.join(".")})` });
+  });
+
+  it.each([
+    ["404", [404, { error: "not found" }]],
+    ["401 for an unknown path", [401, { error: "authentication required" }]],
+    ["web app page", [200, "<!doctype html><html></html>"]],
+  ] as const)("refuses a Quark from before auth keys (%s) without sending the password", async (_, saltReply) => {
+    const { api, calls } = quark(() => [200, { token: "abc" }], saltReply);
+    expect(await api.login("https://quark.local", "b", "pw")).toEqual({
+      ok: false,
+      error: { kind: "refused", reason: quarkTooOld },
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("reports a failed salt lookup", async () => {
+    const { api } = quark(() => [200, { token: "abc" }], [429, { error: "slow down" }]);
+    expect(await api.login("https://quark.local", "b", "pw")).toEqual({ ok: false, error: { kind: "rateLimited" } });
+  });
+
+  it("tells the user to update the extension on 426", async () => {
+    const { api } = quark(() => [426, { error: "update the app to sign in" }]);
+    expect(await api.login("https://quark.local", "b", "pw")).toEqual({
+      ok: false,
+      error: { kind: "refused", reason: extensionTooOld },
+    });
   });
 
   it("maps 401 to bad credentials", async () => {
-    const { api } = respond(401, { error: "invalid credentials" });
+    const { api } = quark(() => [401, { error: "invalid credentials" }]);
     expect(await api.login("https://quark.local", "b", "x")).toEqual({ ok: false, error: { kind: "badCredentials" } });
   });
 
@@ -31,7 +98,7 @@ describe("login", () => {
     ["pending", "your account request is waiting for approval"],
     ["disabled", "this account has been disabled"],
   ])("maps a 403 for a %s account from the refusal's status field", async (status, message) => {
-    const { api } = respond(403, { error: message, status });
+    const { api } = quark(() => [403, { error: message, status }]);
     expect(await api.login("https://quark.local", "b", "x")).toEqual({
       ok: false,
       error: { kind: "accountRefused", status },
@@ -75,6 +142,11 @@ describe("authenticated requests", () => {
     const message = status === 423 ? "vault is locked: idle timeout" : "boom";
     const { api } = respond(status, { error: message });
     expect(await api.getEntry(connection, 7)).toEqual({ ok: false, error: expected });
+  });
+
+  it("maps 426 to a clear 'extension too old' message", () => {
+    const error = toApiError({ status: 426, message: "upgrade required", state: "" });
+    expect(errorText(error)).toBe("This extension is too old for your Quark. Update the extension, then sign in again.");
   });
 
   it("reports a network failure", async () => {

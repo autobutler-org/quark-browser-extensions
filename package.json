@@ -23,5 +23,8 @@
     "playwright-core": "^1.63.0",
     "typescript": "^5.9.3",
     "vitest": "^5.0.2"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.4.0"
   }
 }
