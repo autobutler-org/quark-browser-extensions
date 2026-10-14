@@ -1,3 +1,4 @@
+import { sameSiteAction } from "../shared/hostMatch";
 import type { Credentials } from "../shared/types";
 
 const usernameTypes = new Set(["text", "email", "tel", ""]);
@@ -17,7 +18,10 @@ const ancestors = (element: Element): readonly Element[] => {
 // While a pass runs, the page is taken as unchanged: each scope is walked once and each element's style read once.
 type Pass = Readonly<{
   inputs: Map<ParentNode, readonly HTMLInputElement[]>;
+  styles: Map<Element, CSSStyleDeclaration | undefined>;
+  opacity: Map<Element, number>;
   shown: Map<Element, boolean>;
+  unclipped: Map<Element, boolean>;
   exposed: Map<Element, boolean>;
   checks: Map<object, Map<HTMLInputElement, boolean>>;
 }>;
@@ -28,7 +32,7 @@ export const onePass = <T>(detect: () => T): T => {
   if (pass !== null) {
     return detect();
   }
-  pass = { inputs: new Map(), shown: new Map(), exposed: new Map(), checks: new Map() };
+  pass = { inputs: new Map(), styles: new Map(), opacity: new Map(), shown: new Map(), unclipped: new Map(), exposed: new Map(), checks: new Map() };
   try {
     return detect();
   } finally {
@@ -51,8 +55,17 @@ const perPass = (check: (input: HTMLInputElement) => boolean): ((input: HTMLInpu
   };
 };
 
-const isShown = (node: Element): boolean => {
+const styleOf = (node: Element): CSSStyleDeclaration | undefined => {
+  if (pass?.styles.has(node) === true) {
+    return pass.styles.get(node);
+  }
   const style = node.ownerDocument.defaultView?.getComputedStyle(node);
+  pass?.styles.set(node, style);
+  return style;
+};
+
+const isShown = (node: Element): boolean => {
+  const style = styleOf(node);
   return !node.hasAttribute("hidden") && (style === undefined || (style.display !== "none" && style.visibility !== "hidden"));
 };
 
@@ -82,6 +95,114 @@ const everyAncestor = (element: Element, test: (node: Element) => boolean, known
 
 export const isVisible = (element: HTMLElement): boolean =>
   !(element as HTMLInputElement).disabled && everyAncestor(element, isShown, pass?.shown);
+
+// Below this opacity, or this many pixels across, the user can't see a field.
+const minOpacity = 0.1;
+const minSize = 4;
+
+// The opacity the element is drawn with: its own times every ancestor's.
+const opacityOf = (element: Element): number => {
+  const known = pass?.opacity;
+  const unknown: Element[] = [];
+  let product = 1;
+  for (let node: Element | null = element; node !== null; node = parentOf(node)) {
+    const found = known?.get(node);
+    if (found !== undefined) {
+      product = found;
+      break;
+    }
+    unknown.push(node);
+  }
+  for (const node of unknown.reverse()) {
+    const own = Number.parseFloat(styleOf(node)?.opacity ?? "");
+    product *= Number.isNaN(own) ? 1 : own;
+    known?.set(node, product);
+  }
+  return product;
+};
+
+// clip or clip-path that leaves nothing of the element to see: the screen-reader-only rect(0 0 0 0), inset(50%),
+// a circle of radius 0.
+const clipsAway = (style: CSSStyleDeclaration): boolean => {
+  const rect = /^rect\((.*)\)$/.exec(style.clip)?.[1]?.split(/[\s,]+/).map(Number.parseFloat) ?? [];
+  const [top = NaN, right = NaN, bottom = NaN, left = NaN] = rect;
+  if (rect.length === 4 && !rect.some(Number.isNaN) && (right - left < minSize || bottom - top < minSize)) {
+    return true;
+  }
+  const inset = Number.parseFloat(/^inset\(\s*([\d.]+)%/.exec(style.clipPath)?.[1] ?? "");
+  return inset >= 50 || /^(circle|ellipse)\(\s*0(px|%)?[\s)]/.test(style.clipPath);
+};
+
+const isUnclipped = (node: Element): boolean => {
+  const style = styleOf(node);
+  return style === undefined || !clipsAway(style);
+};
+
+const clips = (overflow: string): boolean => overflow === "hidden" || overflow === "clip";
+
+type Box = { left: number; top: number; right: number; bottom: number };
+
+// Whether layout puts the element where the user can't see it: not rendered, shrunk to a few pixels, cut off by
+// an ancestor's overflow, or moved out of the page's scrollable area. Below the fold, or scrolled out of view in a
+// scrolling panel, is still on the page. jsdom has no layout and no checkVisibility, so there only the style
+// checks run.
+const outOfSight = (element: Element): boolean => {
+  if (!("checkVisibility" in element)) {
+    return false;
+  }
+  if (!element.checkVisibility()) {
+    return true;
+  }
+  const doc = element.ownerDocument;
+  const view = doc.defaultView;
+  const { left, top, right, bottom } = element.getBoundingClientRect();
+  const box: Box = { left, top, right, bottom };
+  // What clips an element is its containing block's chain: an absolute one skips static ancestors, a fixed one
+  // all of them. <html> and <body> hand their overflow to the viewport, which scrolls.
+  let skip: "none" | "static" | "all" = "none";
+  let fixed = false;
+  for (const node of ancestors(element)) {
+    const style = styleOf(node);
+    if (style === undefined) {
+      continue;
+    }
+    if (skip === "all" || (skip === "static" && style.position === "static")) {
+      continue;
+    }
+    const [clipsX, clipsY] = [clips(style.overflowX), clips(style.overflowY)];
+    if (node !== element && node !== doc.documentElement && node !== doc.body && (clipsX || clipsY)) {
+      const edge = node.getBoundingClientRect();
+      if (clipsX) {
+        box.left = Math.max(box.left, edge.left);
+        box.right = Math.min(box.right, edge.right);
+      }
+      if (clipsY) {
+        box.top = Math.max(box.top, edge.top);
+        box.bottom = Math.min(box.bottom, edge.bottom);
+      }
+    }
+    fixed ||= style.position === "fixed";
+    skip = style.position === "fixed" ? "all" : style.position === "absolute" ? "static" : "none";
+  }
+  if (box.right - box.left < minSize || box.bottom - box.top < minSize) {
+    return true;
+  }
+  if (view === null) {
+    return false;
+  }
+  // Fixed boxes stay where they are in the viewport; the rest move with the page's scroll.
+  const x = fixed ? 0 : view.scrollX;
+  const y = fixed ? 0 : view.scrollY;
+  const root = doc.documentElement;
+  const sideways = [root, doc.body].some((node) => node !== null && clips(styleOf(node)?.overflowX ?? ""));
+  const width = fixed || sideways ? view.innerWidth : Math.max(root.scrollWidth, view.innerWidth);
+  return box.right + x <= 0 || box.bottom + y <= 0 || box.left + x >= width;
+};
+
+// A login field the user can see (#129). Pages hide fields with opacity, a 1px size, clipping or an off-screen
+// position, none of which display, visibility or [hidden] catch, to get a fill the user never sees.
+const inSight = (element: Element): boolean =>
+  opacityOf(element) >= minOpacity && everyAncestor(element, isUnclipped, pass?.unclipped) && !outOfSight(element);
 
 const walk = (scope: ParentNode): readonly HTMLInputElement[] =>
   [...scope.querySelectorAll("*")].flatMap((element) => [
@@ -149,17 +270,21 @@ const isNewsletter = (input: HTMLInputElement): boolean =>
     [input.name, input.id, input.placeholder, input.form?.id, input.form?.className, input.form?.getAttribute("action")].join(" "),
   );
 
-export const passwordFields = (doc: Document): readonly HTMLInputElement[] =>
-  inputs(doc).filter((input) => input.type === "password" && isVisible(input) && !isDecoy(input));
+// A field login fill may put a username or password in: shown, reachable, in sight, and still on the page.
+export const isLoginField = (input: HTMLInputElement): boolean =>
+  input.isConnected && isVisible(input) && !isDecoy(input) && inSight(input);
+
+const isPassword = (input: HTMLInputElement): boolean => input.type === "password" && isLoginField(input);
+
+export const passwordFields = (doc: Document): readonly HTMLInputElement[] => inputs(doc).filter(isPassword);
 
 const isUsernameCandidate = perPass(
   (input) =>
     usernameTypes.has(input.type) &&
     (!hasAutofill(input) || /^(username|email|nickname|tel.*)$/.test(autofill(input))) &&
-    isVisible(input) &&
-    !isDecoy(input) &&
     !isSearch(input) &&
-    !isNewsletter(input),
+    !isNewsletter(input) &&
+    isLoginField(input),
 );
 
 // autocomplete outranks names: "username", then "email", then a name like "login", then any email field.
@@ -258,6 +383,10 @@ export const fillLogin = (
   credentials: Credentials,
   target: HTMLInputElement | null = null,
 ): FillOutcome => {
+  // The page may have hidden the field since it was chosen: the picker stays open while the user decides.
+  if (target !== null && !isLoginField(target)) {
+    return { filled: false, form: null };
+  }
   // A username target fills its password too once the page shows one; on the identifier step it fills alone.
   const paired =
     target === null || target.type === "password"
@@ -287,11 +416,28 @@ export const fillLogin = (
   return { filled: true, form: password.form };
 };
 
+// Where submitting sends the form: the button's formaction, else the form's action, else the page itself. Read
+// as attributes, because a field named "action" shadows form.action.
+const destination = (form: HTMLFormElement, button: HTMLElement | null): string => {
+  const doc = form.ownerDocument;
+  const action = button?.getAttribute("formaction") ?? form.getAttribute("action") ?? "";
+  try {
+    return action === "" ? doc.URL : new URL(action, doc.baseURI).href;
+  } catch {
+    return "";
+  }
+};
+
+// Submit after filling. A form that would send the login to another site is left for the user to submit (#130):
+// markup injected into the login's own page, with no script at all, could point it anywhere.
 export const submit = (form: HTMLFormElement | null): void => {
   if (form === null) {
     return;
   }
   const button = form.querySelector<HTMLElement>('button[type="submit"], input[type="submit"], button:not([type])');
+  if (!sameSiteAction(destination(form, button), form.ownerDocument.URL)) {
+    return;
+  }
   if (button !== null) {
     button.click();
   } else {
@@ -335,8 +481,6 @@ export const fillOtp = (field: HTMLInputElement, code: string): void => {
     .slice(0, code.length)
     .forEach((box, index) => setValue(box, code[index] ?? ""));
 };
-
-const isPassword = (input: HTMLInputElement): boolean => input.type === "password" && isVisible(input) && !isDecoy(input);
 
 const passwordGroup = (field: HTMLInputElement): readonly HTMLInputElement[] => {
   const fields = inputs(field.form ?? field.ownerDocument).filter((input) => input.form === field.form);

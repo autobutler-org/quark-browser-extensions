@@ -152,3 +152,29 @@ export const mayFill = (pageUrl: string, entryUrl: string, entryHost: string): b
 
 export const frameMayFill = (frameUrl: string, topUrl: string, entryUrl: string, entryHost: string): boolean =>
   mayFill(frameUrl, entryUrl, entryHost) && hostMatches(entryHost, hostOf(topUrl));
+
+// The site a host belongs to: its registrable domain, or the host itself when it has none (an IP address, a
+// suffix on the list, a single-label name).
+const siteOf = (hostname: string): string => {
+  const host = canonicalHost(hostname).replace(/\.$/, "");
+  return host === "" || isIpHost(host) ? host : (registrationOf(host).domain ?? host);
+};
+
+// Whether a form on `pageUrl` may be submitted to `actionUrl` without the user pressing the button: http or https
+// on the page's own site, and never from https down to http. Another site, or a downgrade, gets the login only
+// when the user sends it.
+export const sameSiteAction = (actionUrl: string, pageUrl: string): boolean => {
+  try {
+    const action = new URL(actionUrl);
+    const page = new URL(pageUrl);
+    const site = siteOf(page.hostname);
+    return (
+      (action.protocol === "https:" || action.protocol === page.protocol) &&
+      (action.protocol === "https:" || action.protocol === "http:") &&
+      site !== "" &&
+      siteOf(action.hostname) === site
+    );
+  } catch {
+    return false;
+  }
+};

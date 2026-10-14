@@ -1,0 +1,13 @@
+<!-- Login whose labels are visually hidden for screen readers only (clipped to 1px, moved off by a negative
+     margin), with a visually hidden "show password" checkbox. Only the labels are hidden; the fields are real. -->
+<style>
+  .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
+</style>
+<form method="post" action="/login">
+  <label class="sr-only" for="user">Username</label>
+  <input type="text" id="user" name="user" placeholder="Username" data-fx="user">
+  <label class="sr-only" for="pass">Password</label>
+  <input type="password" id="pass" name="pass" placeholder="Password" data-fx="pw">
+  <input type="checkbox" id="show" class="sr-only"><label for="show">Show password</label>
+  <button type="submit">Log in</button>
+</form>

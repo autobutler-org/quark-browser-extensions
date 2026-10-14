@@ -63,6 +63,30 @@ Each frame decides what to do with the message using `fillDecision` in `src/cont
 
 The worker answers `fillFromPage` only after it checks the requesting frame. It uses the frame URL and frame id that the browser reports, not anything the page says. For a subframe it also checks the top frame's URL, which it gets by asking frame 0. These are the same checks the inline picker and one-time codes use. A frame that lies in its own check still gets refused by the worker.
 
+## Which fields get a login
+
+A page on the login's own site can still run hostile script: a third-party tag, an XSS. It can lay out decoy fields the user never sees, ahead of the real form, to catch a fill that has no target field, or hide the real field once the inline picker is open (issue #129). So a username or password field is filled only when the user can see it (`isLoginField` in `src/content/forms.ts`). It must be:
+
+- Shown: not `display:none`, `visibility:hidden`, `[hidden]` or disabled, itself or through an ancestor.
+- Reachable: not `tabindex=-1`, and not under `aria-hidden="true"`, the marks spam honeypots carry.
+- Opaque: its opacity times every ancestor's is at least 0.1.
+- Not clipped away: no `clip: rect(…)` narrower than 4px, `clip-path: inset(50%)` or a zero circle on it or an ancestor.
+- Rendered and big enough: the browser's `checkVisibility()` passes (a closed `<details>` fails it), and its box is at least 4px by 4px after any ancestor with `overflow: hidden` or `clip` cuts it.
+- On the page: not moved left of or above the page, nor past the right edge of a page that can't scroll sideways. A fixed field must sit in the viewport. Below the fold still counts, and so does a field scrolled out of view inside a scrolling panel: the user can scroll to either.
+
+The popup's **Fill**, the shortcut and the context menu skip fields that fail, so they fill the real form behind any decoys. The inline picker checks its field again when the user picks, before it asks the worker for the login, and `fillLogin` checks once more when the login arrives. A field hidden in between gets nothing, and the picker says it couldn't find the login fields. Real forms with floating labels, screen-reader-only labels, or a two-step page's visually hidden username field still fill; their fixtures are in `test/fixtures/forms/`. One-time code fields keep the looser checks: some code inputs are transparent boxes drawn over digit cells.
+
+Not covered: a field covered by another element, or drawn in the page's background color. Those need hit testing, which pages can fool as easily.
+
+## Submit after filling
+
+**Submit after filling** (off by default) submits the form once the login is in. It submits only to the page's own site (issue #130): `submit` in `src/content/forms.ts` resolves where the form would go, the clicked button's `formaction` or else the form's `action` (read as attributes, since a field named `action` shadows `form.action`), against the page's base URL, and `sameSiteAction` in `src/shared/hostMatch.ts` accepts it only when:
+
+- it is http or https, and not plain http from an https page;
+- its registrable domain (eTLD+1, private suffixes such as `github.io` included) is the page's, or for a host without one (an IP address, `localhost`), the host is the page's.
+
+No action, an empty one, `#`, a relative path, the same origin and another host on the same site all submit. Anything else, `javascript:` included, is filled and left for the user to submit, so markup injected into the login's own site can't send the password elsewhere without a press of its Sign in button.
+
 ## Generating a password
 
 **Suggest strong password**, on a new-password field, runs in that field's frame. It asks the worker for a password sized to the field's `maxlength` (from 12 to 20 characters) and fills the field and its confirmation.

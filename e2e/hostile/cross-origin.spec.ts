@@ -118,8 +118,8 @@ test.describe("with Submit after filling on", () => {
     expect(new URLSearchParams(posts[0]).get("pw")).toBe(login.password);
   });
 
-  // Fails until #130 is fixed: auto-submit doesn't look at the form's action.
-  test.fail("a form posting to another origin isn't submitted", { annotation: { type: "issue", description: "https://github.com/autobutler-org/quark-browser-extensions/issues/130" } }, async ({ context, quark, site, worker }) => {
+  // Auto-submit only sends a form to the page's own site (#130).
+  test("a form posting to another origin isn't submitted", async ({ context, quark, site, worker }) => {
     const login = await seededLogin(quark);
     const requests = await watchSink(context);
     const url = `${site}/hostile/action`;

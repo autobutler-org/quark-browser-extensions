@@ -1,0 +1,11 @@
+<!-- Hostile page (#129): a username and password pair moved far off the left edge, ahead of the real
+     sign-in form, to catch a fill that has no target field. Nothing else marks it as a decoy. -->
+<form action="/bait">
+  <input type="text" autocomplete="username" style="position: absolute; left: -10000px; top: 0" data-fx="bait-user">
+  <input type="password" style="position: absolute; left: -10000px; top: 0" data-fx="bait-pw">
+</form>
+<form method="post" action="/session">
+  <label>Username <input type="text" name="username" autocomplete="username" data-fx="user"></label>
+  <label>Password <input type="password" name="password" autocomplete="current-password" data-fx="pw"></label>
+  <button type="submit">Sign in</button>
+</form>

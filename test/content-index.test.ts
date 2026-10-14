@@ -159,6 +159,49 @@ describe("inline button on the identifier step of a two-step login", () => {
   });
 });
 
+describe("picking a login for a field the page has since hidden (#129)", () => {
+  const worker: Worker = (request) => (request.type === "hello" ? hello([entry]) : { ok: true, value: credentials });
+
+  it.each([
+    ["opacity: 0", "opacity: 0"],
+    ["1px", "width: 1px; height: 1px"],
+    ["clip-path: inset(50%)", "clip-path: inset(50%)"],
+  ])("refuses a password field given %s after the picker opened, without asking for the login", async (_, style) => {
+    await setup("login-basic.html", worker);
+    byTag("pw").setAttribute("style", style);
+    if (style.includes("1px")) {
+      Object.defineProperty(Element.prototype, "checkVisibility", { value: () => true, configurable: true });
+      vi.spyOn(byTag("pw"), "getBoundingClientRect").mockReturnValue(DOMRect.fromRect({ x: 8, y: 8, width: 1, height: 1 }));
+      vi.spyOn(byTag("user"), "getBoundingClientRect").mockReturnValue(DOMRect.fromRect({ x: 8, y: 40, width: 200, height: 30 }));
+    }
+    try {
+      await expect(attached.find((found) => found.field === byTag("pw"))?.onPick(entry)).resolves.toBe("Couldn't find the login fields on this page.");
+    } finally {
+      delete (Element.prototype as Partial<Element>).checkVisibility;
+      vi.restoreAllMocks();
+    }
+    expect(sent.some((request) => request.type === "fillFromPage")).toBe(false);
+    expect([byTag("user").value, byTag("pw").value]).toEqual(["", ""]);
+  });
+
+  it("refuses a field hidden while the login was on its way, and fills nothing", async () => {
+    await setup("login-basic.html", (request) => {
+      if (request.type === "fillFromPage") {
+        byTag("pw").style.opacity = "0";
+      }
+      return worker(request);
+    });
+    await expect(attached.find((found) => found.field === byTag("pw"))?.onPick(entry)).resolves.toBe("Couldn't find the login fields on this page.");
+    expect([byTag("user").value, byTag("pw").value]).toEqual(["", ""]);
+  });
+
+  it("still fills the field when the page left it alone", async () => {
+    await setup("login-basic.html", worker);
+    await expect(attached.find((found) => found.field === byTag("pw"))?.onPick(entry)).resolves.toBeNull();
+    expect([byTag("user").value, byTag("pw").value]).toEqual(["alice@example.com", "hunter2!"]);
+  });
+});
+
 describe("single-step forms keep their buttons", () => {
   it("decorates the password field and not the username", async () => {
     await setup("login-basic.html", (request) => (request.type === "hello" ? hello([entry]) : null));

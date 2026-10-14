@@ -154,8 +154,8 @@ const moves = {
 } as const;
 
 for (const [where, style] of Object.entries(moves)) {
-  // Fails until #129 is fixed: the picker fills the field it opened on without checking it again.
-  test.fail(`a password field moved ${where} after the picker opens isn't filled`, { annotation: { type: "issue", description: "https://github.com/autobutler-org/quark-browser-extensions/issues/129" } }, async ({ context, quark, site, worker }) => {
+  // The picker checks the field again when the user picks (#129).
+  test(`a password field moved ${where} after the picker opens isn't filled`, async ({ context, quark, site, worker }) => {
     const login = await seededLogin(quark);
     const url = `${site}/hostile/move`;
     await serve(context, url, movePage(style));
