@@ -334,3 +334,58 @@ describe("host matching edge cases", () => {
     });
   });
 });
+
+describe("public suffix list", () => {
+  it.each([
+    // A suffix shared by unrelated owners is never a parent, whether ICANN (co.uk) or private (github.io).
+    ["github.io", "evil.github.io", false],
+    ["github.io", "github.io", true],
+    ["a.github.io", "b.github.io", false],
+    ["a.github.io", "a.github.io", true],
+    ["a.github.io", "docs.a.github.io", true],
+    ["netlify.app", "victim.netlify.app", false],
+    ["mysite.netlify.app", "othersite.netlify.app", false],
+    ["co.uk", "example.co.uk", false],
+    ["example.co.uk", "www.example.co.uk", true],
+    ["example.co.uk", "login.example.co.uk", true],
+    ["example.co.uk", "example2.co.uk", false],
+    ["com", "github.com", false],
+    ["uk", "example.co.uk", false],
+    // Wildcard and exception rules: *.ck is a suffix, but www.ck is registrable.
+    ["foo.ck", "bar.foo.ck", false],
+    ["www.ck", "www.ck", true],
+    // A parent must sit inside the page's registrable domain, not across a private suffix below it.
+    ["amazonaws.com", "bucket.s3.amazonaws.com", false],
+    ["bucket.s3.amazonaws.com", "eu.bucket.s3.amazonaws.com", true],
+    // IDN suffixes are listed too.
+    ["xn--bcher-kva.de", "shop.xn--bcher-kva.de", true],
+  ])("entry %s on page %s → %s", (entryHost, pageHost, expected) => {
+    expect(hostMatches(entryHost, pageHost)).toBe(expected);
+  });
+
+  it("only drops www. when what's left is still a site", () => {
+    expect(hostMatches("www.github.io", "github.io")).toBe(false);
+    expect(hostMatches("github.io", "www.github.io")).toBe(false);
+    expect(hostMatches("www.github.io", "www.github.io")).toBe(true);
+    expect(hostMatches("www.example.co.uk", "example.co.uk")).toBe(true);
+  });
+
+  it.each([
+    ["localhost", "localhost", true],
+    ["localhost", "app.localhost", true],
+    ["nas", "nas", true],
+    ["nas", "files.nas", true],
+    ["nas", "evilnas", false],
+    ["quark.local", "vault.quark.local", true],
+    ["a.quark.local", "b.quark.local", false],
+  ])("keeps single-label and unlisted hosts working: entry %s on page %s → %s", (entryHost, pageHost, expected) => {
+    expect(hostMatches(entryHost, pageHost)).toBe(expected);
+  });
+
+  it("applies to the fill checks and the picker alike", () => {
+    expect(mayFill("https://evil.github.io/login", "https://github.io", "github.io")).toBe(false);
+    expect(frameMayFill("https://a.github.io/", "https://b.github.io/", "https://a.github.io", "a.github.io")).toBe(false);
+    expect(matchEntries([entry(1, "Pages", "github.io")], "https://evil.github.io/")).toEqual([]);
+    expect(matchEntries([entry(1, "Shop", "example.co.uk")], "https://www.example.co.uk/").map((e) => e.id)).toEqual([1]);
+  });
+});

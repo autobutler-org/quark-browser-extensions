@@ -1,3 +1,4 @@
+import { parse } from "tldts/dist/index.esm.min.js";
 import type { EntrySummary } from "./types";
 
 export const normalizeHost = (host: string): string =>
@@ -28,17 +29,46 @@ const canonicalHost = (host: string): string => {
 
 const isIpHost = (host: string): boolean => host.startsWith("[") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
 
-const siteHost = (host: string): string => normalizeHost(canonicalHost(host));
+// Where the host sits in the public suffix list, private suffixes such as github.io included.
+// `domain` is the registrable domain (eTLD+1), null when the host is itself a suffix.
+type Registration = Readonly<{ domain: string | null; listedSuffix: boolean }>;
 
-// Host-level match, which the worker's fill checks rely on: the same host, or a subdomain of a named
-// host. An IP address only ever matches itself.
+const registrationOf = (host: string): Registration => {
+  const { domain, isIcann, isPrivate } = parse(host, { allowPrivateDomains: true, extractHostname: false });
+  return { domain, listedSuffix: domain === null && (isIcann === true || isPrivate === true) };
+};
+
+// A leading "www." only goes when what's left is still a site: www.github.io is somebody's site, not github.io.
+const siteHost = (host: string): string => {
+  const named = canonicalHost(host).replace(/\.$/, "");
+  const stripped = named.replace(/^www\./, "");
+  return stripped !== named && registrationOf(stripped).listedSuffix ? named : stripped;
+};
+
+// Whether a page on `page` may use an entry saved for `entry`, a strict parent of it.
+// A suffix on the public suffix list (co.uk, github.io, netlify.app) is shared by unrelated owners, so it is
+// never a parent, and a parent must sit inside the page's registrable domain. A single-label host that isn't
+// on the list (localhost, an intranet name) has no registrable domain, so it stays a parent of its subdomains.
+const isParentSite = (entry: string, page: string): boolean => {
+  if (isIpHost(entry) || isIpHost(page) || !page.endsWith(`.${entry}`)) {
+    return false;
+  }
+  const { domain, listedSuffix } = registrationOf(entry);
+  if (listedSuffix) {
+    return false;
+  }
+  return domain === null || registrationOf(page).domain === domain;
+};
+
+// Host-level match, which the worker's and the page's fill checks both rely on: the same host, or a
+// subdomain of it within the same registrable domain. An IP address only ever matches itself.
 export const hostMatches = (entryHost: string, pageHost: string): boolean => {
   const entry = siteHost(entryHost);
   const page = siteHost(pageHost);
   if (entry === "" || page === "") {
     return false;
   }
-  return page === entry || (!isIpHost(entry) && !isIpHost(page) && page.endsWith(`.${entry}`));
+  return page === entry || isParentSite(entry, page);
 };
 
 const byName = (a: EntrySummary, b: EntrySummary): number =>
