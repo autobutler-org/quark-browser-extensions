@@ -26,17 +26,17 @@ describe("idleAction", () => {
   const on = { ...defaultSettings, lockOnIdle: true };
 
   it("always locks when the screen locks", () => {
-    expect(idleAction("locked", off)).toBe("lock");
-    expect(idleAction("locked", on)).toBe("lock");
+    expect(idleAction("locked", off, "chrome")).toBe("lock");
+    expect(idleAction("locked", on, "chrome")).toBe("lock");
   });
 
-  it("locks on idle only when opted in", () => {
-    expect(idleAction("idle", off)).toBe("none");
-    expect(idleAction("idle", on)).toBe("lock");
+  it("on Chrome, locks on idle only when opted in", () => {
+    expect(idleAction("idle", off, "chrome")).toBe("none");
+    expect(idleAction("idle", on, "chrome")).toBe("lock");
   });
 
   it("does nothing when active", () => {
-    expect(idleAction("active", on)).toBe("none");
+    expect(idleAction("active", on, "chrome")).toBe("none");
   });
 
   it("converts minutes to the detection interval", () => {
