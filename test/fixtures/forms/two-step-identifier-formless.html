@@ -1,0 +1,11 @@
+<!-- First step of a two-step login in a single-page app: no <form>, just an email field and a Next button.
+     A site search box sits in the header and must not be taken for the identifier. -->
+<header>
+  <div role="search"><input type="text" name="q" placeholder="Search help" data-fx="search"></div>
+</header>
+<main>
+  <div class="identifier-step">
+    <input type="email" autocomplete="username" placeholder="Email address" data-fx="user">
+    <button type="button">Next</button>
+  </div>
+</main>

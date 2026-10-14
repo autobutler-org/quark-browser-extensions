@@ -137,6 +137,16 @@ export const standaloneUsernameField = (doc: Document): HTMLInputElement | null 
   return candidates.find((input) => usernameRank(input) === best) ?? null;
 };
 
+// The identifier field on the first step of a two-step login: a page with a username or email field but no
+// password or one-time code field yet. Null on single-step forms, which the password field covers.
+export const identifierField = (doc: Document): HTMLInputElement | null => {
+  if (passwordFields(doc).length > 0 || otpFields(doc).length > 0) {
+    return null;
+  }
+  const field = standaloneUsernameField(doc);
+  return field === null || field.readOnly ? null : field;
+};
+
 export const setValue = (input: HTMLInputElement, value: string): void => {
   const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input) as object, "value");
   input.focus();
@@ -157,7 +167,19 @@ export const fillLogin = (
   credentials: Credentials,
   target: HTMLInputElement | null = null,
 ): FillOutcome => {
-  const password = target ?? passwordFields(doc)[0] ?? null;
+  // A username target fills its password too once the page shows one; on the identifier step it fills alone.
+  const paired =
+    target === null || target.type === "password"
+      ? target
+      : passwordFields(doc).find((password) => usernameFieldFor(password) === target);
+  if (target !== null && paired === undefined) {
+    if (credentials.username === "") {
+      return { filled: false, form: null };
+    }
+    setValue(target, credentials.username);
+    return { filled: true, form: target.form };
+  }
+  const password = paired ?? passwordFields(doc)[0] ?? null;
   if (password === null) {
     const username = standaloneUsernameField(doc);
     if (username === null || credentials.username === "") {
