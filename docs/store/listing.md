@@ -17,10 +17,8 @@ into the store dashboards by hand on the first submission (see
 | Firefox add-on id | `vault@autobutler.org` |
 | Minimum versions | Chrome 116, Firefox 140 (desktop; not offered for Firefox for Android) |
 
-`package.json` has no `homepage`, `bugs` or `repository` field. The URLs above
-are the repository's GitHub remote, the same one `.github/amo-metadata.json`
-names. If those fields get added to `package.json`, keep them in step with this
-table.
+`package.json` supplies the homepage and support (`bugs`) URLs above. It has no
+`repository` field; `.github/amo-metadata.json` names the same repository.
 
 Both stores want the privacy policy as a URL, not text. Once this file is on
 `main`, use
@@ -40,21 +38,22 @@ as the same text and can be edited.
 >
 > **What it does**
 >
-> • Fill: on a sign-in page, a Quark button appears in the password field when your vault has a login for that site, and the toolbar icon shows how many. Pick one, press Fill in the popup, or use Ctrl+Shift+L (⌘⇧L on macOS).
+> • Fill: on a sign-in page, a Quark button appears in the password field when your vault has a login for that site, and the toolbar icon shows how many. Pick one, press Fill in the popup, or use Ctrl+Shift+L (⌘⇧L on macOS): one match fills directly and several open the picker. From the keyboard, Tab reaches the button and Alt+↓ opens its picker from the field.
 > • One-time codes: verification-code fields get the same button when the login has a TOTP secret. Only the code reaches the page.
 > • Save and update: after you sign in somewhere new, a bar offers to save the login, or to update the password when it changed.
-> • Strong passwords: sign-up forms get "Suggest strong password", sized to the field, and the right-click menu can generate one for the field you're on.
+> • Strong passwords: sign-up forms get "Suggest strong password", which fills the field and its confirmation while honoring the field's length, pattern and character rules. The right-click menu can generate one for the password field you're on, in that frame only.
 > • Search and copy: the popup lists every entry, with search, and copies usernames, passwords and one-time codes.
 > • One manager at a time: the options page can turn off the browser's own password saving, and in Chrome other password-manager extensions, so they don't fight over the same form.
 >
 > **How it keeps your logins safe**
 >
-> • Your account password never leaves the browser: sign-in sends a key derived from it with Argon2id, as the Quark app does.
+> • Sign-in normally sends only a key derived from your account password with Argon2id, as the Quark app does. An account made before auth keys can send the password beside the key for its upgrade, but only after you confirm that one attempt; never over non-loopback plain HTTP, and never after the extension has seen that account sign in with a key.
 > • Unlocking is done by your Quark. The vault password is sent once to unlock and never stored.
 > • Decrypted logins are fetched one at a time when you fill, and never stored or cached.
-> • A login fills only on its own site (or a subdomain of it), checked twice. Filling it on another site takes an explicit confirmation that names both sites.
+> • A login fills directly only with the scheme and port where it was saved, on that host or a safe subdomain, checked in both the page and the extension. Another scheme or port is labelled as a fallback; filling any other location takes a popup confirmation that names both places and never auto-submits.
+> • Optional auto-submit runs only when the form sends to the page's own site and does not downgrade HTTPS to HTTP. Otherwise you press the site's submit button yourself.
 > • The session token is kept in memory. "Stay signed in" stores it encrypted, never in plain text. The session shows up in your Quark under Settings › Sessions, and you can revoke it there.
-> • The vault locks when your screen locks (Chrome), or after the idle time (Firefox), and optionally when the computer is idle.
+> • On Chrome the vault locks when the screen locks; optional idle locking can also lock it after 5, 15 or 30 minutes. Firefox cannot detect the screen lock, so it always locks after the chosen idle time.
 > • No analytics, no telemetry, no remote code.
 >
 > **You need** a Quark (v0.47.0 or later) with its password vault set up, and a Quark admin account.
