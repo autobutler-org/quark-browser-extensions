@@ -1,5 +1,7 @@
 import { createApi, toApiError, type FetchFn } from "../src/shared/api";
-import { errorText, extensionTooOld, quarkTooOld } from "../src/shared/errors";
+import { createUpgradeLedger } from "../src/shared/authKey";
+import { errorText, extensionTooOld, legacyAgain, legacyInsecure, legacyUpgradeNeeded, quarkTooOld } from "../src/shared/errors";
+import { fakeChrome } from "./fakeChrome";
 
 type Call = Readonly<{ url: string; init: RequestInit | undefined }>;
 
@@ -26,6 +28,8 @@ const fakeDerive = (password: string, from: Uint8Array) => Promise.resolve(`key(
 const quark = (
   login: (body: Record<string, unknown>) => readonly [number, unknown],
   saltReply: readonly [number, unknown] = [200, { salt: saltBase64, legacy: false, legacyRecovery: false }],
+  // The extension's record of upgraded accounts and the connect form's consent, in fresh storage per test unless shared.
+  ledger = memoryLedger(),
 ) => {
   const calls: Call[] = [];
   const fetchFn: FetchFn = (url, init) => {
@@ -40,7 +44,12 @@ const quark = (
         })();
     return Promise.resolve(new Response(typeof body === "string" ? body : JSON.stringify(body), { status }));
   };
-  return { calls, api: createApi(fetchFn, fakeDerive) };
+  return { calls, ledger, api: createApi(fetchFn, fakeDerive, ledger) };
+};
+
+const memoryLedger = () => {
+  const { storage } = fakeChrome().chrome;
+  return createUpgradeLedger(() => storage.local, () => storage.session);
 };
 
 const bodyOf = (call: Call | undefined) => JSON.parse(call?.init?.body as string) as unknown;
@@ -57,10 +66,90 @@ describe("login", () => {
     expect(bodyOf(calls[1])).toEqual({ username: "Brandon Apol", authKey: `key(pw,${salt.join(".")})` });
   });
 
-  it("sends the password beside the auth key once for a legacy account", async () => {
-    const { api, calls } = quark(() => [200, { token: "abc" }], [200, { salt: saltBase64, legacy: true }]);
+  it("sends the password beside the auth key once for a legacy account, after the user consents", async () => {
+    const { api, calls, ledger } = quark(() => [200, { token: "abc" }], [200, { salt: saltBase64, legacy: true }]);
+    await ledger.giveConsent("https://quark.local", "brandon");
     expect(await api.login("https://quark.local", "brandon", "pw")).toEqual({ ok: true, value: "abc" });
     expect(bodyOf(calls[1])).toEqual({ username: "brandon", password: "pw", authKey: `key(pw,${salt.join(".")})` });
+  });
+
+  describe("a legacy answer (#76)", () => {
+    const legacySalt = [200, { salt: saltBase64, legacy: true }] as const;
+    const posts = (calls: readonly Call[]) => calls.filter((call) => call.init?.method === "POST");
+
+    it("sends nothing until the user consents, and says so to the connect form", async () => {
+      const { api, calls } = quark(() => [200, { token: "abc" }], legacySalt);
+      expect(await api.login("https://quark.local", "brandon", "pw")).toEqual({
+        ok: false,
+        error: {
+          kind: "refused",
+          reason: legacyUpgradeNeeded("https://quark.local"),
+          legacyUpgrade: { server: "https://quark.local", username: "brandon" },
+        },
+      });
+      expect(posts(calls)).toEqual([]);
+    });
+
+    it("refuses a second legacy answer for an account that already upgraded, however often the server asks", async () => {
+      const { api, calls, ledger } = quark(() => [200, { token: "abc" }], legacySalt);
+      await ledger.giveConsent("https://quark.local", "brandon");
+      expect((await api.login("https://quark.local", "brandon", "pw")).ok).toBe(true);
+      for (const username of ["brandon", " Brandon "]) {
+        // Even a fresh consent doesn't let the password out again.
+        await ledger.giveConsent("https://quark.local", username);
+        expect(await api.login("https://quark.local", username, "pw")).toEqual({
+          ok: false,
+          error: { kind: "refused", reason: legacyAgain("https://quark.local") },
+        });
+      }
+      expect(posts(calls).filter((call) => "password" in (bodyOf(call) as object))).toHaveLength(1);
+    });
+
+    it("refuses a legacy answer for an account that has signed in with its key alone", async () => {
+      const ledger = memoryLedger();
+      expect((await quark(() => [200, { token: "abc" }], undefined, ledger).api.login("https://quark.local", "brandon", "pw")).ok).toBe(true);
+      const { api, calls } = quark(() => [200, { token: "abc" }], legacySalt, ledger);
+      await ledger.giveConsent("https://quark.local", "brandon");
+      expect(await api.login("https://quark.local", "brandon", "pw")).toEqual({
+        ok: false,
+        error: { kind: "refused", reason: legacyAgain("https://quark.local") },
+      });
+      expect(posts(calls)).toEqual([]);
+    });
+
+    it("keys the record by server and account, so another one can still upgrade", async () => {
+      const { api, ledger } = quark(() => [200, { token: "abc" }], legacySalt);
+      await ledger.markKeyed("https://quark.local", "brandon");
+      await ledger.giveConsent("https://other.quark", "brandon");
+      expect((await api.login("https://other.quark", "brandon", "pw")).ok).toBe(true);
+      await ledger.giveConsent("https://quark.local", "sam");
+      expect((await api.login("https://quark.local", "sam", "pw")).ok).toBe(true);
+    });
+
+    it("never sends the password over plain http, even with consent", async () => {
+      const { api, calls, ledger } = quark(() => [200, { token: "abc" }], legacySalt);
+      await ledger.giveConsent("http://quark.lan", "brandon");
+      expect(await api.login("http://quark.lan", "brandon", "pw")).toEqual({
+        ok: false,
+        error: { kind: "refused", reason: legacyInsecure("http://quark.lan") },
+      });
+      expect(posts(calls)).toEqual([]);
+    });
+
+    it("upgrades over loopback http, which never leaves the machine", async () => {
+      const { api, ledger } = quark(() => [200, { token: "abc" }], legacySalt);
+      await ledger.giveConsent("http://localhost:8080", "brandon");
+      expect((await api.login("http://localhost:8080", "brandon", "pw")).ok).toBe(true);
+    });
+
+    it("uses the consent up on a failed upgrade and doesn't record a key", async () => {
+      const { api, calls, ledger } = quark(() => [401, { error: "invalid credentials" }], legacySalt);
+      await ledger.giveConsent("https://quark.local", "brandon");
+      expect(await api.login("https://quark.local", "brandon", "typo")).toEqual({ ok: false, error: { kind: "badCredentials" } });
+      expect(await ledger.hasKey("https://quark.local", "brandon")).toBe(false);
+      expect((await api.login("https://quark.local", "brandon", "pw")).ok).toBe(false);
+      expect(posts(calls)).toHaveLength(1);
+    });
   });
 
   it.each([

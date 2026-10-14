@@ -1,5 +1,6 @@
-import { deriveAuthKey, fromBase64, type DeriveAuthKey } from "./authKey";
-import { extensionTooOld, quarkTooOld } from "./errors";
+import { deriveAuthKey, fromBase64, upgradeLedger, type DeriveAuthKey, type UpgradeLedger } from "./authKey";
+import { extensionTooOld, legacyAgain, legacyInsecure, legacyUpgradeNeeded, quarkTooOld } from "./errors";
+import { serverTransport } from "./host";
 import {
   err,
   ok,
@@ -160,7 +161,7 @@ const asAuthSalt = (payload: unknown): AuthSalt | null => {
   return bytes === null ? null : { salt: bytes, legacy: field(payload, "legacy") === true };
 };
 
-export const createApi = (fetchFn: FetchFn, deriveKey: DeriveAuthKey = deriveAuthKey) => {
+export const createApi = (fetchFn: FetchFn, deriveKey: DeriveAuthKey = deriveAuthKey, ledger: UpgradeLedger = upgradeLedger) => {
   const request = send(fetchFn);
   const authed = (connection: Connection, req: Request) => request(connection.server, connection.token, req);
 
@@ -168,7 +169,10 @@ export const createApi = (fetchFn: FetchFn, deriveKey: DeriveAuthKey = deriveAut
     // Quark v0.47.0+ takes an auth key derived from the password, never the
     // password alone (autobutler-org/quark#2430). An account the Quark marks
     // legacy has no auth key yet, so it is sent the password beside the key
-    // once, which moves it to the key.
+    // once, which moves it to the key. Only the server says an account is
+    // legacy, so that password goes out only over https or loopback, only on
+    // the user's consent from the connect form, and never for an account this
+    // extension has seen sign in with a key (docs/legacy-upgrade.md).
     login: async (server: string, username: string, password: string): Promise<Result<string>> => {
       const saltReply = await request(server, null, {
         method: "GET",
@@ -181,6 +185,17 @@ export const createApi = (fetchFn: FetchFn, deriveKey: DeriveAuthKey = deriveAut
       if (salt === null) {
         return err({ kind: "refused", reason: quarkTooOld() });
       }
+      if (salt.legacy) {
+        if (serverTransport(server) === "insecure") {
+          return err({ kind: "refused", reason: legacyInsecure(server) });
+        }
+        if (await ledger.hasKey(server, username)) {
+          return err({ kind: "refused", reason: legacyAgain(server) });
+        }
+        if (!(await ledger.takeConsent(server, username))) {
+          return err({ kind: "refused", reason: legacyUpgradeNeeded(server), legacyUpgrade: { server, username } });
+        }
+      }
       const authKey = await deriveKey(password, salt.salt);
       const result = await request(server, null, {
         method: "POST",
@@ -189,7 +204,11 @@ export const createApi = (fetchFn: FetchFn, deriveKey: DeriveAuthKey = deriveAut
       });
       if (result.ok) {
         const token = stringField(result.value, "token");
-        return token === "" ? err({ kind: "server", status: 200, message: "no token in response" }) : ok(token);
+        if (token === "") {
+          return err({ kind: "server", status: 200, message: "no token in response" });
+        }
+        await ledger.markKeyed(server, username);
+        return ok(token);
       }
       if (isFailure(result.error) && result.error.status === 401) {
         return err({ kind: "badCredentials" });

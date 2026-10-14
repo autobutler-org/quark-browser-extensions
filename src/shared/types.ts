@@ -63,6 +63,8 @@ export const defaultSettings: Settings = {
   welcomeSeen: false,
 };
 
+export type LegacyUpgrade = Readonly<{ server: string; username: string }>;
+
 export type ApiError =
   | Readonly<{ kind: "signedOut" }>
   | Readonly<{ kind: "badCredentials" }>
@@ -74,7 +76,9 @@ export type ApiError =
   | Readonly<{ kind: "driveDisconnected" }>
   | Readonly<{ kind: "rateLimited" }>
   | Readonly<{ kind: "notFound" }>
-  | Readonly<{ kind: "refused"; reason: string }>
+  // legacyUpgrade: the Quark calls the account legacy and wants its password once, which the connect form asks
+  // the user about before anything is sent.
+  | Readonly<{ kind: "refused"; reason: string; legacyUpgrade?: LegacyUpgrade }>
   | Readonly<{ kind: "network"; message: string }>
   | Readonly<{ kind: "server"; status: number; message: string }>;
 
