@@ -116,6 +116,7 @@ describe("matchEntries", () => {
       expect(matchEntries([entry(1, "A", "github.com")], "https://github.com/", () => "github.com/login")[0]?.kind).toBe("exact");
       expect(matchEntries([entry(1, "A", "github.com")], "https://github.com/")[0]).toMatchObject({ kind: "exact", where: "github.com" });
       expect(matchEntries([entry(1, "A", "github.com")], "https://github.com/", () => "ftp://github.com")[0]?.kind).toBe("exact");
+      expect(matchEntries([entry(1, "A", "github.com")], "https://github.com/", () => "http://[github.com")[0]?.kind).toBe("exact");
     });
 
     it("still filters by host, whatever the entry's URL claims", () => {
