@@ -40,18 +40,26 @@ test("signs in with the auth key, never the password, and keeps the token in ses
   expect(status.status).toBe(200);
 });
 
-test("a legacy account sends its password beside the key once, which moves it to keys", async ({ popup, quark }) => {
+test("a legacy account sends its password beside the key once, after the user confirms, which moves it to keys", async ({ popup, quark }) => {
   const { legacy } = quark.seed;
   expect((await quark.api.salt(legacy.username)).legacy).toBe(true);
   await quark.clearWire();
 
+  // Nothing goes out until the connect form's one-time confirmation is ticked (#76).
   await connect(popup, quark, legacy);
+  const confirm = popup.locator("#legacy-upgrade");
+  await expect(confirm).toBeVisible({ timeout: 30_000 });
+  expect(logins(await quark.wire())).toEqual([]);
+  await confirm.check();
+  await popup.fill("#password", legacy.password);
+  await popup.click("button[type=submit]");
   await expect(popup.getByRole("heading", { name: "Vault is locked" }).or(popup.getByText(/^All entries/))).toBeVisible({
     timeout: 30_000,
   });
 
-  const [upgrade] = logins(await quark.wire());
-  expect(Object.keys(upgrade ?? {}).sort()).toEqual(["authKey", "password", "username"]);
+  const sent = logins(await quark.wire());
+  expect(sent).toHaveLength(1);
+  expect(Object.keys(sent[0] ?? {}).sort()).toEqual(["authKey", "password", "username"]);
   expect((await quark.api.salt(legacy.username)).legacy).toBe(false);
   // The key alone signs it in from now on, and the password alone is refused.
   await quark.api.login(legacy.username, legacy.password);
