@@ -44,12 +44,12 @@ describe("connecting to a Quark over plain http", () => {
     fake.send({ type: "connect", server, username: "admin", password: "pw", persist: false, allowInsecure }, popup);
 
   // A Quark too old for auth keys answers 404 here, which ends the sign-in before any key derivation.
-  const tooOld = async () => json(404);
+  const tooOld = () => Promise.resolve(json(404));
 
   it.each(["http://quark.local", "http://192.168.1.10:8080"])("refuses %s without a confirmation", async (server) => {
     const fetchSpy = await startWorker(tooOld);
     const reply = await connect(server, false);
-    expect(reply).toEqual({ ok: false, error: { kind: "refused", reason: expect.stringContaining("plain http") } });
+    expect(reply).toEqual({ ok: false, error: { kind: "refused", reason: expect.stringContaining("plain http") as unknown } });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -77,14 +77,14 @@ describe("filling from the popup, shortcut or context menu", () => {
     await saveConnection(connection, false);
     const sent: Sent[] = [];
     let frameReply: unknown = undefined;
-    fake.chrome.tabs.sendMessage = (async (_tab: number, message: PageCommand, options?: { frameId?: number }) => {
+    fake.chrome.tabs.sendMessage = ((_tab: number, message: PageCommand, options?: { frameId?: number }) => {
       sent.push({ message, options });
       if (message.type === "whereAmI") {
-        return options?.frameId === 0 ? topUrl : undefined;
+        return Promise.resolve(options?.frameId === 0 ? topUrl : undefined);
       }
-      return frameReply;
+      return Promise.resolve(frameReply);
     }) as typeof fake.chrome.tabs.sendMessage;
-    const fetchSpy = await startWorker(async (url) => (url.endsWith("/vault/entries/1") ? json(200, entry) : json(200, {})));
+    const fetchSpy = await startWorker((url) => Promise.resolve(url.endsWith("/vault/entries/1") ? json(200, entry) : json(200, {})));
     return { sent, fetchSpy, replyFromFrame: (value: unknown) => (frameReply = value) };
   };
 
@@ -149,7 +149,7 @@ describe("filling from the popup, shortcut or context menu", () => {
     await setup("https://evil.example/");
     expect(await fillFromPage(frame("https://github.com/login", 6))).toMatchObject({
       ok: false,
-      error: { kind: "refused", reason: expect.stringContaining("evil.example") },
+      error: { kind: "refused", reason: expect.stringContaining("evil.example") as unknown },
     });
   });
 });

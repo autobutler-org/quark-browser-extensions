@@ -54,7 +54,7 @@ describe("storage", () => {
     const { saveConnection, loadConnection } = await storage();
     expect(await saveConnection(connection, true)).toBe(true);
     expect(stored()).toEqual({ local: undefined, session: connection });
-    expect(sealed()).toEqual({ server: connection.server, iv: expect.any(String), data: expect.any(String) });
+    expect(sealed()).toEqual({ server: connection.server, iv: expect.any(String) as unknown, data: expect.any(String) as unknown });
     expect(readableByContentScripts()).not.toContain(connection.token);
     expect(sealKey()).toBeInstanceOf(CryptoKey);
     expect((sealKey() as CryptoKey).extractable).toBe(false);
@@ -168,9 +168,7 @@ describe("storage", () => {
   it("gets by without setAccessLevel, as in Firefox, or when it throws", async () => {
     const { restrictSessionStorage } = await storage();
     const session = fake.chrome.storage.session as { setAccessLevel?: unknown };
-    session.setAccessLevel = async () => {
-      throw new Error("not supported");
-    };
+    session.setAccessLevel = () => Promise.reject(new Error("not supported"));
     await expect(restrictSessionStorage()).resolves.toBeUndefined();
     delete session.setAccessLevel;
     await expect(restrictSessionStorage()).resolves.toBeUndefined();
@@ -216,7 +214,7 @@ describe("the worker drops the connection", () => {
 
   it("on sign-out", async () => {
     await signedIn();
-    const fetchSpy = await startWorker(async () => json(200));
+    const fetchSpy = await startWorker(() => Promise.resolve(json(200)));
     const reply = await fake.send({ type: "signOut" }, popup);
     expect(reply).toEqual({ ok: true, value: { kind: "signedOut", server: connection.server } });
     expect(gone()).toEqual(signedOut);
@@ -225,16 +223,14 @@ describe("the worker drops the connection", () => {
 
   it("on sign-out even when the server can't be reached", async () => {
     await signedIn();
-    await startWorker(async () => {
-      throw new Error("offline");
-    });
+    await startWorker(() => Promise.reject(new Error("offline")));
     await fake.send({ type: "signOut" }, popup);
     expect(gone()).toEqual(signedOut);
   });
 
   it("when the server answers 401", async () => {
     await signedIn();
-    await startWorker(async () => json(401, { error: "authentication required" }));
+    await startWorker(() => Promise.resolve(json(401, { error: "authentication required" })));
     const reply = await fake.send({ type: "entries" }, popup);
     expect(reply).toEqual({ ok: false, error: { kind: "signedOut" } });
     expect(gone()).toEqual(signedOut);
@@ -242,7 +238,7 @@ describe("the worker drops the connection", () => {
 
   it("when the vault status check answers 401", async () => {
     await signedIn();
-    await startWorker(async () => json(401));
+    await startWorker(() => Promise.resolve(json(401)));
     const reply = await fake.send({ type: "state" }, popup);
     expect(reply).toEqual({ kind: "signedOut", server: connection.server });
     expect(gone()).toEqual(signedOut);
@@ -250,7 +246,7 @@ describe("the worker drops the connection", () => {
 
   it("but keeps it on other errors", async () => {
     await signedIn();
-    await startWorker(async () => json(500, { error: "boom" }));
+    await startWorker(() => Promise.resolve(json(500, { error: "boom" })));
     await fake.send({ type: "entries" }, popup);
     expect(stored().session).toEqual(connection);
     expect(sealed()).toBeDefined();
@@ -258,7 +254,7 @@ describe("the worker drops the connection", () => {
 
   it("but not for a web page that asks", async () => {
     await signedIn();
-    const fetchSpy = await startWorker(async () => json(200));
+    const fetchSpy = await startWorker(() => Promise.resolve(json(200)));
     const page = { id: extensionId, url: "https://evil.io/", tab: { id: 1 } as chrome.tabs.Tab, frameId: 0 };
     expect(fake.send({ type: "signOut" }, page)).toBeUndefined();
     expect(stored().session).toEqual(connection);

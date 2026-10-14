@@ -5,9 +5,9 @@ type Call = Readonly<{ url: string; init: RequestInit | undefined }>;
 
 const respond = (status: number, body: unknown) => {
   const calls: Call[] = [];
-  const fetchFn: FetchFn = async (url, init) => {
+  const fetchFn: FetchFn = (url, init) => {
     calls.push({ url, init });
-    return new Response(body === undefined ? "" : JSON.stringify(body), { status });
+    return Promise.resolve(new Response(body === undefined ? "" : JSON.stringify(body), { status }));
   };
   return { calls, api: createApi(fetchFn) };
 };
@@ -19,7 +19,7 @@ const saltBase64 = btoa(String.fromCharCode(...salt));
 
 // Stands in for the Argon2id derivation, which takes seconds; deriveAuthKey
 // itself is pinned by the vector in authKey.test.ts.
-const fakeDerive = async (password: string, from: Uint8Array) => `key(${password},${from.join(".")})`;
+const fakeDerive = (password: string, from: Uint8Array) => Promise.resolve(`key(${password},${from.join(".")})`);
 
 // A Quark v0.47.0+ sign-in: GET /auth/salt, then POST /auth/login, which
 // refuses a password sent without an auth key with 426 (quark#2430).
@@ -28,22 +28,22 @@ const quark = (
   saltReply: readonly [number, unknown] = [200, { salt: saltBase64, legacy: false, legacyRecovery: false }],
 ) => {
   const calls: Call[] = [];
-  const fetchFn: FetchFn = async (url, init) => {
+  const fetchFn: FetchFn = (url, init) => {
     calls.push({ url, init });
     const [status, body] = url.includes("/auth/salt")
       ? saltReply
       : (() => {
-          const sent = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          const sent = JSON.parse(init?.body as string) as Record<string, unknown>;
           return "password" in sent && !("authKey" in sent)
             ? ([426, { error: "update the app to sign in" }] as const)
             : login(sent);
         })();
-    return new Response(typeof body === "string" ? body : JSON.stringify(body), { status });
+    return Promise.resolve(new Response(typeof body === "string" ? body : JSON.stringify(body), { status }));
   };
   return { calls, api: createApi(fetchFn, fakeDerive) };
 };
 
-const bodyOf = (call: Call | undefined) => JSON.parse(String(call?.init?.body)) as unknown;
+const bodyOf = (call: Call | undefined) => JSON.parse(call?.init?.body as string) as unknown;
 
 describe("login", () => {
   it("signs in with the auth key alone and sends no credentials cookie", async () => {
@@ -150,9 +150,7 @@ describe("authenticated requests", () => {
   });
 
   it("reports a network failure", async () => {
-    const api = createApi(async () => {
-      throw new TypeError("Failed to fetch");
-    });
+    const api = createApi(() => Promise.reject(new TypeError("Failed to fetch")));
     expect(await api.status(connection)).toEqual({ ok: false, error: { kind: "network", message: "Failed to fetch" } });
   });
 });

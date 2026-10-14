@@ -188,8 +188,9 @@ export const startMockQuark = async (port?: number): Promise<Target> => {
 
   return {
     server: `http://127.0.0.1:${bound}`,
-    addLegacy: async () => {
+    addLegacy: () => {
       accounts.set(legacy.username, { salt: randomBytes(16).toString("base64"), authKey: null, password: legacy.password });
+      return Promise.resolve();
     },
     stop: () => new Promise((resolve) => server.close(() => resolve())),
   };

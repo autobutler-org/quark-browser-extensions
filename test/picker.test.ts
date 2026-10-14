@@ -16,6 +16,8 @@ const match = (id: number, name: string, kind: MatchKind, where: string, note = 
 // The picker's shadow root is closed; open it so the test can look inside.
 const openShadows = (): ShadowRoot[] => {
   const roots: ShadowRoot[] = [];
+  // Kept unbound on purpose: the mock calls it with each element as `this`.
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   const original = Element.prototype.attachShadow;
   vi.spyOn(Element.prototype, "attachShadow").mockImplementation(function (this: Element, init: ShadowRootInit) {
     const root = original.call(this, { ...init, mode: "open" });
@@ -43,7 +45,7 @@ describe("attachPicker", () => {
         match(3, "Quark", "otherScheme", "https://localhost:8087", "Saved for https"),
       ],
       "localhost:8087",
-      { onPick: async () => null },
+      { onPick: () => Promise.resolve(null) },
     );
     picker.open();
     const panel = roots[0]?.querySelector(".panel");
@@ -62,7 +64,7 @@ describe("attachPicker", () => {
     const roots = openShadows();
     const field = document.createElement("input");
     document.body.append(field);
-    const picker = attachPicker(field, [match(1, "NAS", "exact", "localhost:8087")], "localhost:8087", { onPick: async () => null });
+    const picker = attachPicker(field, [match(1, "NAS", "exact", "localhost:8087")], "localhost:8087", { onPick: () => Promise.resolve(null) });
     picker.open();
     expect(roots[0]?.querySelector(".subhead")).toBeNull();
     picker.destroy();
