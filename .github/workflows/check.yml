@@ -20,13 +20,16 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run lint:firefox
-      - run: npm run package
+      - name: Build the Chrome and Firefox zips
+        run: npm run package
       - uses: actions/upload-artifact@v4
         with:
           name: quark-vault-extension
+          if-no-files-found: error
           path: |
-            quark-vault-chrome.zip
-            quark-vault-firefox.zip
+            .output/quark-vault-chrome.zip
+            .output/quark-vault-firefox.zip
+            .output/quark-vault-sources.zip
 
   e2e:
     runs-on: ubuntu-latest

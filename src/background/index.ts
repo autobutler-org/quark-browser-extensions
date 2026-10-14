@@ -451,12 +451,6 @@ const onIdleState = async (state: IdleState): Promise<void> => {
   }
 };
 
-chrome.commands.onCommand.addListener((command, tab) => {
-  if (command === "fill-login") {
-    void onShortcut(tab);
-  }
-});
-
 const fillGenerated = async (tabId: number): Promise<void> => {
   const password = await withConnection((conn) => api.generate(conn));
   if (password.ok) {
@@ -464,37 +458,45 @@ const fillGenerated = async (tabId: number): Promise<void> => {
   }
 };
 
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === generateMenuId && tab?.id !== undefined) {
-    void fillGenerated(tab.id);
-    return;
-  }
-  const entryId = entryIdFromMenu(info.menuItemId);
-  if (entryId !== null && tab?.id !== undefined) {
-    void fillInTab(tab.id, entryId);
-  }
-});
+export const main = (): void => {
+  chrome.commands.onCommand.addListener((command, tab) => {
+    if (command === "fill-login") {
+      void onShortcut(tab);
+    }
+  });
 
-chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.status === "complete" && freshPending(tabId) !== null) {
-    void chrome.tabs.sendMessage(tabId, { type: "offerCheck" }, { frameId: 0 }).catch(() => undefined);
-  }
-});
+  chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === generateMenuId && tab?.id !== undefined) {
+      void fillGenerated(tab.id);
+      return;
+    }
+    const entryId = entryIdFromMenu(info.menuItemId);
+    if (entryId !== null && tab?.id !== undefined) {
+      void fillInTab(tab.id, entryId);
+    }
+  });
 
-chrome.tabs.onRemoved.addListener((tabId) => {
-  pendings.delete(tabId);
-});
+  chrome.tabs.onUpdated.addListener((tabId, info) => {
+    if (info.status === "complete" && freshPending(tabId) !== null) {
+      void chrome.tabs.sendMessage(tabId, { type: "offerCheck" }, { frameId: 0 }).catch(() => undefined);
+    }
+  });
 
-chrome.idle.onStateChanged.addListener((state) => void onIdleState(state as IdleState));
-void loadSettings().then(applyIdleInterval);
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    pendings.delete(tabId);
+  });
 
-chrome.runtime.onMessage.addListener((request: Request, sender, sendResponse) => {
-  const pending = forExtensionPages(request, sender) ?? forContentScripts(request, sender);
-  if (pending === null) {
-    return false;
-  }
-  pending.then(sendResponse, (cause: unknown) =>
-    sendResponse(err({ kind: "network", message: cause instanceof Error ? cause.message : String(cause) })),
-  );
-  return true;
-});
+  chrome.idle.onStateChanged.addListener((state) => void onIdleState(state as IdleState));
+  void loadSettings().then(applyIdleInterval);
+
+  chrome.runtime.onMessage.addListener((request: Request, sender, sendResponse) => {
+    const pending = forExtensionPages(request, sender) ?? forContentScripts(request, sender);
+    if (pending === null) {
+      return false;
+    }
+    pending.then(sendResponse, (cause: unknown) =>
+      sendResponse(err({ kind: "network", message: cause instanceof Error ? cause.message : String(cause) })),
+    );
+    return true;
+  });
+};
