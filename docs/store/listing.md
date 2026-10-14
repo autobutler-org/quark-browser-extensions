@@ -54,7 +54,7 @@ as the same text and can be edited.
 > • Decrypted logins are fetched one at a time when you fill, and never stored or cached.
 > • A login fills only on its own site (or a subdomain of it), checked twice. Filling it on another site takes an explicit confirmation that names both sites.
 > • The session token is kept in memory. "Stay signed in" stores it encrypted, never in plain text. The session shows up in your Quark under Settings › Sessions, and you can revoke it there.
-> • The vault locks when your screen locks, and optionally when the computer is idle.
+> • The vault locks when your screen locks (Chrome), or after the idle time (Firefox), and optionally when the computer is idle.
 > • No analytics, no telemetry, no remote code.
 >
 > **You need** a Quark (v0.47.0 or later) with its password vault set up, and a Quark admin account.

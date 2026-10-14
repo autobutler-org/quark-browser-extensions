@@ -64,7 +64,7 @@ const lockingSection = (settings: Settings): HTMLElement =>
     "section",
     { className: "card", id: "locking" },
     h("h2", {}, t("optionsLocking")),
-    h("p", { className: "muted small" }, t("optionsLockingIntro")),
+    h("p", { className: "muted small" }, t("optionsLockingIntroFirefox")),
     toggle(settings, "lockOnIdle", t("optionsLockOnIdle"), t("optionsLockOnIdleHint")),
     idleMinutesSelect(settings),
   );

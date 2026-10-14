@@ -8,7 +8,7 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 - **Connect**: sign in once with a Quark admin account. The extension gets an ordinary session token, so it shows up
   in the Quark under Settings › Sessions and can be revoked there.
 - **Unlock**: type the vault password in the popup. Unlocking is server-side and household-wide, the same as unlocking
-  in the Quark app, and the Quark locks it on its own schedule. The options page can also lock it when the computer is idle, and a locked screen always locks it.
+  in the Quark app, and the Quark locks it on its own schedule. The options page can also lock it when the computer is idle. On Chrome, it locks when the screen locks; on Firefox, after the idle time elapses.
 - **Fill**: on a page with a password field, a Quark button appears in the field when the vault has a login for that
   site. The toolbar icon shows how many. Pick one, or press **Fill** in the popup.
 - **Shortcut and right-click**: `Ctrl+Shift+L` (`⌘⇧L` on macOS) fills the only match or opens the picker; right-click a field
@@ -55,7 +55,7 @@ From the built manifests (`.output/*/manifest.json`):
 | --- | --- |
 | `storage` | Settings, the session token (`storage.session`) and the encrypted "stay signed in" copy. The Quark address is kept in IndexedDB, not here |
 | `activeTab` | Reading the active tab's URL when you fill from the popup, shortcut or menu |
-| `idle` | Locking the vault when the computer is idle (if you turn that on) or the screen locks |
+| `idle` | Locking the vault when the computer is idle (if you turn that on) or the screen locks (Chrome only; Firefox locks after idle time) |
 | `contextMenus` | The right-click **Quark Vault** menu on editable fields |
 | `privacy` (optional) | Asked for only when you turn off the browser's own password saving |
 | `management` (optional) | Asked for only to list and turn off other password-manager extensions (Chrome) |

@@ -128,7 +128,7 @@ export const messagePlaceholders = {
   optionsAutoSubmit: [],
   optionsAutoSubmitHint: [],
   optionsLocking: [],
-  optionsLockingIntro: [],
+  optionsLockingIntroFirefox: [],
   optionsLockOnIdle: [],
   optionsLockOnIdleHint: [],
   optionsIdleTime: [],

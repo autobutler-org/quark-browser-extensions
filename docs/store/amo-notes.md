@@ -55,7 +55,7 @@ background script only, on sign-in.
   `storage.session`; with "Stay signed in", an AES-GCM ciphertext in
   `storage.local` whose non-extractable key is in the add-on's IndexedDB).
 - `activeTab`: the popup, shortcut and context menu act on the current tab.
-- `idle`: lock the vault when the screen locks, or after a chosen idle time.
+- `idle`: lock the vault when the screen locks (Chrome) or after the idle time elapses (Firefox), or after a chosen idle time if turned on in the options.
 - `contextMenus`: "Quark Vault › Fill …" and "Generate password" on editable fields.
 - `privacy` (optional, asked on a click in the options page): read and turn off
   Firefox's own password saving.

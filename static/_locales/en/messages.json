@@ -529,8 +529,8 @@
   "optionsLocking": {
     "message": "Locking"
   },
-  "optionsLockingIntro": {
-    "message": "Locking from this browser locks the vault on your Quark for every device. The vault always locks when this computer's screen locks."
+  "optionsLockingIntroFirefox": {
+    "message": "Locking from this browser locks the vault on your Quark for every device. The vault locks when your computer is inactive. On Firefox, after the idle time; otherwise, when the screen locks."
   },
   "optionsLockOnIdle": {
     "message": "Lock the vault when this computer is idle"
