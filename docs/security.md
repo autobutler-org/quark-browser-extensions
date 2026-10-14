@@ -52,3 +52,17 @@ Each frame decides what to do with the message using `fillDecision` in `src/cont
 - A frame that fits the entry asks the worker for the credentials with `fillFromPage`.
 
 The worker answers `fillFromPage` only after it checks the requesting frame. It uses the frame URL and frame id that the browser reports, not anything the page says. For a subframe it also checks the top frame's URL, which it gets by asking frame 0. These are the same checks the inline picker and one-time codes use. A frame that lies in its own check still gets refused by the worker.
+
+## Filling a login on a site it isn't saved for
+
+The popup lists every vault entry, with search. An entry that matches the page fills with one click, through `fillInTab` as above. Any other entry shows **Fill anyway**. That button only opens a warning naming the entry's saved host and the page's host (port included), plus a note when the page is plain http. Nothing is filled until you click **Fill on ‹page host›** in that warning.
+
+That click sends `fillAnyway` to the worker. The gate (`src/background/gate.ts`) accepts it from the extension's own pages only, so no page or content script can start a manual fill. The worker then:
+
+- Reads the tab's URL from the browser, not from the page, and refuses unless it is an http or https page on the host you confirmed. If the tab moved on since you confirmed, you confirm again.
+- Takes the normal one-click path if the entry turns out to match after all.
+- Otherwise leaves a one-time grant for that tab, entry and page origin, good for ten seconds (`src/background/manual.ts`). It sends a fill command to frame 0 only, never to iframes, and like every fill command it carries no username or password.
+- Gives the credentials to a `fillFromPage` request only if the browser reports it from frame 0 of that tab, on that exact origin, for that entry, within the grant's time. The grant goes once it's used, when the fill command is answered, and when the vault locks, you sign out or the tab closes.
+- Never auto-submits a manual fill, even with **Submit after filling** on.
+
+The keyboard shortcut, the context menu and the inline picker keep their host checks. They have no manual path.

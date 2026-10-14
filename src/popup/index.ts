@@ -40,6 +40,8 @@ type Model = Readonly<{
   editingAddress: boolean;
   // offered: the first-run banner shows on the connect form; reading: the welcome itself is open.
   welcome: "hidden" | "offered" | "reading";
+  // The entry whose "Fill anyway" warning is open: one saved for another site than this page.
+  confirming: number | null;
 }>;
 
 const root = document.getElementById("app") as HTMLElement;
@@ -63,6 +65,7 @@ let model: Model = {
   needsSiteAccess: false,
   editingAddress: false,
   welcome: "hidden",
+  confirming: null,
 };
 
 const update = (patch: Partial<Model>): void => {
@@ -260,14 +263,14 @@ const unlockView = (): HTMLElement => {
   );
 };
 
-const copy = async (entry: EntrySummary): Promise<void> => {
+const copy = async (entry: EntrySummary, what: "username" | "password" = "password"): Promise<void> => {
   const result = await ask({ type: "reveal", entryId: entry.id });
   if (!result.ok) {
     update({ error: errorText(result.error) });
     return;
   }
-  await navigator.clipboard.writeText(result.value.password);
-  update({ notice: `Copied the password for ${entry.name}`, error: "" });
+  await navigator.clipboard.writeText(result.value[what]);
+  update({ notice: `Copied the ${what} for ${entry.name}`, error: "" });
 };
 
 const copyCode = async (entry: EntrySummary): Promise<void> => {
@@ -289,6 +292,21 @@ const fillEntry = async (entry: EntrySummary): Promise<void> => {
     window.close();
     return;
   }
+  handleError(result.error);
+};
+
+// Only after the user confirmed the warning that names both hosts; see fillAnywayBox.
+const fillAnyway = async (entry: EntrySummary): Promise<void> => {
+  const pageHost = pageSite(model.tab.url);
+  if (model.tab.id === null || pageHost === "") {
+    return;
+  }
+  const result = await ask({ type: "fillAnyway", tabId: model.tab.id, entryId: entry.id, pageHost });
+  if (result.ok) {
+    window.close();
+    return;
+  }
+  model = { ...model, confirming: null };
   handleError(result.error);
 };
 
@@ -444,13 +462,61 @@ const matchSections = (): readonly HTMLElement[] => {
   ];
 };
 
-const entryRow = (entry: EntrySummary): HTMLElement =>
+const isWebPage = (url: string): boolean => /^https?:\/\//i.test(url) && pageSite(url) !== "";
+
+// An entry that matches this page fills with one click, as on its match card. Any other entry needs "Fill anyway"
+// and then a second click on a warning that names both hosts.
+const fillButton = (entry: EntrySummary): HTMLElement | null => {
+  if (model.tab.id === null || !isWebPage(model.tab.url)) {
+    return null;
+  }
+  const match = model.matches.find((found) => found.id === entry.id);
+  if (match !== undefined) {
+    return h("button", { className: "fill", type: "button", "aria-label": `Fill ${entry.name}`, onclick: (() => void fillEntry(match)) as EventListener }, "Fill");
+  }
+  return h(
+    "button",
+    {
+      className: "fill",
+      type: "button",
+      "aria-label": `Fill anyway ${entry.name}`,
+      "aria-expanded": String(model.confirming === entry.id),
+      onclick: (() => update({ confirming: model.confirming === entry.id ? null : entry.id, error: "" })) as EventListener,
+    },
+    "Fill anyway",
+  );
+};
+
+const fillAnywayBox = (entry: EntrySummary): HTMLElement => {
+  const pageHost = pageSite(model.tab.url);
+  const saved = entry.urlHost === "" ? "isn't saved for any site" : `is saved for ${entry.urlHost}`;
+  return h(
+    "div",
+    { className: "error-box", role: "alert", id: `fill-anyway-${entry.id}` },
+    h("div", {}, `${entry.name} ${saved}, not ${pageHost}. Filling it here gives its username and password to ${pageHost}.`),
+    /^http:/i.test(model.tab.url) ? h("div", {}, `${pageHost} uses plain http, so they would also cross the network unencrypted.`) : null,
+    h("div", {}, `Only fill it if you trust ${pageHost} with this login.`),
+    h(
+      "button",
+      { className: "primary", type: "button", onclick: (() => void fillAnyway(entry)) as EventListener },
+      `Fill on ${pageHost}`,
+    ),
+    h("button", { className: "secondary", type: "button", onclick: (() => update({ confirming: null })) as EventListener }, "Cancel"),
+  );
+};
+
+const entryRow = (entry: EntrySummary): readonly HTMLElement[] => [
   h(
     "div",
     { className: "row" },
     h("div", { className: "grow" }, h("div", { className: "name" }, entry.name), h("div", { className: "mono muted small" }, entry.urlHost === "" ? "no site" : entry.urlHost)),
+    iconButton(`Copy username for ${entry.name}`, icons.user, () => void copy(entry, "username")),
     iconButton(`Copy password for ${entry.name}`, icons.copy, () => void copy(entry)),
-  );
+    iconButton(`Copy one-time code for ${entry.name}`, icons.clock, () => void copyCode(entry)),
+    fillButton(entry),
+  ),
+  ...(model.confirming === entry.id && isWebPage(model.tab.url) ? [fillAnywayBox(entry)] : []),
+];
 
 const autoLockText = (state: VaultState): string =>
   state.kind === "unlocked" && state.autoLockSeconds > 0
@@ -464,7 +530,7 @@ const entriesView = (state: VaultState): HTMLElement => {
     const found = searchEntries(model.entries, search.value);
     list.replaceChildren(
       h("div", { className: "section-label" }, `All entries · ${found.length}`),
-      ...found.map(entryRow),
+      ...found.flatMap(entryRow),
     );
   };
   search.addEventListener("input", () => {
