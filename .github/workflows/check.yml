@@ -91,3 +91,42 @@ jobs:
           path: |
             e2e/test-results/
             e2e/playwright-report/
+
+  # The Firefox smoke tests in e2e/firefox/ against the same real Quark: the
+  # Firefox build installed as a temporary add-on over WebDriver BiDi. Not a
+  # required check yet, while it proves itself stable.
+  firefox-e2e:
+    runs-on: ubuntu-latest
+    env:
+      QUARK_REF: ${{ vars.QUARK_REF || '7a2e6688a62c891ea79caafabdd683503d202754' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: autobutler-org/quark
+          ref: ${{ env.QUARK_REF }}
+          path: quark-src
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: quark-src/go.mod
+          cache-dependency-path: quark-src/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Firefox
+        run: npm run firefox:install
+      - name: Build Quark
+        run: QUARK_SRC="$GITHUB_WORKSPACE/quark-src" scripts/build-quark.sh
+      - name: Firefox smoke tests against Quark
+        run: npm run test:e2e:firefox
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: firefox-e2e-results
+          include-hidden-files: true
+          path: |
+            e2e/test-results/firefox/
+            e2e/playwright-report/firefox/
+            e2e/.quark/serve.log
