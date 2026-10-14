@@ -32,7 +32,7 @@ repeats these).
 > Lets the popup, the keyboard shortcut and the right-click menu work on the page the user is on: they read that tab's address to find its logins and send the fill to it. The extension has no tabs permission and cannot see other tabs' addresses.
 
 **idle**
-> Locks the vault when the computer's screen locks, and, if the user turns it on in the options, after 5, 15 or 30 minutes idle.
+> Locks the vault when the computer's screen locks (Chrome), or after the idle time elapses (Firefox). If the user turns it on in the options, it also locks after 5, 15 or 30 minutes idle.
 
 **contextMenus**
 > Adds a "Quark Vault" item to the right-click menu on editable fields, with "Fill <login>" for the site's logins and "Generate password" for the field the user clicked.
