@@ -1,4 +1,5 @@
 import { createApi } from "../shared/api";
+import { formatNumber, t } from "../shared/i18n";
 import {
   frameMayFill,
   hostMatches,
@@ -69,8 +70,10 @@ const topFrameUrl = async (sender: Sender): Promise<string> => {
   return tabId === undefined ? "" : tabTopUrl(tabId);
 };
 
-const embeddedRefusal = (topUrl: string): string =>
-  `This login form is embedded in ${hostOf(topUrl) || "another page"}, so Quark Vault won't fill it.`;
+const embeddedRefusal = (topUrl: string): string => {
+  const host = hostOf(topUrl);
+  return host === "" ? t("refuseEmbeddedInPage") : t("refuseEmbeddedIn", host);
+};
 
 const withConnection = async <T>(run: (connection: Connection) => Promise<Result<T>>): Promise<Result<T>> => {
   const connection = await loadConnection();
@@ -171,7 +174,7 @@ const fillFromPage = async (
     return ok({ username: entry.value.username, password: entry.value.password, autoSubmit: false });
   }
   if (!frameMayFill(pageUrl, pageUrl, entry.value.url, entry.value.urlHost)) {
-    return refused("This login doesn't belong to this site.");
+    return refused(t("refuseWrongSite"));
   }
   if (!frameMayFill(pageUrl, topUrl, entry.value.url, entry.value.urlHost)) {
     return refused(embeddedRefusal(topUrl));
@@ -189,13 +192,13 @@ const otpFor = async (entryId: number, sender: Sender | null): Promise<Responses
   }
   const pageUrl = sender?.url ?? "";
   if (sender !== null && !frameMayFill(pageUrl, pageUrl, entry.value.url, entry.value.urlHost)) {
-    return refused("This login doesn't belong to this site.");
+    return refused(t("refuseWrongSite"));
   }
   if (sender !== null && !frameMayFill(pageUrl, topUrl, entry.value.url, entry.value.urlHost)) {
     return refused(embeddedRefusal(topUrl));
   }
   const params = parseOtpSecret(entry.value.totpSecret);
-  return params === null ? refused("This login has no one-time code saved.") : ok(await totp(params, Date.now()));
+  return params === null ? refused(t("refuseNoOtp")) : ok(await totp(params, Date.now()));
 };
 
 // Credentials never ride on this message, because it reaches every frame in the tab. The frame that has the
@@ -218,11 +221,11 @@ const fillInTab = async (tabId: number, entryId: number): Promise<Responses["fil
   try {
     const reply = await chrome.tabs.sendMessage<PageCommand, PageReply | undefined>(tabId, command);
     if (reply === undefined) {
-      return refused("Couldn't find login fields on this page. If it just loaded, reload it and try again.");
+      return refused(t("refuseNoFieldsReload"));
     }
     return reply;
   } catch {
-    return refused("This page can't be filled. Reload it and try again.");
+    return refused(t("refuseReload"));
   }
 };
 
@@ -247,16 +250,16 @@ const fillAnyway = async (tabId: number, entryId: number, pageHost: string): Pro
   }
   const grant = grantFor(tabId, entryId, tabUrl, Date.now());
   if (grant === null) {
-    return refused("This page can't be filled.");
+    return refused(t("refuseCantFill"));
   }
   manualGrants.set(tabId, grant);
   try {
     const reply = await chrome.tabs.sendMessage<PageCommand, PageReply | undefined>(tabId, manualFillCommand(entryId, tabUrl), {
       frameId: 0,
     });
-    return reply ?? refused("Couldn't find login fields on this page. If it just loaded, reload it and try again.");
+    return reply ?? refused(t("refuseNoFieldsReload"));
   } catch {
-    return refused("This page can't be filled. Reload it and try again.");
+    return refused(t("refuseReload"));
   } finally {
     if (manualGrants.get(tabId) === grant) {
       manualGrants.delete(tabId);
@@ -266,7 +269,7 @@ const fillAnyway = async (tabId: number, entryId: number, pageHost: string): Pro
 
 const setBadge = async (tabId: number, count: number, enabled: boolean): Promise<void> => {
   await chrome.action.setBadgeBackgroundColor({ tabId, color: "#0369A1" });
-  await chrome.action.setBadgeText({ tabId, text: enabled && count > 0 ? String(count) : "" });
+  await chrome.action.setBadgeText({ tabId, text: enabled && count > 0 ? formatNumber(count) : "" });
 };
 
 // The origin the context menu was last built for; the menu differs between ports on one host.
@@ -330,7 +333,7 @@ const myOffer = async (sender: Sender): Promise<SaveOffer | null> => {
 const resolveSave = async (tabId: number, action: SaveAction): Promise<Result<null>> => {
   const pending = freshPending(tabId);
   if (pending === null) {
-    return refused("That login is no longer waiting to be saved.");
+    return refused(t("refuseSaveGone"));
   }
   const finish = <T>(result: Result<T>): Result<null> => {
     if (result.ok) {
@@ -354,7 +357,7 @@ const resolveSave = async (tabId: number, action: SaveAction): Promise<Result<nu
     case "update": {
       const offer = await offerFor(tabId);
       if (offer?.kind !== "update") {
-        return refused("There's nothing to update for this login.");
+        return refused(t("refuseNothingToUpdate"));
       }
       return finish(await withConnection((conn) => api.replacePassword(conn, offer.entryId, pending.credentials.password)));
     }
@@ -369,12 +372,12 @@ const rebuildMenu = async (pageUrl: string): Promise<void> => {
   menuOrigin = origin;
   const result = await matchesFor(pageUrl);
   await chrome.contextMenus.removeAll();
-  chrome.contextMenus.create({ id: menuRoot, title: "Quark Vault", contexts: ["editable"] });
+  chrome.contextMenus.create({ id: menuRoot, title: t("extName"), contexts: ["editable"] });
   menuItems(result.ok ? result.value : []).forEach((item) =>
     chrome.contextMenus.create({ id: item.id, parentId: menuRoot, title: item.title, enabled: item.enabled, contexts: ["editable"] }),
   );
   chrome.contextMenus.create({ id: "sep", parentId: menuRoot, type: "separator", contexts: ["editable"] });
-  chrome.contextMenus.create({ id: generateMenuId, parentId: menuRoot, title: "Generate password", contexts: ["editable"] });
+  chrome.contextMenus.create({ id: generateMenuId, parentId: menuRoot, title: t("generatePassword"), contexts: ["editable"] });
 };
 
 const openPopup = async (): Promise<void> => {
@@ -432,7 +435,7 @@ const connect = async (
     return err({ kind: "network", message: "invalid address" });
   }
   if (serverTransport(server) === "insecure" && !request.allowInsecure) {
-    return refused(insecureServerRefusal);
+    return refused(insecureServerRefusal());
   }
   const token = await api.login(server, request.username, request.password);
   if (!token.ok) {
@@ -476,7 +479,7 @@ const forExtensionPages: ExtensionPageHandlers = {
   otp: (request) => otpFor(request.entryId, null),
   pendingOffer: (request) => offerFor(request.tabId),
   resolveSave: (request) =>
-    request.tabId === undefined ? Promise.resolve(refused("No tab to save from.")) : resolveSave(request.tabId, request.action),
+    request.tabId === undefined ? Promise.resolve(refused(t("refuseNoTab"))) : resolveSave(request.tabId, request.action),
   neverSaveList: () => loadNeverSave(),
   removeNeverSave: (request) => loadNeverSave().then((hosts) => saveNeverSave(hosts.filter((host) => host !== request.host))),
   settings: () => loadSettings(),

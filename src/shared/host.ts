@@ -1,4 +1,5 @@
 import { parse } from "tldts/dist/index.esm.min.js";
+import { t } from "./i18n";
 import type { EntrySummary } from "./types";
 
 export const normalizeHost = (host: string): string =>
@@ -143,9 +144,9 @@ const kindOf = (page: Origin, entry: Origin): MatchKind => {
 const noteFor = (kind: MatchKind, entry: Origin): string => {
   switch (kind) {
     case "otherScheme":
-      return `Saved for ${entry.protocol.replace(":", "")}`;
+      return t("matchSavedForScheme", entry.protocol.replace(":", ""));
     case "otherPort":
-      return "Different port";
+      return t("matchDifferentPort");
     default:
       return "";
   }
@@ -243,8 +244,7 @@ export const serverTransport = (server: string): ServerTransport => {
   }
 };
 
-export const insecureServerRefusal =
-  "This Quark address uses plain http, so your passwords would cross the network unencrypted. Use an https address, or confirm that you understand the risk.";
+export const insecureServerRefusal = (): string => t("insecureServerRefusal");
 
 // Whether what's typed in the connect form's address box needs the "unencrypted" confirmation.
 export const needsInsecureConfirmation = (input: string): boolean => {
@@ -252,5 +252,4 @@ export const needsInsecureConfirmation = (input: string): boolean => {
   return server !== "" && serverTransport(server) === "insecure";
 };
 
-export const insecureServerWarning =
-  "Connected over plain http. Your passwords cross the network unencrypted. Switch to an https address.";
+export const insecureServerWarning = (): string => t("insecureServerWarning");

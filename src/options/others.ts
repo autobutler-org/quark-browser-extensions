@@ -1,4 +1,5 @@
 import { h } from "../shared/dom";
+import { t } from "../shared/i18n";
 import { replaceKeepingFocus } from "../popup/focus";
 import { builtInState, findCompetitors, type BuiltInState, type InstalledExtension } from "../shared/competitors";
 import { browserCopy, currentBrowser } from "../shared/platform";
@@ -48,7 +49,7 @@ export const othersSection = (): HTMLElement => {
     try {
       await run();
     } catch {
-      update({ error: "Chrome didn't allow that change. Try it from chrome://settings instead." });
+      update({ error: t("othersBlocked", copy.settingsPage) });
     }
   };
 
@@ -86,7 +87,7 @@ export const othersSection = (): HTMLElement => {
     const { builtIn } = model;
     const hint =
       builtIn === null
-        ? "The browser can offer to save and fill passwords too."
+        ? t("othersBuiltInHint")
         : builtIn.kind === "on"
           ? copy.builtInOn
           : builtIn.kind === "managed"
@@ -94,9 +95,9 @@ export const othersSection = (): HTMLElement => {
             : copy.builtInOff;
     const action =
       builtIn === null
-        ? button("Check", checkBuiltIn, `Check ${copy.builtInManager}`)
+        ? button(t("check"), checkBuiltIn, t("checkName", copy.builtInManager))
         : builtIn.kind === "on"
-          ? button("Turn off", turnOffBuiltIn, `Turn off ${copy.builtInManager}`)
+          ? button(t("turnOff"), turnOffBuiltIn, t("turnOffName", copy.builtInManager))
           : null;
     return h(
       "div",
@@ -116,30 +117,26 @@ export const othersSection = (): HTMLElement => {
           h(
             "div",
             { className: "grow" },
-            h("div", {}, "Password manager extensions"),
-            h(
-              "div",
-              { className: "muted small" },
-              "Proton Pass, Bitwarden, 1Password and others. Checking asks for permission to manage extensions; Quark Vault only uses it to list password managers and to turn one off when you choose.",
-            ),
+            h("div", {}, t("othersExtensions")),
+            h("div", { className: "muted small" }, t("othersExtensionsHint")),
           ),
-          button("Check", checkExtensions, "Check password manager extensions"),
+          button(t("check"), checkExtensions, t("othersCheckExtensions")),
         ),
       ];
     }
     if (extensions.length === 0) {
-      return [h("div", { className: "toggle" }, h("div", { className: "grow muted" }, "No other password manager extensions are turned on."))];
+      return [h("div", { className: "toggle" }, h("div", { className: "grow muted" }, t("othersNone")))];
     }
     return extensions.map((extension) =>
       h(
         "div",
         { className: "toggle" },
-        h("div", { className: "grow" }, h("div", {}, extension.name), h("div", { className: "muted small" }, "Also fills logins")),
+        h("div", { className: "grow" }, h("div", {}, extension.name), h("div", { className: "muted small" }, t("othersAlsoFills"))),
         !copy.canDisableOthers
-          ? h("span", { className: "muted small" }, `Turn off in ${copy.extensionsPage}`)
+          ? h("span", { className: "muted small" }, t("othersTurnOffIn", copy.extensionsPage))
           : extension.mayDisable
-            ? button("Turn off", () => turnOffExtension(extension), `Turn off ${extension.name}`)
-            : h("span", { className: "muted small" }, "Managed by your organization"),
+            ? button(t("turnOff"), () => turnOffExtension(extension), t("turnOffName", extension.name))
+            : h("span", { className: "muted small" }, t("othersManaged")),
       ),
     );
   };
@@ -147,8 +144,8 @@ export const othersSection = (): HTMLElement => {
   const render = (): void => {
     replaceKeepingFocus(
       section,
-      h("h2", {}, "Other password managers"),
-      h("p", { className: "muted small" }, `More than one manager filling the same form gets confusing. Turning one off keeps its saved passwords; you can turn it back on from ${copy.extensionsPage}.`),
+      h("h2", {}, t("othersTitle")),
+      h("p", { className: "muted small" }, t("othersIntro", copy.extensionsPage)),
       builtInRow(),
       ...extensionRows(),
       ...(model.error === "" ? [] : [h("div", { className: "error-box", role: "alert" }, model.error)]),

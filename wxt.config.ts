@@ -17,16 +17,18 @@ export default defineConfig({
   }),
   // The entrypoints add background, content_scripts, action.default_popup and options_ui.
   manifest: ({ browser }) => ({
-    name: "Quark Vault",
+    // __MSG_<key>__ reads static/_locales/<locale>/messages.json, like chrome.i18n.getMessage in the code.
+    name: "__MSG_extName__",
     version: "0.1.0",
-    description: "Fill logins from the password vault on your Quark.",
+    description: "__MSG_extDescription__",
+    default_locale: "en",
     ...(browser === "firefox" ? {} : { minimum_chrome_version: "116" }),
     icons,
     permissions: ["storage", "activeTab", "idle", "contextMenus"],
     optional_permissions: ["privacy", "management"],
     ...(browser === "firefox" ? { host_permissions: ["https://*/*", "http://*/*"] } : {}),
     action: {
-      default_title: "Quark Vault",
+      default_title: "__MSG_extName__",
       default_icon: { "16": icons["16"], "32": icons["32"] },
     },
     content_security_policy: {
@@ -35,7 +37,7 @@ export default defineConfig({
     commands: {
       "fill-login": {
         suggested_key: { default: "Ctrl+Shift+L", mac: "Command+Shift+L" },
-        description: "Fill a login from Quark Vault",
+        description: "__MSG_commandFillLogin__",
       },
     },
     ...(browser === "firefox"
@@ -51,8 +53,12 @@ export default defineConfig({
       : {}),
   }),
   hooks: {
-    // Chrome opens the options page from options_page; WXT only writes options_ui.
     "build:manifestGenerated": (wxt, manifest) => {
+      // WXT copies the popup's <title> into default_title; the toolbar tooltip reads messages.json instead.
+      if (manifest.manifest_version === 3 && manifest.action !== undefined) {
+        manifest.action.default_title = "__MSG_extName__";
+      }
+      // Chrome opens the options page from options_page; WXT only writes options_ui.
       if (wxt.config.browser !== "firefox" && manifest.options_ui) {
         manifest.options_page = manifest.options_ui.page;
         delete manifest.options_ui;

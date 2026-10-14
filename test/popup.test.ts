@@ -1,3 +1,4 @@
+import { fakeI18n } from "./fakeChrome";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Request } from "../src/shared/messages";
@@ -68,6 +69,7 @@ const button = (app: HTMLElement, name: string): HTMLButtonElement => {
 
 beforeEach(() => {
   vi.stubGlobal("chrome", {
+    i18n: fakeI18n(),
     runtime: { getURL: (path: string) => `chrome-extension://quark/${path}`, openOptionsPage: () => Promise.resolve() },
     tabs: { query: () => Promise.resolve([{ id: 7, url: tabUrl }]), create: () => Promise.resolve() },
     commands: { getAll: () => Promise.resolve([]) },

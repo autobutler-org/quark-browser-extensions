@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { SaveAction, SaveOffer } from "../background/save";
 
 export type SaveCopy = Readonly<{
@@ -10,30 +11,30 @@ export const saveBarCopy = (offer: SaveOffer): SaveCopy => {
   switch (offer.kind) {
     case "save":
       return {
-        title: "Save this login to Quark Vault?",
-        sub: `${offer.username} on ${offer.host}`,
+        title: t("saveTitle"),
+        sub: t("saveSub", offer.username, offer.host),
         actions: [
-          ["dismiss", "Not now"],
-          ["never", "Never for this site"],
-          ["save", "Save"],
+          ["dismiss", t("notNow")],
+          ["never", t("saveNever")],
+          ["save", t("saveSave")],
         ],
       };
     case "update":
       return {
-        title: "Update the password in Quark Vault?",
-        sub: `${offer.entryName} · ${offer.username}`,
+        title: t("updateTitle"),
+        sub: t("updateSub", offer.entryName, offer.username),
         actions: [
-          ["dismiss", "Not now"],
-          ["update", "Update"],
+          ["dismiss", t("notNow")],
+          ["update", t("updateUpdate")],
         ],
       };
     case "unlock":
       return {
-        title: "Unlock Quark Vault to save this login",
-        sub: offer.username === "" ? offer.host : `${offer.username} on ${offer.host}`,
+        title: t("unlockToSaveTitle"),
+        sub: offer.username === "" ? offer.host : t("saveSub", offer.username, offer.host),
         actions: [
-          ["dismiss", "Not now"],
-          ["unlock", "Unlock"],
+          ["dismiss", t("notNow")],
+          ["unlock", t("unlock")],
         ],
       };
   }

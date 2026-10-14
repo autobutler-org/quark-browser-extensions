@@ -1,4 +1,5 @@
 import { h$, icon, icons } from "../shared/dom";
+import { t } from "../shared/i18n";
 import { adoptStyles } from "./styles";
 import { isFallback, type SiteMatch } from "../shared/host";
 import type { EntrySummary } from "../shared/types";
@@ -100,10 +101,10 @@ export const attachPicker = (
   const trigger = h$(doc, "button", {
     className: "trigger",
     type: "button",
-    "aria-label": "Fill from Quark Vault",
+    "aria-label": t("pickerTrigger"),
     "aria-haspopup": "menu",
     "aria-expanded": "false",
-    title: "Fill from Quark Vault",
+    title: t("pickerTrigger"),
   });
   trigger.append(icon(doc, icons.quark, 12));
   const status = h$(doc, "div", { className: "sr", role: "status", "aria-live": "polite" });
@@ -179,8 +180,8 @@ export const attachPicker = (
         type: "button",
         role: "menuitem",
         tabindex: "-1",
-        "aria-label": `Fill ${entry.name}, ${whereText(entry)}`,
-        onclick: (() => run(panel, () => onPick(entry), `Filled ${entry.name}`)) as EventListener,
+        "aria-label": t("pickerFillItem", entry.name, whereText(entry)),
+        onclick: (() => run(panel, () => onPick(entry), t("pickerFilled", entry.name))) as EventListener,
       },
       h$(doc, "div", { className: "avatar", "aria-hidden": "true" }, initial(entry.name)),
       h$(doc, "div", { className: "text" }, h$(doc, "div", { className: "name" }, entry.name), where(entry)),
@@ -197,20 +198,20 @@ export const attachPicker = (
         type: "button",
         role: "menuitem",
         tabindex: "-1",
-        onclick: (() => run(panel, suggest, "Filled a strong password")) as EventListener,
+        onclick: (() => run(panel, suggest, t("pickerFilledStrong"))) as EventListener,
       },
       avatar,
-      h$(doc, "div", { className: "text" }, h$(doc, "div", { className: "name" }, "Suggest strong password"), h$(doc, "div", { className: "hint" }, "Fills this field and its confirmation")),
+      h$(doc, "div", { className: "text" }, h$(doc, "div", { className: "name" }, t("pickerSuggest")), h$(doc, "div", { className: "hint" }, t("pickerSuggestHint"))),
     );
   };
 
   const openPanel = (focusLast = false): void => {
-    const menu = h$(doc, "div", { className: "menu", role: "menu", "aria-label": `Logins for ${pageHost}` });
+    const menu = h$(doc, "div", { className: "menu", role: "menu", "aria-label": t("pickerMenuLabel", pageHost) });
     const panel = h$(
       doc,
       "div",
       { className: "panel" },
-      h$(doc, "div", { className: "head", "aria-hidden": "true" }, h$(doc, "div", { className: "label" }, "Quark Vault"), h$(doc, "div", { className: "host" }, pageHost)),
+      h$(doc, "div", { className: "head", "aria-hidden": "true" }, h$(doc, "div", { className: "label" }, t("extName")), h$(doc, "div", { className: "host" }, pageHost)),
       menu,
     );
     if (onSuggest !== undefined) {
@@ -219,7 +220,7 @@ export const attachPicker = (
     const fallbacks = matches.filter(isFallback);
     matches.filter((entry) => !isFallback(entry)).forEach((entry) => menu.append(item(panel, entry)));
     if (fallbacks.length > 0) {
-      const label = "Saved for another port or scheme";
+      const label = t("pickerFallbacks");
       const group = h$(doc, "div", { className: "group", role: "group", "aria-label": label }, h$(doc, "div", { className: "subhead", "aria-hidden": "true" }, label));
       fallbacks.forEach((entry) => group.append(item(panel, entry)));
       menu.append(group);
@@ -229,7 +230,7 @@ export const attachPicker = (
     trigger.setAttribute("aria-expanded", "true");
     const count = items().length;
     if (count === 0) {
-      announce("No logins saved for this site");
+      announce(t("pickerNoLogins"));
     }
     focusItem(focusLast ? count - 1 : 0);
   };

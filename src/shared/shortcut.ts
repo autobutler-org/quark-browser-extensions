@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { Browser } from "./platform";
 
 export const fillCommand = "fill-login";
@@ -19,17 +20,14 @@ export type ShortcutHelp = Readonly<{
 
 export const shortcutHelp = (browser: Browser, shortcut: string): ShortcutHelp => {
   const bound = shortcut !== "";
-  const label = bound ? shortcut : "Not set";
+  const label = bound ? shortcut : t("shortcutNotSet");
   if (browser === "firefox") {
-    const where = "open about:addons, click the gear button, then Manage Extension Shortcuts.";
-    return { bound, label, url: null, steps: bound ? `To change it, ${where}` : `Firefox didn't bind it. To set one, ${where}` };
+    return { bound, label, url: null, steps: bound ? t("shortcutFirefoxChange") : t("shortcutFirefoxUnbound") };
   }
   return {
     bound,
     label,
     url: chromeShortcutsPage,
-    steps: bound
-      ? `Change it at ${chromeShortcutsPage}.`
-      : `Chrome didn't bind it, often because another extension has the same keys. Set one at ${chromeShortcutsPage}.`,
+    steps: bound ? t("shortcutChange", chromeShortcutsPage) : t("shortcutUnbound", chromeShortcutsPage),
   };
 };

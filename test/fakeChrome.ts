@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fakeIndexedDB } from "./fakeIndexedDB";
 
 // A small in-memory stand-in for the parts of `chrome` the service worker uses.
@@ -32,6 +34,37 @@ const area = () => {
   };
 };
 
+type Message = Readonly<{ message: string; placeholders?: Record<string, Readonly<{ content: string }>> }>;
+
+export const enMessages = JSON.parse(
+  readFileSync(join(import.meta.dirname, "../static/_locales/en/messages.json"), "utf8"),
+) as Record<string, Message>;
+
+// chrome.i18n read from the real English messages.json, so tests see the copy users do. Like the browser, it
+// returns "" for an unknown key, matches keys and placeholder names in any case, and fills $1…$9 from the
+// substitutions.
+export const fakeI18n = (messages: Record<string, Message> = enMessages) => {
+  const byKey = new Map(Object.entries(messages).map(([key, value]) => [key.toLowerCase(), value]));
+  return {
+    getUILanguage: () => "en",
+    getMessage: (key: string, substitutions: string | readonly string[] = []): string => {
+      const found = byKey.get(key.toLowerCase());
+      if (found === undefined) {
+        return "";
+      }
+      const args = typeof substitutions === "string" ? [substitutions] : substitutions;
+      const placeholders = new Map(Object.entries(found.placeholders ?? {}).map(([name, value]) => [name.toLowerCase(), value.content]));
+      const substitute = (text: string): string => text.replace(/\$(\d)/g, (_, index: string) => args[Number(index) - 1] ?? "");
+      return found.message
+        .replace(/\$([A-Za-z0-9_@]+)\$/g, (whole, name: string) => {
+          const content = placeholders.get(name.toLowerCase());
+          return content === undefined ? whole : substitute(content);
+        })
+        .replaceAll("$$", "$");
+    },
+  };
+};
+
 export const extensionId = "quark-vault-id";
 export const extensionUrl = `chrome-extension://${extensionId}/`;
 
@@ -46,6 +79,7 @@ export const fakeChrome = () => {
     },
     runtime: { id: extensionId, getURL: (path: string) => `${extensionUrl}${path}`, onMessage },
     commands: { onCommand: event() },
+    i18n: fakeI18n(),
     contextMenus: { onClicked: event(), removeAll: () => Promise.resolve(undefined), create: () => undefined },
     tabs: {
       onUpdated: event(),

@@ -10,6 +10,7 @@ import {
   serverTransport,
   type SiteMatch,
 } from "../shared/host";
+import { formatDuration, formatNumber, t } from "../shared/i18n";
 import { ask } from "../shared/messages";
 import type { SaveAction, SaveOffer } from "../background/save";
 import { currentBrowser, siteOrigins } from "../shared/platform";
@@ -44,6 +45,7 @@ type Model = Readonly<{
   confirming: number | null;
 }>;
 
+document.title = t("extName");
 const root = document.getElementById("app") as HTMLElement;
 // Lives outside the re-rendered tree, so a screen reader hears each notice once, however often the view is rebuilt.
 const announcer = h("div", { className: "visually-hidden", role: "status" });
@@ -86,7 +88,7 @@ const header = (actions: readonly HTMLElement[] = [], subtitle = ""): HTMLElemen
     "header",
     { className: "bar" },
     h("div", { className: "brand-mark" }, icon(document, icons.quark, 16)),
-    h("div", { className: "brand" }, h("div", { className: "brand-name" }, "Quark Vault"), subtitle === "" ? null : h("div", { className: "mono muted small" }, subtitle)),
+    h("div", { className: "brand" }, h("div", { className: "brand-name" }, t("extName")), subtitle === "" ? null : h("div", { className: "mono muted small" }, subtitle)),
     ...actions,
   );
 
@@ -99,7 +101,7 @@ const serverOf = (state: VaultState | null): string => (state !== null && "serve
 
 // Stays on screen for as long as the extension talks to a non-loopback Quark over plain http.
 const insecureBanner = (state: VaultState): HTMLElement | null =>
-  serverTransport(serverOf(state)) === "insecure" ? h("div", { className: "error-box", role: "status" }, insecureServerWarning) : null;
+  serverTransport(serverOf(state)) === "insecure" ? h("div", { className: "error-box", role: "status" }, insecureServerWarning()) : null;
 
 const loadEntries = async (): Promise<void> => {
   const [entries, matches, settings, saveOffer] = await Promise.all([
@@ -137,8 +139,8 @@ const connectView = (): HTMLElement => {
   const insecure = h(
     "div",
     { className: "error-box", role: "alert" },
-    h("div", {}, "This address uses plain http, not https. Your Quark password, vault password and every login you fill would cross the network unencrypted, where anyone on it can read them."),
-    h("label", { className: "check" }, allowInsecure, "I understand this connection is unencrypted"),
+    h("div", {}, t("popupInsecureAddress")),
+    h("label", { className: "check" }, allowInsecure, t("popupInsecureConfirm")),
   );
   const syncInsecure = (): void => {
     insecure.hidden = !needsInsecureConfirmation(server.value);
@@ -170,27 +172,25 @@ const connectView = (): HTMLElement => {
       h(
         "div",
         { className: "intro" },
-        h("h1", {}, "Connect to your Quark"),
+        h("h1", {}, t("popupConnectTitle")),
         // The first-run banner takes the revoke line's room; the welcome says it instead.
         h(
           "p",
           { className: "muted" },
-          model.welcome === "offered"
-            ? "Sign in with an admin account; only admins can open the vault."
-            : "Sign in with an admin account; only admins can open the vault. You can revoke this browser in Settings › Sessions.",
+          model.welcome === "offered" ? t("popupConnectIntro") : t("popupConnectIntroRevoke"),
         ),
       ),
       welcomeBanner(),
-      field("server", "Quark address", server),
+      field("server", t("popupServer"), server),
       insecure,
-      field("username", "Username", username),
-      field("password", "Password", password),
-      h("label", { className: "check" }, persist, "Stay signed in after Chrome closes"),
+      field("username", t("popupUsername"), username),
+      field("password", t("popupPassword"), password),
+      h("label", { className: "check" }, persist, t("popupPersist")),
       errorBox(),
       h("div", { className: "spacer" }),
-      h("button", { className: "primary", type: "submit", disabled: model.busy }, model.busy ? "Connecting…" : "Connect"),
+      h("button", { className: "primary", type: "submit", disabled: model.busy }, model.busy ? t("popupConnecting") : t("popupConnect")),
       model.editingAddress
-        ? h("button", { className: "secondary", type: "button", onclick: (() => update({ editingAddress: false, error: "" })) as EventListener }, "Cancel")
+        ? h("button", { className: "secondary", type: "button", onclick: (() => update({ editingAddress: false, error: "" })) as EventListener }, t("cancel"))
         : null,
     ),
   );
@@ -207,9 +207,9 @@ const welcomeBanner = (): HTMLElement | null =>
     ? h(
         "div",
         { className: "banner", role: "status" },
-        h("div", { className: "grow" }, "New here? What you need, and why."),
-        h("button", { className: "link", type: "button", onclick: (() => update({ welcome: "reading" })) as EventListener }, "Read"),
-        h("button", { className: "link muted", type: "button", onclick: (() => void finishWelcome()) as EventListener }, "Dismiss"),
+        h("div", { className: "grow" }, t("popupWelcomeBanner")),
+        h("button", { className: "link", type: "button", onclick: (() => update({ welcome: "reading" })) as EventListener }, t("popupWelcomeRead")),
+        h("button", { className: "link muted", type: "button", onclick: (() => void finishWelcome()) as EventListener }, t("dismiss")),
       )
     : null;
 
@@ -224,11 +224,11 @@ const welcomeView = (): HTMLElement =>
       h(
         "div",
         { className: "body" },
-        h("div", { className: "intro" }, h("h1", {}, "Welcome to Quark Vault"), h("p", { className: "muted" }, "It fills logins from the password vault on your Quark.")),
+        h("div", { className: "intro" }, h("h1", {}, t("popupWelcomeTitle")), h("p", { className: "muted" }, t("popupWelcomeIntro"))),
         ...welcomeSections(currentBrowser()).map((section) =>
           h("div", { className: "intro" }, h("div", { className: "section-label" }, section.title), ...section.lines.map((line) => h("p", { className: "muted" }, line))),
         ),
-        h("button", { className: "primary", type: "button", onclick: (() => void finishWelcome()) as EventListener }, "Got it"),
+        h("button", { className: "primary", type: "button", onclick: (() => void finishWelcome()) as EventListener }, t("popupWelcomeDone")),
       ),
     ),
   );
@@ -243,7 +243,7 @@ const unlockView = (): HTMLElement => {
   return h(
     "div",
     { className: "screen" },
-    header([iconButton("Options", icons.settings, () => void chrome.runtime.openOptionsPage())], hostOf(serverOf(model.state))),
+    header([iconButton(t("popupOptions"), icons.settings, () => void chrome.runtime.openOptionsPage())], hostOf(serverOf(model.state))),
     model.state === null ? null : insecureBanner(model.state),
     h(
       "form",
@@ -252,13 +252,13 @@ const unlockView = (): HTMLElement => {
       h(
         "div",
         { className: "intro center" },
-        h("h1", {}, "Vault is locked"),
-        h("p", { className: "muted" }, "Unlocking here unlocks the vault on your Quark for every device, until it auto-locks."),
+        h("h1", {}, t("popupLockedTitle")),
+        h("p", { className: "muted" }, t("popupLockedIntro")),
       ),
-      field("master", "Vault password", master),
+      field("master", t("popupMasterPassword"), master),
       errorBox(),
       h("div", { className: "spacer" }),
-      h("button", { className: "primary", type: "submit", disabled: model.busy }, model.busy ? "Unlocking…" : "Unlock"),
+      h("button", { className: "primary", type: "submit", disabled: model.busy }, model.busy ? t("popupUnlocking") : t("unlock")),
     ),
   );
 };
@@ -270,7 +270,7 @@ const copy = async (entry: EntrySummary, what: "username" | "password" = "passwo
     return;
   }
   await navigator.clipboard.writeText(result.value[what]);
-  update({ notice: `Copied the ${what} for ${entry.name}`, error: "" });
+  update({ notice: what === "username" ? t("popupCopiedUsername", entry.name) : t("popupCopiedPassword", entry.name), error: "" });
 };
 
 const copyCode = async (entry: EntrySummary): Promise<void> => {
@@ -280,7 +280,7 @@ const copyCode = async (entry: EntrySummary): Promise<void> => {
     return;
   }
   await navigator.clipboard.writeText(result.value.code);
-  update({ notice: `Copied the code for ${entry.name}. It changes in ${result.value.secondsLeft}s.`, error: "" });
+  update({ notice: t("popupCopiedCode", entry.name, formatDuration(result.value.secondsLeft, "second", "narrow")), error: "" });
 };
 
 const fillEntry = async (entry: EntrySummary): Promise<void> => {
@@ -325,7 +325,7 @@ const generate = async (): Promise<void> => {
     return;
   }
   await navigator.clipboard.writeText(result.value);
-  update({ generated: result.value, notice: "Generated a password and copied it" });
+  update({ generated: result.value, notice: t("popupGenerated") });
 };
 
 const lock = async (): Promise<void> => {
@@ -353,7 +353,7 @@ const resolveSave = async (action: SaveAction): Promise<void> => {
     handleError(result.error);
     return;
   }
-  update({ saveOffer: null, notice: action === "save" ? "Saved the login" : action === "update" ? "Updated the password" : "" });
+  update({ saveOffer: null, notice: action === "save" ? t("popupSaved") : action === "update" ? t("popupUpdated") : "" });
   await loadEntries();
 };
 
@@ -384,8 +384,8 @@ const siteAccessBanner = (): HTMLElement | null =>
     ? h(
         "div",
         { className: "banner save", role: "status" },
-        h("div", { className: "grow" }, "Allow Quark Vault on websites so it can fill logins there."),
-        h("button", { className: "link", type: "button", onclick: (() => void allowSites()) as EventListener }, "Allow"),
+        h("div", { className: "grow" }, t("popupSiteAccess")),
+        h("button", { className: "link", type: "button", onclick: (() => void allowSites()) as EventListener }, t("popupAllow")),
       )
     : null;
 
@@ -394,9 +394,9 @@ const othersBanner = (): HTMLElement | null =>
     ? h(
         "div",
         { className: "banner", role: "status" },
-        h("div", { className: "grow" }, "Google or another password manager may also try to fill logins."),
-        h("button", { className: "link", type: "button", onclick: reviewOthers as EventListener }, "Review"),
-        h("button", { className: "link muted", type: "button", onclick: (() => void dismissOthers()) as EventListener }, "Dismiss"),
+        h("div", { className: "grow" }, t("popupOthers")),
+        h("button", { className: "link", type: "button", onclick: reviewOthers as EventListener }, t("popupReview")),
+        h("button", { className: "link muted", type: "button", onclick: (() => void dismissOthers()) as EventListener }, t("dismiss")),
       )
     : null;
 
@@ -410,8 +410,8 @@ const openShortcutSettings = (): void => {
 
 const shortcutBadge = (): HTMLElement =>
   model.shortcut === ""
-    ? h("button", { className: "link small", type: "button", title: shortcutHelp(currentBrowser(), "").steps, onclick: openShortcutSettings as EventListener }, "Fill shortcut: Not set")
-    : h("span", { className: "mono", title: "Fill shortcut" }, model.shortcut);
+    ? h("button", { className: "link small", type: "button", title: shortcutHelp(currentBrowser(), "").steps, onclick: openShortcutSettings as EventListener }, t("popupShortcutNotSet"))
+    : h("span", { className: "mono", title: t("popupShortcut") }, model.shortcut);
 
 const initial = (name: string): string => (name.trim()[0] ?? "?").toUpperCase();
 
@@ -428,11 +428,11 @@ const matchCard = (entry: SiteMatch, index: number): HTMLElement => {
       h("div", { className: "name" }, entry.name),
       h("div", { className: "mono muted small" }, entry.note === "" ? entry.where : `${entry.where} · ${entry.note}`),
     ),
-    mayHaveOtp(entry) ? iconButton(`Copy one-time code for ${entry.name}`, icons.clock, () => void copyCode(entry)) : null,
+    mayHaveOtp(entry) ? iconButton(t("popupCopyCode", entry.name), icons.clock, () => void copyCode(entry)) : null,
     h(
       "button",
-      { className: first ? "fill primary" : "fill", type: "button", "aria-label": `Fill ${entry.name}`, onclick: (() => void fillEntry(entry)) as EventListener },
-      "Fill",
+      { className: first ? "fill primary" : "fill", type: "button", "aria-label": t("fillName", entry.name), onclick: (() => void fillEntry(entry)) as EventListener },
+      t("fill"),
     ),
   );
 };
@@ -457,8 +457,8 @@ const matchSections = (): readonly HTMLElement[] => {
       ...matches.map(matchCard),
     );
   return [
-    ...(primary.length === 0 ? [] : [section("On this site", primary)]),
-    ...(fallbacks.length === 0 ? [] : [section("Other port or scheme", fallbacks)]),
+    ...(primary.length === 0 ? [] : [section(t("popupOnThisSite"), primary)]),
+    ...(fallbacks.length === 0 ? [] : [section(t("popupOtherPort"), fallbacks)]),
   ];
 };
 
@@ -472,36 +472,35 @@ const fillButton = (entry: EntrySummary): HTMLElement | null => {
   }
   const match = model.matches.find((found) => found.id === entry.id);
   if (match !== undefined) {
-    return h("button", { className: "fill", type: "button", "aria-label": `Fill ${entry.name}`, onclick: (() => void fillEntry(match)) as EventListener }, "Fill");
+    return h("button", { className: "fill", type: "button", "aria-label": t("fillName", entry.name), onclick: (() => void fillEntry(match)) as EventListener }, t("fill"));
   }
   return h(
     "button",
     {
       className: "fill",
       type: "button",
-      "aria-label": `Fill anyway ${entry.name}`,
+      "aria-label": t("popupFillAnywayName", entry.name),
       "aria-expanded": String(model.confirming === entry.id),
       onclick: (() => update({ confirming: model.confirming === entry.id ? null : entry.id, error: "" })) as EventListener,
     },
-    "Fill anyway",
+    t("popupFillAnyway"),
   );
 };
 
 const fillAnywayBox = (entry: EntrySummary): HTMLElement => {
   const pageHost = pageSite(model.tab.url);
-  const saved = entry.urlHost === "" ? "isn't saved for any site" : `is saved for ${entry.urlHost}`;
   return h(
     "div",
     { className: "error-box", role: "alert", id: `fill-anyway-${entry.id}` },
-    h("div", {}, `${entry.name} ${saved}, not ${pageHost}. Filling it here gives its username and password to ${pageHost}.`),
-    /^http:/i.test(model.tab.url) ? h("div", {}, `${pageHost} uses plain http, so they would also cross the network unencrypted.`) : null,
-    h("div", {}, `Only fill it if you trust ${pageHost} with this login.`),
+    h("div", {}, entry.urlHost === "" ? t("popupFillAnywayNoSite", entry.name, pageHost) : t("popupFillAnywaySavedFor", entry.name, entry.urlHost, pageHost)),
+    /^http:/i.test(model.tab.url) ? h("div", {}, t("popupFillAnywayHttp", pageHost)) : null,
+    h("div", {}, t("popupFillAnywayTrust", pageHost)),
     h(
       "button",
       { className: "primary", type: "button", onclick: (() => void fillAnyway(entry)) as EventListener },
-      `Fill on ${pageHost}`,
+      t("popupFillOn", pageHost),
     ),
-    h("button", { className: "secondary", type: "button", onclick: (() => update({ confirming: null })) as EventListener }, "Cancel"),
+    h("button", { className: "secondary", type: "button", onclick: (() => update({ confirming: null })) as EventListener }, t("cancel")),
   );
 };
 
@@ -509,10 +508,10 @@ const entryRow = (entry: EntrySummary): readonly HTMLElement[] => [
   h(
     "div",
     { className: "row" },
-    h("div", { className: "grow" }, h("div", { className: "name" }, entry.name), h("div", { className: "mono muted small" }, entry.urlHost === "" ? "no site" : entry.urlHost)),
-    iconButton(`Copy username for ${entry.name}`, icons.user, () => void copy(entry, "username")),
-    iconButton(`Copy password for ${entry.name}`, icons.copy, () => void copy(entry)),
-    iconButton(`Copy one-time code for ${entry.name}`, icons.clock, () => void copyCode(entry)),
+    h("div", { className: "grow" }, h("div", { className: "name" }, entry.name), h("div", { className: "mono muted small" }, entry.urlHost === "" ? t("popupNoSite") : entry.urlHost)),
+    iconButton(t("popupCopyUsername", entry.name), icons.user, () => void copy(entry, "username")),
+    iconButton(t("popupCopyPassword", entry.name), icons.copy, () => void copy(entry)),
+    iconButton(t("popupCopyCode", entry.name), icons.clock, () => void copyCode(entry)),
     fillButton(entry),
   ),
   ...(model.confirming === entry.id && isWebPage(model.tab.url) ? [fillAnywayBox(entry)] : []),
@@ -520,16 +519,16 @@ const entryRow = (entry: EntrySummary): readonly HTMLElement[] => [
 
 const autoLockText = (state: VaultState): string =>
   state.kind === "unlocked" && state.autoLockSeconds > 0
-    ? `Unlocked · auto-locks after ${Math.round(state.autoLockSeconds / 60)} min idle`
-    : "Unlocked";
+    ? t("popupAutoLock", formatDuration(Math.round(state.autoLockSeconds / 60), "minute", "short"))
+    : t("stateUnlocked");
 
 const entriesView = (state: VaultState): HTMLElement => {
-  const search = h("input", { id: "search", type: "search", placeholder: "Search the vault", value: model.query, autocomplete: "off", "data-autofocus": true });
+  const search = h("input", { id: "search", type: "search", placeholder: t("popupSearch"), value: model.query, autocomplete: "off", "data-autofocus": true });
   const list = h("div", { className: "list" });
   const renderList = (): void => {
     const found = searchEntries(model.entries, search.value);
     list.replaceChildren(
-      h("div", { className: "section-label" }, `All entries · ${found.length}`),
+      h("div", { className: "section-label" }, t("popupAllEntries", formatNumber(found.length))),
       ...found.flatMap(entryRow),
     );
   };
@@ -542,8 +541,8 @@ const entriesView = (state: VaultState): HTMLElement => {
   return h(
     "div",
     { className: "screen" },
-    header([iconButton("Generate password", icons.key, () => void generate()), iconButton("Lock vault", icons.lock, () => void lock())]),
-    h("div", { className: "search" }, icon(document, icons.search, 16), h("label", { for: "search", className: "visually-hidden" }, "Search the vault"), search),
+    header([iconButton(t("generatePassword"), icons.key, () => void generate()), iconButton(t("popupLock"), icons.lock, () => void lock())]),
+    h("div", { className: "search" }, icon(document, icons.search, 16), h("label", { for: "search", className: "visually-hidden" }, t("popupSearch")), search),
     insecureBanner(state),
     siteAccessBanner(),
     saveBanner(),
@@ -576,15 +575,15 @@ const messageView = (state: VaultState): HTMLElement =>
         state.kind === "unreachable" ? h("p", { className: "muted" }, unreachableHint(state.server)) : null,
       ),
       h("div", { className: "spacer" }),
-      h("button", { className: "primary", type: "button", onclick: (() => void refresh()) as EventListener }, "Try again"),
+      h("button", { className: "primary", type: "button", onclick: (() => void refresh()) as EventListener }, t("popupTryAgain")),
       state.kind === "unreachable"
-        ? h("button", { className: "secondary", type: "button", onclick: (() => update({ editingAddress: true, error: "" })) as EventListener }, "Edit address")
+        ? h("button", { className: "secondary", type: "button", onclick: (() => update({ editingAddress: true, error: "" })) as EventListener }, t("popupEditAddress"))
         : null,
-      h("button", { className: "secondary", type: "button", onclick: (() => void ask({ type: "signOut" }).then(applyState)) as EventListener }, "Sign out"),
+      h("button", { className: "secondary", type: "button", onclick: (() => void ask({ type: "signOut" }).then(applyState)) as EventListener }, t("signOut")),
     ),
   );
 
-const loadingView = (): HTMLElement => h("div", { className: "screen" }, header(), h("div", { className: "body center muted" }, "Checking your Quark…"));
+const loadingView = (): HTMLElement => h("div", { className: "screen" }, header(), h("div", { className: "body center muted" }, t("popupChecking")));
 
 const view = (): HTMLElement => {
   const { state } = model;

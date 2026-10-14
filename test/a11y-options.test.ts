@@ -1,3 +1,4 @@
+import { fakeI18n } from "./fakeChrome";
 import type { Request } from "../src/shared/messages";
 import { defaultSettings, type Settings } from "../src/shared/types";
 
@@ -50,6 +51,7 @@ beforeEach(() => {
   worker.settings = { ...defaultSettings, othersReviewed: true } satisfies Settings;
   worker.neverSave = ["example.com", "bank.test"];
   vi.stubGlobal("chrome", {
+    i18n: fakeI18n(),
     runtime: { id: "quark", getURL: (path: string) => `chrome-extension://quark/${path}` },
     tabs: { create: () => Promise.resolve() },
     commands: { getAll: () => Promise.resolve([]) },

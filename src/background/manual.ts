@@ -1,3 +1,4 @@
+import { t } from "../shared/i18n";
 import type { FillCommand } from "../shared/messages";
 import type { Sender } from "./gate";
 
@@ -35,9 +36,9 @@ export const pageHostOf = (url: string): string => webUrl(url)?.host ?? "";
 export const manualFillRefusal = (tabUrl: string, confirmedHost: string): string | null => {
   const host = pageHostOf(tabUrl);
   if (host === "") {
-    return "This page can't be filled.";
+    return t("refuseCantFill");
   }
-  return host === confirmedHost ? null : `This tab is now on ${host}, not ${confirmedHost}. Open the popup again to fill it.`;
+  return host === confirmedHost ? null : t("refuseTabMoved", host, confirmedHost);
 };
 
 export const grantFor = (tabId: number, entryId: number, tabUrl: string, now: number): ManualGrant | null => {

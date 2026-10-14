@@ -71,7 +71,7 @@ describe("login", () => {
     const { api, calls } = quark(() => [200, { token: "abc" }], saltReply);
     expect(await api.login("https://quark.local", "b", "pw")).toEqual({
       ok: false,
-      error: { kind: "refused", reason: quarkTooOld },
+      error: { kind: "refused", reason: quarkTooOld() },
     });
     expect(calls).toHaveLength(1);
   });
@@ -85,7 +85,7 @@ describe("login", () => {
     const { api } = quark(() => [426, { error: "update the app to sign in" }]);
     expect(await api.login("https://quark.local", "b", "pw")).toEqual({
       ok: false,
-      error: { kind: "refused", reason: extensionTooOld },
+      error: { kind: "refused", reason: extensionTooOld() },
     });
   });
 
