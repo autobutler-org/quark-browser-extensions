@@ -18,10 +18,13 @@ import { parseOtpSecret, totp } from "../shared/totp";
 import { entryIdFromMenu, generateMenuId, menuItems, menuRoot, shortcutPlan } from "../shared/menu";
 import { detectionIntervalSeconds, idleAction, type IdleState } from "./idle";
 import {
+  afterNavigation,
+  capturedNow,
   decideOffer,
   isFresh,
   isNeverSaved,
   newEntryFor,
+  relatedHosts,
   type Pending,
   type SaveAction,
   type SaveOffer,
@@ -316,18 +319,22 @@ const captured = async (sender: Sender, username: string, password: string): Pro
   if (tabId === undefined || isNeverSaved(await loadNeverSave(), pageUrl)) {
     return null;
   }
-  pendings.set(tabId, { pageUrl, credentials: { username, password }, at: Date.now() });
+  pendings.set(tabId, capturedNow(pageUrl, { username, password }, Date.now()));
   return offerFor(tabId);
 };
-
-const relatedHosts = (a: string, b: string): boolean => hostMatches(a, b) || hostMatches(b, a);
 
 const myOffer = async (sender: Sender): Promise<SaveOffer | null> => {
   const tabId = sender.tab?.id;
   const pending = tabId === undefined ? null : freshPending(tabId);
-  return tabId !== undefined && pending !== null && relatedHosts(hostOf(pending.pageUrl), hostOf(sender.url ?? ""))
-    ? offerFor(tabId)
-    : null;
+  if (tabId === undefined || pending === null) {
+    return null;
+  }
+  if (!relatedHosts(hostOf(pending.pageUrl), hostOf(sender.url ?? ""))) {
+    // The tab has left the site the login was typed on.
+    pendings.delete(tabId);
+    return null;
+  }
+  return offerFor(tabId);
 };
 
 const resolveSave = async (tabId: number, action: SaveAction): Promise<Result<null>> => {
@@ -539,6 +546,15 @@ export const main = (): void => {
   });
 
   chrome.tabs.onUpdated.addListener((tabId, info) => {
+    const pending = info.status === "loading" ? freshPending(tabId) : null;
+    if (pending !== null) {
+      const kept = afterNavigation(pending, Date.now());
+      if (kept === null) {
+        pendings.delete(tabId);
+      } else {
+        pendings.set(tabId, kept);
+      }
+    }
     if (info.status === "complete" && freshPending(tabId) !== null) {
       void chrome.tabs.sendMessage(tabId, { type: "offerCheck" }, { frameId: 0 }).catch(() => undefined);
     }

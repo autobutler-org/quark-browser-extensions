@@ -1,5 +1,16 @@
 import { replacementBody } from "../src/shared/api";
-import { decideOffer, isFresh, isNeverSaved, newEntryFor, pendingTtlMs, type OfferInput } from "../src/background/save";
+import {
+  afterNavigation,
+  capturedNow,
+  decideOffer,
+  isFresh,
+  isNeverSaved,
+  newEntryFor,
+  pendingTtlMs,
+  postSubmitWindowMs,
+  relatedHosts,
+  type OfferInput,
+} from "../src/background/save";
 import { saveBarCopy } from "../src/shared/saveCopy";
 import type { EntryDetail, EntrySummary, Result } from "../src/shared/types";
 
@@ -70,9 +81,27 @@ describe("decideOffer", () => {
 
 describe("helpers", () => {
   it("expires pending captures", () => {
-    const pending = { pageUrl: "", credentials: { username: "", password: "" }, at: 1000 };
+    const pending = capturedNow("", { username: "", password: "" }, 1000);
     expect(isFresh(pending, 1000 + pendingTtlMs - 1)).toBe(true);
     expect(isFresh(pending, 1000 + pendingTtlMs)).toBe(false);
+  });
+
+  it("keeps a capture across the navigation its submit causes, and no further", () => {
+    const pending = capturedNow("https://example.com/login", { username: "alice", password: "pw" }, 1000);
+    const landed = afterNavigation(pending, 1000 + postSubmitWindowMs - 1);
+    expect(landed).toEqual({ ...pending, navigated: true });
+    expect(landed === null ? "dropped" : afterNavigation(landed, 1000 + postSubmitWindowMs - 1)).toBeNull();
+  });
+
+  it("drops a capture when the first navigation starts after the post-submit window", () => {
+    const pending = capturedNow("https://example.com/login", { username: "alice", password: "pw" }, 1000);
+    expect(afterNavigation(pending, 1000 + postSubmitWindowMs)).toBeNull();
+  });
+
+  it("relates a host to its subdomains in either direction, and not to other sites", () => {
+    expect(relatedHosts("example.com", "login.example.com")).toBe(true);
+    expect(relatedHosts("login.example.com", "example.com")).toBe(true);
+    expect(relatedHosts("example.com", "example.org")).toBe(false);
   });
 
   it("matches never-save hosts including subdomains", () => {

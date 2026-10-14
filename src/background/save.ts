@@ -12,12 +12,30 @@ export type Pending = Readonly<{
   pageUrl: string;
   credentials: Credentials;
   at: number;
+  // Whether the tab has navigated since the submit; the first navigation is the one the submit caused.
+  navigated: boolean;
 }>;
 
 export const pendingTtlMs = 120_000;
+// How soon after the submit a navigation must start to count as the submit's own.
+export const postSubmitWindowMs = 15_000;
 export const maxCandidates = 5;
 
 export const isFresh = (pending: Pending, now: number): boolean => now - pending.at < pendingTtlMs;
+
+export const capturedNow = (pageUrl: string, credentials: Credentials, now: number): Pending => ({
+  pageUrl,
+  credentials,
+  at: now,
+  navigated: false,
+});
+
+// A login is offered on the page that submitted it and on the page the submit lands on, and on no later page:
+// the navigation the submit causes keeps it, any other navigation drops it (and the password with it).
+export const afterNavigation = (pending: Pending, now: number): Pending | null =>
+  !pending.navigated && now - pending.at < postSubmitWindowMs ? { ...pending, navigated: true } : null;
+
+export const relatedHosts = (a: string, b: string): boolean => hostMatches(a, b) || hostMatches(b, a);
 
 export const sameUser = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
 
