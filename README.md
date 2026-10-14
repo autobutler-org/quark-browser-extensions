@@ -1,6 +1,6 @@
-# Quark Vault for Chrome
+# Quark Vault
 
-A Manifest V3 extension that fills logins from the password vault on your [Quark](https://github.com/autobutler-org/quark).
+A Manifest V3 extension for Chrome and Firefox (Edge builds too) that fills logins from the password vault on your [Quark](https://github.com/autobutler-org/quark).
 It talks to the Quark's existing API. Nothing extra runs on the Quark.
 
 ## What it does
@@ -8,7 +8,7 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 - **Connect**: sign in once with a Quark admin account. The extension gets an ordinary session token, so it shows up
   in the Quark under Settings › Sessions and can be revoked there.
 - **Unlock**: type the vault password in the popup. Unlocking is server-side and household-wide, the same as unlocking
-  in the Quark app, and it auto-locks on the Quark's schedule.
+  in the Quark app, and the Quark locks it on its own schedule. The options page can also lock it when the computer is idle, and a locked screen always locks it.
 - **Fill**: on a page with a password field, a Quark button appears in the field when the vault has a login for that
   site. The toolbar icon shows how many. Pick one, or press **Fill** in the popup.
 - **Shortcut and right-click**: `Ctrl+Shift+L` (`⌘⇧L` on macOS) fills the only match or opens the picker; right-click a field
@@ -32,21 +32,41 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 | ------------------------ | ---------------------------------------------------------------------------------------------- |
 | Account password         | Never sent: sign-in sends an auth key derived from it (Argon2id + HKDF, as the Quark app does) with the salt from `GET /api/v0/auth/salt`. An account the Quark marks `legacy` gets the password beside the key once, to move it to keys. Needs Quark v0.47.0+ |
 | Vault password           | Sent once to `POST /api/v0/vault/unlock`, never stored                                          |
-| Session token            | `chrome.storage.session` (memory, gone when Chrome quits); `local` only if "stay signed in"    |
+| Session token            | `chrome.storage.session` (memory, gone when the browser quits). With "stay signed in" it is also encrypted at rest under a non-extractable key in IndexedDB, never stored in plaintext. See [docs/security.md](docs/security.md) |
 | Decrypted entries        | Fetched one at a time on a click, passed straight to the page, never stored or cached          |
 | Captured sign-ins        | Held in service-worker memory per tab for at most two minutes, then dropped                    |
-| Which site gets a login  | Page host must equal the entry's host or be a subdomain of it, checked in the worker and again in the page. A login inside an iframe fills only when the top page is that site too |
-| Plain `http://` pages    | Refused, unless the entry itself was saved with an `http://` URL (a router admin page, say)    |
+| Which site gets a login  | Page host must equal the entry's host (ignoring `www.`) or be a subdomain of it within the same registrable domain. A public suffix (`co.uk`, `github.io`) is never a parent, and an IP address matches only itself. Checked in the worker and again in the page. A login inside an iframe fills only when the top page is that site too |
+| Other sites              | The popup's **Fill anyway** needs a confirmation naming both hosts, then fills the top frame only, once, within ten seconds, and never auto-submits. The shortcut, context menu and inline picker have no such path |
+| Plain `http://` pages    | Refused, unless the entry itself was saved with an `http://` URL (a router admin page, say). `localhost` and loopback addresses count as secure |
+| Plain `http://` Quark    | Fine on loopback. Any other `http://` address needs an explicit "I understand" tick when connecting |
 | Page scripts             | Can't message the extension; the picker lives in a closed shadow root                          |
-| Permissions              | `storage`, `activeTab`, `idle`, `contextMenus`; `privacy` and `management` are optional and requested only when used |
+| Permissions              | See [Permissions](#permissions) |
 
 Listing entries (`GET /api/v0/vault/entries`) returns names and hosts only, so the match count works while the vault
-is locked.
+is locked. More detail in [docs/security.md](docs/security.md).
+
+## Permissions
+
+From the built manifests (`.output/*/manifest.json`):
+
+| Permission | Why |
+| --- | --- |
+| `storage` | Settings, the server address, the session token (`storage.session`) and the encrypted "stay signed in" copy |
+| `activeTab` | Reading the active tab's URL when you fill from the popup, shortcut or menu |
+| `idle` | Locking the vault when the computer is idle (if you turn that on) or the screen locks |
+| `contextMenus` | The right-click **Quark Vault** menu on editable fields |
+| `privacy` (optional) | Asked for only when you turn off the browser's own password saving |
+| `management` (optional) | Asked for only to list and turn off other password-manager extensions (Chrome) |
+| Content script on `http://*/*` and `https://*/*` | Finds login fields and draws the in-field button. It never receives a password until the worker checks the frame |
+| `host_permissions` for `http://*/*` and `https://*/*` (Firefox only) | Firefox doesn't grant them at install, so the popup offers **Allow** when they're off; Chrome doesn't need them |
+
+The extension talks only to the Quark address you enter. The extension pages' content security policy is
+`script-src 'self'; object-src 'none'; base-uri 'none'`.
 
 ## Install (sideload)
 
 1. Download the `quark-vault-extension` artifact from the latest CI run, or run `npm ci && npm run package`, which
-   writes the zips to `.output/`.
+   writes the zips to `.output/`. (Store releases: [.github/RELEASING.md](.github/RELEASING.md).)
 2. Unzip `quark-vault-chrome.zip`.
 3. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick the unzipped folder.
 4. Click the Quark Vault toolbar button and connect to your Quark (for example `https://quark.local`).
@@ -64,8 +84,10 @@ Add-on** and pick `.output/firefox-mv3/manifest.json`. Differences from Chrome:
 - The other-password-managers check can turn off Firefox's own password saving, but not other add-ons: Firefox
   doesn't allow that, so it points you to `about:addons`.
 - Firefox lacks `location.ancestorOrigins`, so for a login inside a same-site iframe the frame checks the top page
-  against the URL the service worker got from the top frame itself, instead of asking the browser. Chrome keeps
-  using `ancestorOrigins`.
+  against `topUrl`, which the background got by asking the top frame (frame 0) itself and sent in the fill command,
+  instead of asking the browser. Chrome keeps using `ancestorOrigins`. The background checks the frame and the top
+  frame's URL before it hands out credentials either way.
+- The background is a script, not a service worker. The add-on id is `vault@autobutler.org`, with no data collection.
 
 CI lints the Firefox build with `web-ext lint` and runs a Firefox smoke test against a real Quark (see
 [End-to-end tests](#end-to-end-tests)): connect with the auth key, unlock, match the test site, fill from the popup and
@@ -82,12 +104,16 @@ npm run build          # production builds in .output/chrome-mv3 and .output/fir
 npm run check          # typecheck + lint + unit tests
 npm run lint           # ESLint alone (type-aware typescript-eslint, eslint.config.js)
 QUARK_SRC=~/src/quark npm run test:e2e:quark   # builds that Quark checkout, then runs the e2e tests against it
+npm run coverage       # unit tests with coverage floors on src/background and src/shared (vitest.config.ts)
 ```
 
-The build is [WXT](https://wxt.dev) (`wxt.config.ts`); `wxt build -b edge` also works.
+The build is [WXT](https://wxt.dev) (`wxt.config.ts`); `npx wxt build -b edge` also works. `npm run check` runs
+`typecheck` (`tsc` for `src` and `e2e`), `lint`, the vitest unit tests in `test/` and `test:scripts` (the release
+script's tests). `npm run lint:firefox` builds Firefox and runs `web-ext lint` on it.
 
 To lint before each commit, install [pre-commit](https://pre-commit.com) and run `pre-commit install` once: it runs
-ESLint on the staged files with the repo's own `node_modules` (`npm ci` first). There is no husky.
+ESLint on the staged files with the repo's own `node_modules` (`npm ci` first; see `.pre-commit-config.yaml`). There
+is no husky.
 
 ### End-to-end tests
 
@@ -140,8 +166,8 @@ FIREFOX_PATH=/usr/bin/firefox npm run test:e2e:firefox   # or a Firefox of your 
 `HEADED=1` shows the browser. Failures leave the report in `e2e/playwright-report/firefox/`. CI's `firefox-e2e` job
 runs it against the real Quark; it isn't a required check yet.
 
-CI builds Quark from autobutler-org/quark at the commit `QUARK_REF` names in `.github/workflows/check.yml`; set the
-repository variable `QUARK_REF` to test another commit, branch or tag.
+CI builds Quark from autobutler-org/quark at the commit `QUARK_REF` names in `.github/workflows/check.yml` (the
+`e2e` and `firefox-e2e` jobs); set the repository variable `QUARK_REF` to test another commit, branch or tag.
 
 ```text
 src/background/   service worker: holds the token, calls the Quark, answers the popup and pages
@@ -150,11 +176,29 @@ src/popup/        toolbar popup: connect, unlock, entries
 src/options/      settings and the other-password-managers check
 src/shared/       API client, host matching, message types, error copy
 entrypoints/      WXT entrypoints: background, content script, popup and options pages
-static/           CSS and icons, copied as-is (the manifest is in wxt.config.ts)
+static/           CSS, icons and _locales/en/messages.json, copied as-is (the manifest is in wxt.config.ts)
 e2e/              Playwright tests; support/ starts the Quark (real or mock), the proxy and the test site;
                   firefox/ holds the Firefox smoke test
-scripts/          build-quark.sh, which builds the Quark server the e2e tests run against
+scripts/          build-quark.sh (builds the Quark server the e2e tests run against) and release.js (CI helpers)
+test/             vitest unit tests (jsdom)
+docs/             security.md
+.github/          CI (check.yml), the release workflow and RELEASING.md
 ```
+
+## Contributing
+
+1. Set up: Node 22, `npm ci`, then `npm run dev` (Chrome, reloads on change) or `npm run dev:firefox`. Optionally
+   `pre-commit install`.
+2. Before a pull request, run `npm run check`. CI runs it plus `npm run lint:firefox`, `npm run package` and the e2e jobs.
+3. End-to-end: `npx playwright install chromium`, then `QUARK_SRC=<quark checkout> npm run test:e2e:quark` for a real
+   Quark (needs Go), or `npm run test:e2e:mock` offline. Firefox: `npm run firefox:install`, then
+   `npm run test:e2e:firefox`.
+4. Adding a string: add the key to `static/_locales/en/messages.json` (with `placeholders` if it takes arguments),
+   list it and its placeholder names in `messagePlaceholders` in `src/shared/i18n.ts`, and use `t("key", …)`.
+   `test/i18n.test.ts` checks that the two lists and the code agree.
+5. Releasing: see [.github/RELEASING.md](.github/RELEASING.md). The version comes from `package.json`.
+
+MIT-0 licensed (`LICENSE`).
 
 ## Not yet
 
