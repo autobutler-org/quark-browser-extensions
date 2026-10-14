@@ -1,7 +1,8 @@
 import { h$, icon, icons } from "../shared/dom";
 import { t } from "../shared/i18n";
 import { adoptStyles } from "./styles";
-import { placePanel } from "./position";
+import { iconInset, iconRight, iconSize, placePanel, type Box } from "./position";
+import { trusted } from "./trusted";
 import { isFallback, type SiteMatch } from "../shared/host";
 import type { EntrySummary } from "../shared/types";
 
@@ -91,6 +92,19 @@ const openLayer = "2147483647";
 // The width the panel asks for; position.ts narrows it to fit a small frame.
 const panelWidth = 300;
 
+// The page's own controls next to a field, such as a show-password toggle: the field's siblings and its parent's,
+// where such a control is drawn over the field's right end. Only ones that are laid out count.
+const controlSelector = "button, a[href], input:not([type=hidden]), select, [role=button], [tabindex], svg, img";
+
+const trailingControls = (field: HTMLInputElement): Box[] => {
+  const scopes = [field.parentElement, field.parentElement?.parentElement].filter((scope) => scope != null);
+  const found = new Set(scopes.flatMap((scope) => [...scope.querySelectorAll(controlSelector)]));
+  return [...found]
+    .filter((control) => control !== field && !control.contains(field))
+    .map((control) => control.getBoundingClientRect())
+    .filter((box) => box.width > 0 && box.height > 0);
+};
+
 export const attachPicker = (
   field: HTMLInputElement,
   matches: readonly SiteMatch[],
@@ -122,12 +136,14 @@ export const attachPicker = (
     status.textContent = message;
   };
 
+  const shown = (): boolean => anchor.style.display !== "none";
+
   const place = (): void => {
     const rect = field.getBoundingClientRect();
     const visible = rect.width > 0 && rect.height > 0 && field.isConnected;
     anchor.style.display = visible ? "block" : "none";
-    anchor.style.top = `${rect.top + view.scrollY + (rect.height - 22) / 2}px`;
-    anchor.style.left = `${rect.right + view.scrollX - 22 - 6}px`;
+    anchor.style.top = `${rect.top + view.scrollY + (rect.height - iconSize) / 2}px`;
+    anchor.style.left = `${(visible ? iconRight(rect, trailingControls(field)) : rect.right - iconInset) + view.scrollX - iconSize}px`;
   };
 
   // Keeps the whole panel inside this frame's viewport: below the trigger, flipped above it, or over it in a
@@ -162,9 +178,13 @@ export const attachPicker = (
     anchor.style.zIndex = buttonLayer;
   };
 
+  // Above the logins, not after them, where a panel that scrolls would hide it and the pick seem to do nothing
+  // (#118). The panel is fitted again for the extra line and scrolled back to show it.
   const showError = (panel: HTMLElement, message: string): void => {
     panel.querySelector(".error")?.remove();
-    panel.append(h$(doc, "div", { className: "error", role: "alert" }, message));
+    panel.querySelector(".menu")?.before(h$(doc, "div", { className: "error", role: "alert" }, message));
+    fit(panel);
+    panel.scrollTop = 0;
   };
 
   const run = (panel: HTMLElement, action: () => Promise<string | null>, done: string): void => {
@@ -282,6 +302,15 @@ export const attachPicker = (
 
   const onKey = (event: KeyboardEvent): void => {
     const open = shadow.querySelector(".panel") !== null;
+    if (event.key === "Tab" && event.target === trigger && !open) {
+      // The button sits right after its field in the Tab order (#116). Shift+Tab goes back to the field; Tab goes
+      // to the field too, and the browser's own Tab then moves on from there.
+      if (event.shiftKey) {
+        event.preventDefault();
+      }
+      field.focus();
+      return;
+    }
     if (event.key === "Escape") {
       if (open) {
         event.preventDefault();
@@ -313,6 +342,25 @@ export const attachPicker = (
     }
   };
 
+  // The button is drawn at the end of <body>, far from the field in the page's Tab order, so the field hands Tab
+  // to it, and Alt+ArrowDown opens the menu as it does native autocomplete (#116). Only the user's own keys: a
+  // page must not open the menu and move focus into it. Heard last, at the window, so a page that handles the key
+  // itself keeps it. composedPath finds a field inside a shadow root.
+  const onFieldKey = (event: KeyboardEvent): void => {
+    if (event.composedPath()[0] !== field || !trusted(event) || event.defaultPrevented || event.ctrlKey || event.metaKey || !shown()) {
+      return;
+    }
+    if (event.key === "Tab" && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      trigger.focus();
+    } else if (event.key === "ArrowDown" && event.altKey && !event.shiftKey) {
+      event.preventDefault();
+      if (shadow.querySelector(".panel") === null) {
+        openPanel();
+      }
+    }
+  };
+
   let frame = 0;
   const schedule = (): void => {
     view.cancelAnimationFrame(frame);
@@ -326,6 +374,8 @@ export const attachPicker = (
   };
 
   trigger.addEventListener("click", toggle);
+  view.addEventListener("keydown", onFieldKey);
+  field.addEventListener("focus", place);
   anchor.addEventListener("keydown", onKey);
   doc.addEventListener("mousedown", onOutside, true);
   view.addEventListener("scroll", schedule, true);
@@ -342,6 +392,8 @@ export const attachPicker = (
     },
     destroy: () => {
       view.cancelAnimationFrame(frame);
+      view.removeEventListener("keydown", onFieldKey);
+      field.removeEventListener("focus", place);
       doc.removeEventListener("mousedown", onOutside, true);
       view.removeEventListener("scroll", schedule, true);
       view.removeEventListener("resize", schedule);
