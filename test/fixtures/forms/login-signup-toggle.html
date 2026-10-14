@@ -1,0 +1,9 @@
+<!-- One form for both signing in and signing up (#152): "Create an account" removes the hidden attribute from a
+     confirmation field, and the same unmarked password field becomes the new password. -->
+<form action="/auth" method="post">
+  <input type="email" name="email" data-fx="email">
+  <input type="password" name="password" data-fx="pw">
+  <input type="password" name="password_confirm" hidden data-fx="confirm">
+  <button type="submit">Continue</button>
+  <button type="button">Create an account</button>
+</form>

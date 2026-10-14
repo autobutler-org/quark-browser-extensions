@@ -136,6 +136,7 @@ const corpus: Readonly<Record<string, Expected>> = {
     newPasswords: ["signup-pw", "signup-confirm"],
   },
   "login-signup-tabs.html": { passwords: ["login-pw"], usernames: { "login-pw": "login-email" }, standalone: "login-email", otp: [], newPasswords: [] },
+  "login-signup-toggle.html": { passwords: ["pw"], usernames: { pw: "email" }, standalone: "email", otp: [], newPasswords: [] },
   "login-modal-fade.html": { passwords: [], usernames: {}, standalone: null, otp: [], newPasswords: [] },
   "login-covered-overlay.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "spa-formless-login.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
@@ -347,6 +348,12 @@ describe("filling and capturing fixtures", () => {
     expect(tags(passwordFields(document))).toEqual(["signup-pw", "signup-confirm"]);
     expect(tags(passwordFields(document).filter(isNewPasswordField))).toEqual(["signup-pw", "signup-confirm"]);
     expect(tag(usernameFieldFor(field("signup-pw")))).toBe("signup-email");
+  });
+
+  it("reads the same password field as new once the form shows its confirmation (#152)", () => {
+    load("login-signup-toggle.html");
+    field("confirm").hidden = false;
+    expect(tags(passwordFields(document).filter(isNewPasswordField))).toEqual(["pw", "confirm"]);
   });
 
   it("finds and fills the fade-in modal's fields once the transition ends, and still not the transparent decoys (#150)", () => {
