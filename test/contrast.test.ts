@@ -7,7 +7,7 @@ import { contrast } from "../src/content/styles";
 const css = readFileSync(join(import.meta.dirname, "../static/theme.css"), "utf8");
 
 const tokens = (block: string): Record<string, string> =>
-  Object.fromEntries([...block.matchAll(/--([\w-]+):\s*(#[0-9a-f]{6});/gi)].map(([, name, value]) => [name, value]));
+  Object.fromEntries([...block.matchAll(/--([\w-]+):\s*(#[0-9a-f]{6});/gi)].map((found): [string, string] => [found[1] ?? "", found[2] ?? ""]));
 
 const lightStart = css.indexOf("@media (prefers-color-scheme: light)");
 const dark = tokens(css.slice(0, lightStart));

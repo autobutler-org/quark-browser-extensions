@@ -5,7 +5,7 @@ import type { SiteMatch } from "../src/shared/host";
 import { defaultSettings, ok, type EntrySummary, type VaultState } from "../src/shared/types";
 
 // The popup talks to the worker only through ask(), so the tests answer for it.
-const worker = vi.hoisted(() => ({ state: null as unknown, welcomeSeen: true }));
+const worker = vi.hoisted((): { state: unknown; welcomeSeen: boolean } => ({ state: null, welcomeSeen: true }));
 vi.mock("../src/shared/messages", () => ({
   ask: (request: Request) => {
     return Promise.resolve(answer(request));

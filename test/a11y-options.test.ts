@@ -2,7 +2,7 @@ import type { Request } from "../src/shared/messages";
 import { defaultSettings, type Settings } from "../src/shared/types";
 
 // The options page talks to the worker only through ask(), so the tests answer for it.
-const worker = vi.hoisted(() => ({ settings: null as unknown, neverSave: [] as string[] }));
+const worker = vi.hoisted((): { settings: unknown; neverSave: string[] } => ({ settings: null, neverSave: [] }));
 vi.mock("../src/shared/messages", () => ({
   ask: (request: Request) => Promise.resolve(answer(request)),
 }));
