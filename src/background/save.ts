@@ -1,4 +1,5 @@
-import { hostMatches, hostOf, isSecurePage, normalizeHost } from "../shared/host";
+import { hostOf, isSecurePage, normalizeHost } from "../shared/host";
+import { hostMatches } from "../shared/hostMatch";
 import type { Credentials, EntryDetail, EntrySummary, Result } from "../shared/types";
 
 export type SaveOffer =

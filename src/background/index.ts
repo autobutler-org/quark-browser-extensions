@@ -1,17 +1,15 @@
 import { createApi } from "../shared/api";
 import { formatNumber, t } from "../shared/i18n";
 import {
-  frameMayFill,
-  hostMatches,
   hostOf,
   insecureServerRefusal,
-  matchEntries,
   normalizeHost,
   normalizeServer,
   primaryMatches,
   serverTransport,
   type SiteMatch,
 } from "../shared/host";
+import { frameMayFill, hostMatches, matchEntries } from "../shared/hostMatch";
 import type { Hello, PageCommand, PageReply, Request, Responses } from "../shared/messages";
 import { err, ok, type Connection, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
 import { parseOtpSecret, totp } from "../shared/totp";

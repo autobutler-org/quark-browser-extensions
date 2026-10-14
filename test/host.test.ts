@@ -1,16 +1,5 @@
-import {
-  frameMayFill,
-  hostMatches,
-  hostOf,
-  isFallback,
-  isSecurePage,
-  matchEntries,
-  mayFill,
-  mayHaveOtp,
-  normalizeServer,
-  primaryMatches,
-  searchEntries,
-} from "../src/shared/host";
+import { hostOf, isFallback, isSecurePage, mayHaveOtp, normalizeServer, primaryMatches, searchEntries } from "../src/shared/host";
+import { frameMayFill, hostMatches, matchEntries, mayFill } from "../src/shared/hostMatch";
 import type { EntrySummary } from "../src/shared/types";
 
 const entry = (id: number, name: string, urlHost: string): EntrySummary => ({
