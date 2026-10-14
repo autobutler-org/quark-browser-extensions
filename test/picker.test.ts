@@ -208,6 +208,66 @@ describe("attachPicker", () => {
     picker.destroy();
   });
 
+  // A frame of the given size, with the trigger at `top` in it and the panel's content `content` px tall.
+  const frame = (width: number, height: number, top: number, content: number): void => {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(width);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(height);
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.className === "panel" ? content : 0;
+    });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      // The anchor wraps the trigger, 10px in from the frame's right edge.
+      return this.className === "trigger" || this.className === "anchor"
+        ? DOMRect.fromRect({ x: width - 10 - 22, y: top, width: 22, height: 22 })
+        : DOMRect.fromRect({ x: 0, y: 0, width: 100, height: 20 });
+    });
+  };
+
+  it("flips the panel above the field when the frame has no room below", () => {
+    frame(400, 300, 250, 160);
+    const { picker, root, items } = setup();
+    picker.open();
+    const panel = root.querySelector<HTMLElement>(".panel") as HTMLElement;
+    expect(panel.dataset.side).toBe("above");
+    // Relative to the anchor at the trigger: its bottom edge sits 6px above the trigger.
+    expect(panel.style.top).toBe(`${-6 - 160}px`);
+    expect(panel.style.width).toBe("300px");
+    expect(panel.style.left).toBe(`${-(300 - 22)}px`);
+    // Opening still focuses the first item with a single tab stop (#26).
+    expect(root.activeElement).toBe(items()[0]);
+    picker.destroy();
+  });
+
+  it("fits a frame too small for either side and scrolls inside it", () => {
+    frame(220, 140, 60, 400);
+    const { picker, root } = setup();
+    picker.open();
+    const panel = root.querySelector<HTMLElement>(".panel") as HTMLElement;
+    expect(panel.dataset.side).toBe("over");
+    expect(panel.style.maxHeight).toBe("124px");
+    expect(panel.style.width).toBe("204px");
+    // The anchor's left edge is 220 - 10 - 22 = 188 in the frame; the panel starts at the 8px gutter.
+    expect(panel.style.left).toBe(`${8 - 188}px`);
+    expect(panel.style.top).toBe(`${8 - 60}px`);
+    picker.destroy();
+  });
+
+  it("places the panel again when the frame resizes", () => {
+    frame(400, 600, 250, 160);
+    const { picker, root } = setup();
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    picker.open();
+    const panel = root.querySelector<HTMLElement>(".panel") as HTMLElement;
+    expect(panel.dataset.side).toBe("below");
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(300);
+    window.dispatchEvent(new Event("resize"));
+    expect(panel.dataset.side).toBe("above");
+    picker.destroy();
+  });
+
   it("styles itself from the shared theme tokens, not hard-coded colours", () => {
     const roots = openShadows();
     const field = document.createElement("input");
