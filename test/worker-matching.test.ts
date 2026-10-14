@@ -10,7 +10,7 @@ const details = [
   { id: 2, name: "NAS", url: "http://localhost:8087/login", urlHost: "localhost" },
   { id: 3, name: "Quark", url: "https://localhost:8087", urlHost: "localhost" },
   { id: 4, name: "GitHub", url: "https://github.com", urlHost: "github.com" },
-].map((entry) => ({ ...entry, username: `${entry.name}-user`, password: `${entry.name}-secret`, totpSecret: "" }));
+].map((entry) => ({ ...entry, username: `${entry.name}-user`, password: `${entry.name}-secret`, totpSecret: entry.id === 2 ? "JBSWY3DPEHPK3PXP" : "" }));
 
 const summaries = details.map(({ id, name, urlHost }) => ({ id, name, urlHost, folderId: null, createdAt: "", updatedAt: "v1" }));
 
@@ -67,6 +67,19 @@ describe("matching logins to the page by origin", () => {
       { id: 2, kind: "exact", where: "localhost:8087/login", note: "" },
       { id: 1, kind: "otherPort", where: "localhost:8099/basic.html", note: "Different port" },
       { id: 3, kind: "otherScheme", where: "https://localhost:8087", note: "Saved for https" },
+    ]);
+  });
+
+  it("says which matches have a one-time code, so the popup offers it only there", async () => {
+    await startWorker();
+    const reply = (await fake.send({ type: "matches", pageUrl: "http://localhost:8087/login" }, popup)) as {
+      ok: true;
+      value: readonly { id: number; hasTotp?: boolean }[];
+    };
+    expect(reply.value.map(({ id, hasTotp }) => ({ id, hasTotp }))).toEqual([
+      { id: 2, hasTotp: true },
+      { id: 1, hasTotp: false },
+      { id: 3, hasTotp: false },
     ]);
   });
 

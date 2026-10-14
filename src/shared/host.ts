@@ -55,7 +55,12 @@ export type SiteMatch = EntrySummary &
     where: string;
     // Why a fallback is only a fallback; empty for exact and site matches.
     note: string;
+    // Whether the entry has a one-time code; missing when the worker couldn't look the entry up.
+    hasTotp?: boolean;
   }>;
+
+// Offer "Copy one-time code" unless the entry is known to have none.
+export const mayHaveOtp = (match: SiteMatch): boolean => match.hasTotp !== false;
 
 export const isFallback = (match: SiteMatch): boolean => match.kind === "otherPort" || match.kind === "otherScheme";
 

@@ -4,6 +4,7 @@ import {
   hostOf,
   insecureServerWarning,
   isFallback,
+  mayHaveOtp,
   needsInsecureConfirmation,
   searchEntries,
   serverTransport,
@@ -337,7 +338,7 @@ const matchCard = (entry: SiteMatch, index: number): HTMLElement => {
       h("div", { className: "name" }, entry.name),
       h("div", { className: "mono muted small" }, entry.note === "" ? entry.where : `${entry.where} · ${entry.note}`),
     ),
-    iconButton(`Copy one-time code for ${entry.name}`, icons.clock, () => void copyCode(entry)),
+    mayHaveOtp(entry) ? iconButton(`Copy one-time code for ${entry.name}`, icons.clock, () => void copyCode(entry)) : null,
     h("button", { className: first ? "fill primary" : "fill", type: "button", onclick: (() => void fillEntry(entry)) as EventListener }, "Fill"),
   );
 };

@@ -41,9 +41,10 @@ import {
 
 const api = createApi((input, init) => fetch(input, init));
 const entriesCache = createCache<readonly EntrySummary[]>(30_000);
-// Each entry's full URL, which the list leaves out, so matches can be ranked by origin. Kept in memory only
-// and dropped with the list; an edited entry gets a new updatedAt and is looked up again.
-const entryUrls = new Map<number, Readonly<{ updatedAt: string; url: string }>>();
+// Each entry's full URL and whether it has a one-time code, which the list leaves out, so matches can be
+// ranked by origin and the popup offers a code only where there is one. Kept in memory only and dropped with
+// the list; an edited entry gets a new updatedAt and is looked up again.
+const entryUrls = new Map<number, Readonly<{ updatedAt: string; url: string; hasTotp: boolean }>>();
 
 const forgetEntries = (): void => {
   entriesCache.clear();
@@ -118,7 +119,11 @@ const learnUrls = async (candidates: readonly EntrySummary[]): Promise<void> => 
     missing.map(async (entry) => {
       const detail = await withConnection((conn) => api.getEntry(conn, entry.id));
       if (detail.ok) {
-        entryUrls.set(entry.id, { updatedAt: entry.updatedAt, url: detail.value.url });
+        entryUrls.set(entry.id, {
+          updatedAt: entry.updatedAt,
+          url: detail.value.url,
+          hasTotp: parseOtpSecret(detail.value.totpSecret) !== null,
+        });
       }
     }),
   );
@@ -131,7 +136,12 @@ const matchesFor = async (pageUrl: string): Promise<Result<readonly SiteMatch[]>
   }
   const pageHost = hostOf(pageUrl);
   await learnUrls(result.value.filter((entry) => hostMatches(entry.urlHost, pageHost)));
-  return ok(matchEntries(result.value, pageUrl, knownUrl));
+  return ok(
+    matchEntries(result.value, pageUrl, knownUrl).map((match) => {
+      const known = entryUrls.get(match.id);
+      return known?.updatedAt === match.updatedAt ? { ...match, hasTotp: known.hasTotp } : match;
+    }),
+  );
 };
 
 const refused = (reason: string) => err({ kind: "refused", reason } as const);
