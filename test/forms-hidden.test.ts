@@ -13,6 +13,8 @@ const field: Box = { left: 20, top: 100, width: 240, height: 32 };
 
 beforeEach(() => {
   boxes.clear();
+  // As in Chrome and Firefox, the content script can read closed shadow roots (none here).
+  vi.stubGlobal("chrome", { ...chrome, dom: { openOrClosedShadowRoot: (host: HTMLElement) => host.shadowRoot } });
   Object.defineProperty(Element.prototype, "checkVisibility", { value: () => true, configurable: true, writable: true });
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
     const box = boxes.get(this.id) ?? (this.localName === "input" ? field : page);

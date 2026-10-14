@@ -16,11 +16,17 @@ import {
 // Each fixture under test/fixtures/forms tags its fields with data-fx; see the README there.
 const fixtures = join(import.meta.dirname, "fixtures", "forms");
 
+// Closed roots, for the extension-only API that reads them (chrome.dom.openOrClosedShadowRoot).
+const closedRoots = new WeakMap<Element, ShadowRoot>();
+
 // jsdom doesn't parse declarative shadow DOM, so attach <template shadowrootmode> roots by hand.
 const attachShadowRoots = (scope: ParentNode): void =>
   scope.querySelectorAll<HTMLTemplateElement>("template[shadowrootmode]").forEach((template) => {
     const host = template.parentElement as HTMLElement;
     const shadow = host.attachShadow({ mode: template.getAttribute("shadowrootmode") === "closed" ? "closed" : "open" });
+    if (shadow.mode === "closed") {
+      closedRoots.set(host, shadow);
+    }
     shadow.append(template.content);
     template.remove();
     attachShadowRoots(shadow);
@@ -52,6 +58,7 @@ const roughBox = (element: Element): DOMRect => {
 };
 
 beforeEach(() => {
+  vi.stubGlobal("chrome", { ...chrome, dom: { openOrClosedShadowRoot: (host: HTMLElement) => host.shadowRoot ?? closedRoots.get(host) ?? null } });
   Object.defineProperty(Element.prototype, "checkVisibility", { value: () => true, configurable: true });
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
     return roughBox(this);
@@ -61,6 +68,7 @@ beforeEach(() => {
 afterEach(() => {
   delete (Element.prototype as Partial<Element>).checkVisibility;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const load = (name: string): Document => {
@@ -126,6 +134,7 @@ const corpus: Readonly<Record<string, Expected>> = {
   },
   "shadow-dom-form.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "shadow-dom-inputs.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
+  "shadow-dom-slotted.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "two-step-identifier.html": { passwords: [], usernames: {}, standalone: "user", otp: [], newPasswords: [] },
   "two-step-identifier-unmarked.html": { passwords: [], usernames: {}, standalone: "user", otp: [], newPasswords: [] },
   "two-step-identifier-formless.html": { passwords: [], usernames: {}, standalone: "user", otp: [], newPasswords: [] },
@@ -245,6 +254,12 @@ describe("filling and capturing fixtures", () => {
     const doc = load("shadow-dom-inputs.html");
     expect(fillLogin(doc, credentials).filled).toBe(true);
     expect([field("user").value, field("pw").value]).toEqual(["alice@example.com", "hunter2!"]);
+  });
+
+  it("fills a login slotted into a closed shadow root, not the collapsed panel's field", () => {
+    const doc = load("shadow-dom-slotted.html");
+    expect(fillLogin(doc, credentials).filled).toBe(true);
+    expect([field("user").value, field("pw").value, field("collapsed-pw").value]).toEqual(["alice@example.com", "hunter2!", ""]);
   });
 
   it("fills the identifier step of a two-step login, not the newsletter box", () => {

@@ -1,0 +1,15 @@
+<!-- A sign-in card component with a closed shadow root that slots the page's own light-DOM fields into its body.
+     A collapsed "more options" panel in the card slots a second password field that the user can't see yet. -->
+<sign-in-card>
+  <template shadowrootmode="closed">
+    <header part="title">Sign in</header>
+    <div class="body" style="padding: 16px"><slot></slot></div>
+    <div class="more" style="overflow-y: hidden; height: 0px"><slot name="more"></slot></div>
+  </template>
+  <form action="/login" method="post">
+    <input type="email" name="email" autocomplete="username" data-fx="user">
+    <input type="password" name="password" autocomplete="current-password" data-fx="pw">
+    <button type="submit">Sign in</button>
+  </form>
+  <input type="password" name="recovery" slot="more" data-fx="collapsed-pw">
+</sign-in-card>

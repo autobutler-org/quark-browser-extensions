@@ -3,9 +3,55 @@ import type { Credentials } from "../shared/types";
 
 const usernameTypes = new Set(["text", "email", "tel", ""]);
 
-// The parent in the composed tree, so checks walk out of an open shadow root into its host.
-const parentOf = (element: Element): Element | null =>
-  element.parentElement ?? (element.getRootNode() as Partial<ShadowRoot>).host ?? null;
+// A host's shadow root, open or closed. Content scripts may read closed ones: Chrome through chrome.dom, Firefox
+// through Element.openOrClosedShadowRoot. Undefined when neither is there to ask, or the browser refuses.
+const shadowRootOf = (host: Element): ShadowRoot | null | undefined => {
+  if (host.shadowRoot !== null) {
+    return host.shadowRoot;
+  }
+  try {
+    const firefox = (host as Partial<{ openOrClosedShadowRoot: () => ShadowRoot | null }>).openOrClosedShadowRoot;
+    if (typeof firefox === "function") {
+      return firefox.call(host);
+    }
+    const dom = (globalThis as Partial<{ chrome: Partial<typeof chrome> }>).chrome?.dom;
+    if (typeof dom?.openOrClosedShadowRoot === "function") {
+      return host instanceof HTMLElement ? dom.openOrClosedShadowRoot(host) : null;
+    }
+  } catch {
+    // Treated as unreadable.
+  }
+  return undefined;
+};
+
+// The slot a light-DOM element is drawn in (#139), and whether that could be told: assignedSlot is null for a
+// closed root, so its slots are searched instead.
+type Slotting = Readonly<{ slot: HTMLSlotElement | null; known: boolean }>;
+
+const slotting = (element: Element, host: Element | null): Slotting => {
+  if (element.assignedSlot !== null || host === null || host.shadowRoot !== null) {
+    return { slot: element.assignedSlot, known: true };
+  }
+  const cached = pass?.slots.get(element);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const root = shadowRootOf(host);
+  const slot = root?.querySelectorAll("slot") ?? [];
+  const found: Slotting = {
+    slot: [...slot].find((candidate) => candidate.assignedElements().includes(element)) ?? null,
+    known: root !== undefined,
+  };
+  pass?.slots.set(element, found);
+  return found;
+};
+
+// The parent in the flat tree, as the page is drawn: a slotted element's slot, else its parent, else the host of
+// the shadow root it is in. So checks walk through the slot's wrappers and out of shadow roots.
+const parentOf = (element: Element): Element | null => {
+  const parent = element.parentElement;
+  return slotting(element, parent).slot ?? parent ?? (element.getRootNode() as Partial<ShadowRoot>).host ?? null;
+};
 
 const ancestors = (element: Element): readonly Element[] => {
   const found: Element[] = [];
@@ -23,6 +69,7 @@ type Pass = Readonly<{
   shown: Map<Element, boolean>;
   unclipped: Map<Element, boolean>;
   exposed: Map<Element, boolean>;
+  slots: Map<Element, Slotting>;
   checks: Map<object, Map<HTMLInputElement, boolean>>;
 }>;
 let pass: Pass | null = null;
@@ -32,7 +79,7 @@ export const onePass = <T>(detect: () => T): T => {
   if (pass !== null) {
     return detect();
   }
-  pass = { inputs: new Map(), styles: new Map(), opacity: new Map(), shown: new Map(), unclipped: new Map(), exposed: new Map(), checks: new Map() };
+  pass = { inputs: new Map(), styles: new Map(), opacity: new Map(), shown: new Map(), unclipped: new Map(), exposed: new Map(), slots: new Map(), checks: new Map() };
   try {
     return detect();
   } finally {
@@ -525,6 +572,23 @@ const isPassword = (input: HTMLInputElement): boolean => input.type === "passwor
 
 export const passwordFields = (doc: Document): readonly HTMLInputElement[] => inputs(doc).filter(isPassword);
 
+// Whether every step from the field to the page could be read: false when the field is light DOM under a host
+// whose closed shadow root the browser won't let this script open, so its slot's wrappers are unknown.
+const flatTreeKnown = (field: Element): boolean =>
+  ancestors(field).every((node) => slotting(node, node.parentElement).known);
+
+// The closed-shadow policy (#139): a fill with no target the user chose (the popup's Fill, the shortcut, the
+// context menu) takes a field whose flat tree can't be read only if a hit test at its centre finds it. Without
+// layout (jsdom) there is nothing to test against.
+const provablyShown = (field: HTMLInputElement): boolean => {
+  if (flatTreeKnown(field) || !("checkVisibility" in field)) {
+    return true;
+  }
+  const { left, top, width, height } = field.getBoundingClientRect();
+  const root = field.getRootNode() as Partial<DocumentOrShadowRoot>;
+  return root.elementFromPoint?.(left + width / 2, top + height / 2) === field;
+};
+
 const isUsernameCandidate = perPass(
   (input) =>
     usernameTypes.has(input.type) &&
@@ -646,17 +710,17 @@ export const fillLogin = (
     setValue(target, credentials.username);
     return { filled: true, form: target.form };
   }
-  const password = paired ?? passwordFields(doc)[0] ?? null;
+  const password = paired ?? passwordFields(doc).find(provablyShown) ?? null;
   if (password === null) {
     const username = standaloneUsernameField(doc);
-    if (username === null || credentials.username === "") {
+    if (username === null || credentials.username === "" || !provablyShown(username)) {
       return { filled: false, form: null };
     }
     setValue(username, credentials.username);
     return { filled: true, form: username.form };
   }
   const username = usernameFieldFor(password);
-  if (username !== null && !username.readOnly && credentials.username !== "") {
+  if (username !== null && !username.readOnly && credentials.username !== "" && (target !== null || provablyShown(username))) {
     setValue(username, credentials.username);
   }
   setValue(password, credentials.password);
