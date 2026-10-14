@@ -1,4 +1,5 @@
-import { deriveAuthKey, fromBase64, upgradeLedger, type DeriveAuthKey, type UpgradeLedger } from "./authKey";
+import { fromBase64, upgradeLedger, type DeriveAuthKey, type UpgradeLedger } from "./authKey";
+import { deriveAuthKey } from "./deriveAuthKey";
 import { extensionTooOld, legacyAgain, legacyInsecure, legacyUpgradeNeeded, quarkTooOld } from "./errors";
 import { serverTransport } from "./host";
 import {

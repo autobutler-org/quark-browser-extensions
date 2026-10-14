@@ -1,4 +1,5 @@
-import { accountId, consentTtlMs, createUpgradeLedger, deriveAuthKey, fromBase64 } from "../src/shared/authKey";
+import { accountId, consentTtlMs, createUpgradeLedger, fromBase64 } from "../src/shared/authKey";
+import { deriveAuthKey } from "../src/shared/deriveAuthKey";
 import { fakeChrome } from "./fakeChrome";
 
 describe("deriveAuthKey", () => {
