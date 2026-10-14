@@ -66,7 +66,7 @@ function checkVersion(env) {
     if (!existsSync(path)) fail(`${path} is missing; run \`wxt zip\` for every browser first`);
     const version = readVersion(path);
     if (version !== expected) {
-      fail(`${dir}/manifest.json has version ${version} but package.json has ${expected}; bump both (see .github/RELEASING.md)`);
+      fail(`${dir}/manifest.json has version ${version} but package.json has ${expected}; rebuild after bumping package.json (see .github/RELEASING.md)`);
     }
   }
   if (env.GITHUB_REF_TYPE === "tag") {

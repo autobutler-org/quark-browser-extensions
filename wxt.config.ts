@@ -18,8 +18,8 @@ export default defineConfig({
   // The entrypoints add background, content_scripts, action.default_popup and options_ui.
   manifest: ({ browser }) => ({
     // __MSG_<key>__ reads static/_locales/<locale>/messages.json, like chrome.i18n.getMessage in the code.
+    // No version here: WXT takes it from package.json.
     name: "__MSG_extName__",
-    version: "0.1.0",
     description: "__MSG_extDescription__",
     default_locale: "en",
     ...(browser === "firefox" ? {} : { minimum_chrome_version: "116" }),

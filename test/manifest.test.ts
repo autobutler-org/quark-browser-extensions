@@ -20,6 +20,12 @@ describe("manifest", () => {
     }
   });
 
+  it("leaves the version to WXT, which reads it from package.json", async () => {
+    for (const browser of ["chrome", "firefox", "edge"]) {
+      expect((await manifestFor(browser)).version).toBeUndefined();
+    }
+  });
+
   it("adds the Firefox-only keys to Firefox alone", async () => {
     const firefox = await manifestFor("firefox");
     expect(firefox.host_permissions).toEqual(["https://*/*", "http://*/*"]);
