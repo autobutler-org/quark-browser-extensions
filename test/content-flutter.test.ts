@@ -22,7 +22,7 @@ vi.mock("../src/content/picker", () => ({
 vi.mock("../src/content/savebar", () => ({ showSaveBar: () => undefined }));
 
 const entry: EntrySummary = { id: 7, name: "Test basic login", urlHost: "localhost", folderId: null, createdAt: "", updatedAt: "" };
-const credentials = { username: "admin", password: "correct horse battery", autoSubmit: false };
+const credentials = { username: "admin", password: "correct horse battery", autoSubmit: false as boolean };
 
 type Box = Readonly<{ left: number; top: number; width: number; height: number }>;
 const viewport: Box = { left: 0, top: 0, width: 1280, height: 800 };
@@ -152,6 +152,36 @@ describe("Quark's own Flutter login (#159)", () => {
     await start();
     await expect(command({ type: "fill", entryId: 7, entryUrl: location.href, entryHost: location.host })).resolves.toEqual({ ok: true, value: null });
     expect([byTag("user").value, byTag("pw").value]).toEqual(["admin", "correct horse battery"]);
+  });
+});
+
+describe("the fill into Flutter's fields", () => {
+  it("waits for Flutter to take focus before it writes, and submits only after both fields hold the login", async () => {
+    await start();
+    const order: string[] = [];
+    byTag("user").addEventListener("input", () => order.push(`user=${byTag("user").value}`));
+    byTag("pw").addEventListener("input", () => order.push(`pw=${byTag("pw").value}`));
+    byTag("pw").form?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      order.push(`submit:${byTag("user").value}/${byTag("pw").value}`);
+    });
+    credentials.autoSubmit = true;
+    try {
+      const reply = command({ type: "fill", entryId: 7, entryUrl: location.href, entryHost: location.host });
+      expect([byTag("user").value, byTag("pw").value]).toEqual(["", ""]);
+      await expect(reply).resolves.toEqual({ ok: true, value: null });
+    } finally {
+      credentials.autoSubmit = false;
+    }
+    expect(order).toEqual(["user=admin", "pw=correct horse battery", "submit:admin/correct horse battery"]);
+  });
+
+  it("doesn't write a field the page hides while Flutter takes focus, and says nothing was filled", async () => {
+    await start();
+    byTag("user").addEventListener("focus", () => canvas()?.remove(), { once: true });
+    const reply = await command({ type: "fill", entryId: 7, entryUrl: location.href, entryHost: location.host });
+    expect(reply).toMatchObject({ ok: false, error: { kind: "refused" } });
+    expect([byTag("user").value, byTag("pw").value]).toEqual(["", ""]);
   });
 });
 

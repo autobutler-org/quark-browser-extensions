@@ -801,7 +801,7 @@ export const identifierField = (doc: Document): HTMLInputElement | null => {
   return field === null || field.readOnly ? null : field;
 };
 
-export const setValue = (input: HTMLInputElement, value: string): void => {
+const write = (input: HTMLInputElement, value: string): void => {
   const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input) as object, "value");
   input.focus();
   if (descriptor?.set === undefined) {
@@ -813,6 +813,65 @@ export const setValue = (input: HTMLInputElement, value: string): void => {
   input.dispatchEvent(new Event("change", { bubbles: true }));
   input.blur();
 };
+
+// Whether a field is typed into through a canvas that paints it: shown only by overCanvas.
+const drawnByCanvas = (input: HTMLInputElement): boolean =>
+  "checkVisibility" in input && opacityOf(input) < minOpacity && overCanvas(input);
+
+// Two frames, or 150 ms where the page doesn't paint (a tab in the background).
+const frames = (view: Window): Promise<void> =>
+  new Promise((resolve) => {
+    const timer = view.setTimeout(resolve, 150);
+    view.requestAnimationFrame(() =>
+      view.requestAnimationFrame(() => {
+        view.clearTimeout(timer);
+        resolve();
+      }),
+    );
+  });
+
+// Writes still to come, in order, and how many; resolves to whether every one went in.
+let writes: Promise<boolean> = Promise.resolve(true);
+let queued = 0;
+
+// Puts a value in a field the way typing would. A canvas-drawn app (#159) keeps its own text state, and only
+// takes input into a field once its framework has focused it, a frame or two after the DOM focus: so such a field
+// is focused first and written once the app has had those frames. Every write after one of those waits its turn,
+// so the fields fill in order, and each still has to be a login field when its turn comes: once one isn't, the
+// rest are dropped. filling() says when they are done.
+export const setValue = (input: HTMLInputElement, value: string): void => {
+  const view = input.ownerDocument.defaultView;
+  if (queued === 0 && (view === null || !drawnByCanvas(input))) {
+    write(input, value);
+    return;
+  }
+  if (queued === 0) {
+    writes = Promise.resolve(true);
+  }
+  queued += 1;
+  writes = writes
+    .then(async (before) => {
+      if (!before) {
+        return false;
+      }
+      if (view !== null && drawnByCanvas(input)) {
+        input.focus();
+        await frames(view);
+      }
+      // The page had time to change: write nothing more once a field it was given no longer shows.
+      if (!isLoginField(input)) {
+        return false;
+      }
+      write(input, value);
+      return true;
+    })
+    .finally(() => {
+      queued -= 1;
+    });
+};
+
+// Resolves once the queued writes are done: true if every value went in, false if the page hid a field meanwhile.
+export const filling = (): Promise<boolean> => writes;
 
 export type FillOutcome = Readonly<{ filled: boolean; form: HTMLFormElement | null }>;
 

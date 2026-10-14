@@ -5,6 +5,7 @@ import {
   fillLogin,
   fillNewPassword,
   fillOtp,
+  filling,
   identifierField,
   isNewPasswordField,
   otpFields,
@@ -359,9 +360,12 @@ describe("filling and capturing fixtures", () => {
     expect(fillLogin(doc, credentials, field("bait-pw")).filled).toBe(false);
   });
 
-  it("fills both fields of Quark's own Flutter login, typed into through its transparent semantics tree (#159)", () => {
+  it("fills both fields of Quark's own Flutter login, typed into through its transparent semantics tree (#159)", async () => {
     const doc = load("login-flutter-quark.html");
     expect(fillLogin(doc, credentials).filled).toBe(true);
+    // Flutter takes typing into a field a frame or two after it has focus, so the values go in then.
+    expect([field("user").value, field("pw").value]).toEqual(["", ""]);
+    await filling();
     expect([field("user").value, field("pw").value]).toEqual(["alice@example.com", "hunter2!"]);
   });
 
