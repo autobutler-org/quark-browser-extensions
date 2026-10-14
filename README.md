@@ -58,8 +58,9 @@ extension can't reach a server Chrome doesn't trust.
 - If Firefox hasn't granted access to websites, the popup shows **Allow** so the extension can fill logins there.
 - The other-password-managers check can turn off Firefox's own password saving, but not other add-ons: Firefox
   doesn't allow that, so it points you to `about:addons`.
-- Logins inside iframes don't fill yet: Firefox lacks `location.ancestorOrigins`, which the in-frame safety check
-  needs, so it refuses rather than guess.
+- Firefox lacks `location.ancestorOrigins`, so for a login inside a same-site iframe the frame checks the top page
+  against the URL the service worker got from the top frame itself, instead of asking the browser. Chrome keeps
+  using `ancestorOrigins`.
 
 CI lints the Firefox build with `web-ext lint`; the end-to-end test runs in Chromium only. Before a Firefox release,
 check by hand: connect, unlock, fill from the popup and the in-field button, a one-time code, save a new login, and

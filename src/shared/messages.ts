@@ -67,6 +67,9 @@ export type FillCommand = Readonly<{
   entryUrl: string;
   entryHost: string;
   autoSubmit: boolean;
+  // The top frame's URL, verified by the service worker with frame 0. Frames use it only where
+  // location.ancestorOrigins is missing (Firefox).
+  topUrl?: string;
 }>;
 
 export type PageCommand =

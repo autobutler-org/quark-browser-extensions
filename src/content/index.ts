@@ -16,6 +16,7 @@ import {
   passwordFields,
   submit,
 } from "./forms";
+import { frameTopUrl } from "./frame";
 import { attachPicker, type PickerHandle } from "./picker";
 
 const decorated = new WeakMap<HTMLInputElement, PickerHandle>();
@@ -101,14 +102,8 @@ const scan = async (): Promise<void> => {
 
 const isTop = window === window.top;
 
-const topUrl = (): string => {
-  if (isTop) {
-    return location.href;
-  }
-  const origins = location.ancestorOrigins;
-  const top = origins === undefined || origins.length === 0 ? undefined : origins.item(origins.length - 1);
-  return top ?? "";
-};
+const topUrl = (verifiedTopUrl: string | undefined): string =>
+  frameTopUrl(isTop, location.href, location.ancestorOrigins as DOMStringList | undefined, verifiedTopUrl);
 
 const hasLoginFields = (): boolean => passwordFields(document).length > 0 || otpFields(document).length > 0;
 
@@ -130,7 +125,7 @@ const handleFill = (command: FillCommand): PageReply | null => {
   if (!frameMayFill(location.href, location.href, command.entryUrl, command.entryHost)) {
     return isTop ? err({ kind: "refused", reason: "This login doesn't belong to this site." }) : null;
   }
-  if (!frameMayFill(location.href, topUrl(), command.entryUrl, command.entryHost)) {
+  if (!frameMayFill(location.href, topUrl(command.topUrl), command.entryUrl, command.entryHost)) {
     return err({ kind: "refused", reason: "This login form is embedded in another site, so Quark Vault won't fill it." });
   }
   return fill(command.credentials, command.autoSubmit, null)
