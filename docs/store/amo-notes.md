@@ -39,24 +39,33 @@ worker, `options_ui`, the gecko id and `host_permissions`; the JavaScript is the
 same as Chrome's. The content script is one IIFE file. The package has no
 sourcemaps.
 
-**Why a pure-JavaScript Argon2.** Quark v0.47.0+ never receives the account
-password: the client sends an auth key, Argon2id(password, salt, t=3, m=64 MiB,
-p=1) then HKDF-SHA256 with info "auth", exactly as the Quark app derives it
-(`src/shared/deriveAuthKey.ts`). The add-on computes it with `@noble/hashes`, a
-dependency-free, audited, pure-JavaScript library, rather than a WebAssembly
-build of Argon2. WebAssembly would need `'wasm-unsafe-eval'` in the extension
-pages' content security policy and ship a binary reviewers can't read. With pure
-JS the policy stays `script-src 'self'; object-src 'none'; base-uri 'none'` and
-every line that touches the password is readable in the sources. It runs in the
-background script only, on sign-in.
+**Why a pure-JavaScript Argon2.** Quark v0.47.0+ normally receives an auth key,
+not the account password: Argon2id(password, salt, t=3, m=64 MiB, p=1) then
+HKDF-SHA256 with info "auth", exactly as the Quark app derives it
+(`src/shared/deriveAuthKey.ts`). An account the Quark marks legacy needs the
+password beside the key for an upgrade attempt. The add-on asks for an explicit,
+single-use consent that expires after five minutes, refuses the password over
+non-loopback plain HTTP, and refuses it after that account has signed in with a
+key. The add-on computes the key with `@noble/hashes`, a dependency-free,
+audited, pure-JavaScript library, rather than a WebAssembly build of Argon2.
+WebAssembly would need `'wasm-unsafe-eval'` in the extension pages' content
+security policy and ship a binary reviewers can't read. With pure JS the policy
+stays `script-src 'self'; object-src 'none'; base-uri 'none'` and every line that
+touches the password is readable in the sources. It runs in the background
+script only, on sign-in.
 
 **Permissions.**
 - `storage`: settings, the never-save site list, and the session token (in
   `storage.session`; with "Stay signed in", an AES-GCM ciphertext in
-  `storage.local` whose non-extractable key is in the add-on's IndexedDB).
+  `storage.local` whose non-extractable key is in the add-on's IndexedDB). A
+  single-use legacy-upgrade consent is also kept in `storage.session`; hashes
+  of accounts already using auth keys are kept in IndexedDB.
 - `activeTab`: the popup, shortcut and context menu act on the current tab.
-- `idle`: lock the vault when the screen locks (Chrome) or after the idle time elapses (Firefox), or after a chosen idle time if turned on in the options.
-- `contextMenus`: "Quark Vault › Fill …" and "Generate password" on editable fields.
+- `idle`: on Firefox, lock after the selected 5, 15 or 30 minutes idle because
+  Firefox cannot report a screen lock. (Chrome locks on screen lock and has
+  optional idle locking.)
+- `contextMenus`: "Quark Vault › Fill …" and "Generate password" on editable
+  fields; generation targets only the password field and frame the user chose.
 - `privacy` (optional, asked on a click in the options page): read and turn off
   Firefox's own password saving.
 - `management` (optional, asked on a click in the options page): list other
@@ -65,8 +74,10 @@ background script only, on sign-in.
 - `host_permissions` `http://*/*`, `https://*/*`, and the content script on the
   same pages: a password manager must find login fields on any site. The
   content script receives a password only after the background has checked the
-  frame's browser-reported URL against the login's site. If the user withholds
-  website access, the popup offers an "Allow" button that requests it.
+  frame's browser-reported URL, scheme and port against the saved login. An
+  optional submit runs only to the page's own site and never downgrades HTTPS
+  to HTTP. If the user withholds website access, the popup offers an "Allow"
+  button that requests it.
 
 **Data collection.** The manifest declares `data_collection_permissions:
 { required: ["none"] }`. The add-on does send usernames, passwords, the vault

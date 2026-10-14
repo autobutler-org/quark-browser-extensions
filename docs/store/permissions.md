@@ -26,16 +26,16 @@ for host access; AMO asks in the reviewer notes ([amo-notes.md](amo-notes.md)
 repeats these).
 
 **storage**
-> Stores the user's settings (inline button, badge, auto-submit, idle locking), the list of sites the user chose never to save logins for, and the signed-in session. The session token lives in storage.session, which is memory only and closed to content scripts. If the user ticks "Stay signed in", an AES-GCM encrypted copy of the token is kept in storage.local; its key is non-extractable and lives in the extension's IndexedDB. No password or decrypted vault entry is ever stored.
+> Stores the user's settings (inline button, badge, auto-submit, idle locking), the list of sites the user chose never to save logins for, and the signed-in session. The session token lives in storage.session, which is memory only and closed to content scripts. A single-use consent to upgrade an older account also lives there and is valid for five minutes. If the user ticks "Stay signed in", an AES-GCM encrypted copy of the token is kept in storage.local; its key is non-extractable and lives in the extension's IndexedDB. No password or decrypted vault entry is ever stored.
 
 **activeTab**
 > Lets the popup, the keyboard shortcut and the right-click menu work on the page the user is on: they read that tab's address to find its logins and send the fill to it. The extension has no tabs permission and cannot see other tabs' addresses.
 
 **idle**
-> Locks the vault when the computer's screen locks (Chrome), or after the idle time elapses (Firefox). If the user turns it on in the options, it also locks after 5, 15 or 30 minutes idle.
+> On Chrome, locks the vault whenever the screen locks and, if the user turns on idle locking, after 5, 15 or 30 minutes idle. Firefox cannot report a screen lock, so there idle locking is always on and locks the vault after the selected 5, 15 or 30 minutes.
 
 **contextMenus**
-> Adds a "Quark Vault" item to the right-click menu on editable fields, with "Fill <login>" for the site's logins and "Generate password" for the field the user clicked.
+> Adds a "Quark Vault" item to the right-click menu on editable fields, with "Fill <login>" for the site's logins and "Generate password" for the password field the user clicked. A generated password goes only to that frame and field (and its confirmation when it is a new-password field) and is adjusted to the field's rules.
 
 **privacy (optional)**
 > Requested only when the user clicks "Check" for the browser's built-in password manager in the options page. It reads and, if the user clicks "Turn off", disables the browser's own password saving, so two password managers don't offer to save the same login.
@@ -44,7 +44,7 @@ repeats these).
 > Requested only when the user clicks "Check" for other password-manager extensions in the options page. It lists installed extensions whose names match known password managers, and in Chrome turns one off when the user clicks "Turn off" next to it. Firefox doesn't allow that, so there the page only lists them and points to about:addons.
 
 **Host access: content script on all http and https pages** (Chrome's "host permission" box; Firefox's `host_permissions`)
-> A password manager has to work on whatever site the user signs in to, so the content script runs on every http and https page and frame. It looks for login, sign-up and one-time-code fields, draws the Quark button in them when the vault has a login for that site, fills a login the user picks, and notices a submitted sign-in so it can offer to save it. It never receives a password until the background has checked the frame's browser-reported address against the login's site. It reads nothing else from the page and sends nothing from the page anywhere except a submitted username and password, to the background, so it can offer to save them.
+> A password manager has to work on whatever site the user signs in to, so the content script runs on every http and https page and frame. It looks for login, sign-up and one-time-code fields, draws the Quark button, fills a login or generated password the user picks, and notices a submitted sign-in so it can offer to save it. It inspects only the form fields, labels and controls needed for those jobs. It never receives a saved password until the background has checked the frame's browser-reported address against the login's site and its saved scheme and port. Auto-submit is limited to a form action on the page's own site and never downgrades HTTPS to HTTP. Submitted credentials go only to the background, where they are held briefly for the save offer.
 >
 > Firefox only: Firefox lets the user withhold access to websites. When it is withheld, the popup offers an "Allow" button that asks for these host permissions. Chrome grants the content script's access at install and needs no host_permissions.
 
@@ -64,7 +64,8 @@ All of it stays in the browser profile. Nothing is stored on any server we run.
 | Last Quark address signed in to | Extension IndexedDB | Until replaced |
 | Settings | `storage.local` | Until changed |
 | Sites the user chose "Never for this site" on | `storage.local` (hosts only) | Until removed in the options |
-| Which accounts already sign in with an auth key | `storage.local`, as SHA-256 hashes of server and username | Kept |
+| One-time consent to upgrade a legacy account | `storage.session`, as a SHA-256 hash of server and username plus its time | Valid for five minutes; removed by the next legacy-upgrade check or when the browser quits |
+| Which accounts already sign in with an auth key | Extension IndexedDB, as SHA-256 hashes of server and username | Until the extension or its site data is removed |
 | A sign-in captured on submit (username and password) | Background memory, per tab | Two minutes at most, or until the user answers the save bar, the tab navigates on, or closes |
 | A generated password shown in the popup | Popup memory | Until dismissed, the vault locks, or the popup closes |
 
@@ -78,7 +79,7 @@ with `credentials: "omit"` (no cookies):
 
 | Request | Sends |
 | --- | --- |
-| `GET /auth/salt`, `POST /auth/login` | Username and an Argon2id + HKDF auth key derived from the account password. The password itself only once, for an account the Quark marks legacy, after the user confirms, and never over non-loopback plain http |
+| `GET /auth/salt`, `POST /auth/login` | Username and an Argon2id + HKDF auth key derived from the account password. For an account the Quark marks legacy, the password accompanies the key only after a single-use consent; never over non-loopback plain http, and never after that account has signed in with a key |
 | `POST /auth/logout` | The session token |
 | `GET /vault/status`, `POST /vault/lock` | The session token |
 | `POST /vault/unlock` | The vault password, once |

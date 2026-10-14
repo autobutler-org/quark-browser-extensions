@@ -4,9 +4,10 @@ A dry run of the packaging in `.github/workflows/release.yml` on 2026-10-14, at
 `bea52b4` (version 0.1.0, WXT 0.21.4). It asks one question: would the
 stores accept the zips? Nothing was uploaded.
 
-**Result: all four zips can be submitted.** Nothing failed. `web-ext lint`
-gives two warnings about the Firefox minimum version, filed as
-[#153](https://github.com/autobutler-org/quark-browser-extensions/issues/153).
+**Result: all four zips could be submitted.** Nothing failed. The recorded run
+gave two Firefox-minimum-version warnings; the current Firefox 140 minimum fixed
+the desktop warning, leaving only the intentional Firefox-for-Android warning
+described below.
 
 ## What was run
 
@@ -22,6 +23,9 @@ node scripts/verify-zip.js --rebuild-sources
 npx web-ext lint --source-dir .output/firefox-mv3            # listed, as AMO checks it
 npx web-ext lint --source-dir .output/firefox-mv3 --self-hosted
 ```
+
+The zip commands also write the unpacked builds to `.output/chrome-mv3/`,
+`.output/firefox-mv3/` and `.output/edge-mv3/`.
 
 `scripts/verify-zip.js` is new. The build job now runs it after the version
 check (see below).
@@ -106,16 +110,18 @@ the first warning is gone and `verify-zip.js` now refuses a Firefox zip below
 140. The Android warning remains on purpose: the add-on is desktop-only and
 declares no `gecko_android` block (see [store/permissions.md](store/permissions.md)).
 
-## Changes made
+## Changes made and follow-up
 
 - Added `scripts/verify-zip.js` and its tests in `test/zip.test.ts`.
 - Added a step to the build job in `.github/workflows/release.yml`, after the
   version check: `node scripts/verify-zip.js --rebuild-sources`.
-- `wxt.config.ts` is unchanged. Nothing needed fixing.
+- The original dry run did not change `wxt.config.ts`. The later fix for #153
+  set `strict_min_version` to 140.0 and the Vite target to `firefox140`; the
+  verifier now rejects an older Firefox minimum.
 
 ## Not checked here
 
 - Store credentials and the `wxt submit` dry run. That needs the repository
   secrets, so it only runs in Actions.
-- The listing text, screenshots and privacy policy
-  ([docs/store/](store/)).
+- The original run did not check the listing text, screenshots or privacy policy
+  ([docs/store/](store/)); those remain a separate release review.

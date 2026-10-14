@@ -17,9 +17,11 @@ and nowhere else. Those requests are how it does its job:
 - **Signing in:** your username and an authentication key derived from your
   account password on your device (Argon2id, as the Quark app does). Your account
   password itself is not sent. The one exception is an older Quark account that
-  has never had such a key: after you agree, its password is sent once, beside the
-  key, so the Quark can upgrade it. This is never done over an unencrypted
-  connection other than to your own computer.
+  has never had such a key: after you tick a confirmation naming the Quark, its
+  password is sent beside the key for that upgrade attempt. The consent works
+  once, expires after five minutes, and must be given again after a failed
+  attempt. The extension refuses this over an unencrypted connection other than
+  to your own computer, or after it has seen that account sign in with a key.
 - **Unlocking:** your vault password, once, so your Quark can unlock the vault.
 - **Filling and copying:** requests for your vault's list of entries, and for one
   entry's details when you fill or copy it.
@@ -28,8 +30,9 @@ and nowhere else. Those requests are how it does its job:
 - **Generating a password:** the length and kinds of characters you want.
 - **Locking and signing out:** the request to do so.
 
-Each request carries the session token your Quark issued when you signed in. The
-session appears in your Quark under Settings › Sessions, where you can revoke it.
+After sign-in, authenticated requests carry the session token your Quark issued.
+The session appears in your Quark under Settings › Sessions, where you can
+revoke it.
 
 The addresses of the pages you visit are used inside your browser to find
 matching logins. They are not recorded or sent anywhere, except the address of a
@@ -42,8 +45,11 @@ login you choose to save.
   tick "Stay signed in", an encrypted copy is kept on disk so you stay signed in
   after a restart.
 - The address of the last Quark you signed in to.
-- A record of which accounts already sign in with a key, stored as one-way
-  hashes, not names.
+- A record in the extension's IndexedDB of which accounts already sign in with a
+  key, stored as one-way hashes, not names.
+- A single-use legacy-upgrade consent in browser memory. It contains the same
+  kind of hash and a time, is valid for five minutes, and is removed when used
+  or when the browser closes.
 
 It does not store your account password, your vault password, your decrypted
 logins or one-time-code secrets. When you sign in on a website, the username and

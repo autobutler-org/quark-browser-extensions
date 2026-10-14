@@ -56,8 +56,14 @@ Secrets tab, variables on the Variables tab.
 ## First submission to each store
 
 None of the APIs can create a store item, so the first version goes in by hand.
-Build it with `npx wxt zip -b chrome`, `npx wxt zip -b firefox` and
-`npx wxt zip -b edge` (or take the zips from a dry run's artifact).
+After `npm ci`, `npm run package` builds the Chrome and Firefox packages (and
+the Firefox sources archive), and `npx wxt zip -b edge` builds Edge. The
+unpacked Chrome and Firefox builds are `.output/chrome-mv3/` and
+`.output/firefox-mv3/`; the submit-ready files are
+`.output/quark-vault-chrome.zip`, `.output/quark-vault-firefox.zip`,
+`.output/quark-vault-sources.zip` and `.output/quark-vault-edge.zip`. These are
+the same build operations and paths used by the release workflow, or take the
+zips from a dry run's artifact.
 
 All three listings need a privacy policy URL. The extension handles
 credentials, so say plainly that data goes only to the user's own Quark,
@@ -101,7 +107,8 @@ and take the PNGs from `.output/store-screenshots/`.
    on every later version.
 3. Fill in the listing: summary, description, categories, support email or
    site, licence (MIT-0) and privacy policy. The manifest already declares
-   `data_collection_permissions: none`.
+   `data_collection_permissions: none` and supports Firefox 140 and later on
+   desktop; do not select Firefox for Android.
 4. Generate API credentials under "Manage API Keys" and store the JWT issuer
    and secret as the two secrets.
 
