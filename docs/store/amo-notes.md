@@ -85,8 +85,8 @@ password and a session token, but only to the Quark server the user runs and
 enters themselves, which is the add-on's entire purpose. Nothing reaches the
 developer or any third party. If you consider the user's own server to be
 collection, tell us and we'll declare `authenticationInfo` instead. The
-minimum version is Firefox 140, the first that reads this key. The add-on is for
-desktop Firefox only.
+minimum version is Firefox 140 on desktop and Firefox for Android 142, the first
+releases that read this key.
 
 **Testing it.** It needs a Quark server. The repository has an offline mock
 of the Quark API that the end-to-end tests use. WXT leaves `*.spec.ts` files out

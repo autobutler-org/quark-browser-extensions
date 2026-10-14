@@ -1,6 +1,6 @@
 # Firefox parity
 
-The Firefox build supports Firefox 140 and later on desktop (`strict_min_version` 140.0). Checked on Firefox 158.0 (`e2e/.firefox`, linux-stable) against the production build in `.output/firefox-mv3`. `npm run test:e2e:firefox:mock` passed all three smoke tests. The other rows come from a throwaway extension in that same Firefox (content scripts, `permissions.request`, the real toolbar popup, clipboard, alarms, menus, IndexedDB, and `storage.session`). An OS screen lock was not simulated; the screen-lock row is from Firefox 158's idle implementation plus a live `chrome.idle.queryState(60)`.
+The Firefox build supports Firefox 140 and later on desktop (`strict_min_version` 140.0) and Firefox for Android 142 and later (`gecko_android.strict_min_version` 142.0). Checked on Firefox 158.0 (`e2e/.firefox`, linux-stable) against the production build in `.output/firefox-mv3`. `npm run test:e2e:firefox:mock` passed all three smoke tests. The other rows come from a throwaway extension in that same Firefox (content scripts, `permissions.request`, the real toolbar popup, clipboard, alarms, menus, IndexedDB, and `storage.session`). An OS screen lock was not simulated; the screen-lock row is from Firefox 158's idle implementation plus a live `chrome.idle.queryState(60)`.
 
 | Area | Chrome | Firefox | Status |
 | --- | --- | --- | --- |
