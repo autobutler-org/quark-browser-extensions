@@ -200,62 +200,64 @@ const handleCommand = (command: PageCommand): PageReply | string | null => {
   }
 };
 
-chrome.runtime.onMessage.addListener((message: PageCommand, sender, sendResponse) => {
-  if (sender.id !== chrome.runtime.id) {
-    return false;
-  }
-  const reply = handleCommand(message);
-  if (reply !== null) {
-    sendResponse(reply);
-  }
-  return false;
-});
-
-document.addEventListener(
-  "focusin",
-  (event) => {
-    if (event.target instanceof HTMLInputElement) {
-      void ask({ type: "fieldFocused" }).catch(() => null);
-    }
-  },
-  true,
-);
-
-document.addEventListener(
-  "submit",
-  (event) => {
-    if (event.target instanceof HTMLFormElement) {
-      capture(event.target);
-    }
-  },
-  true,
-);
-
-document.addEventListener(
-  "click",
-  (event) => {
-    if (event.target instanceof Element && looksLikeSubmit(event.target)) {
-      capture(event.target.closest("form"));
-    }
-  },
-  true,
-);
-
-document.addEventListener(
-  "keydown",
-  (event) => {
-    if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.type === "password") {
-      capture(event.target.form);
-    }
-  },
-  true,
-);
-
 let timer: ReturnType<typeof setTimeout> | undefined;
 const scheduleScan = (): void => {
   clearTimeout(timer);
   timer = setTimeout(() => void scan(), 400);
 };
 
-new MutationObserver(scheduleScan).observe(document.documentElement, { childList: true, subtree: true });
-void scan();
+export const main = (): void => {
+  chrome.runtime.onMessage.addListener((message: PageCommand, sender, sendResponse) => {
+    if (sender.id !== chrome.runtime.id) {
+      return false;
+    }
+    const reply = handleCommand(message);
+    if (reply !== null) {
+      sendResponse(reply);
+    }
+    return false;
+  });
+
+  document.addEventListener(
+    "focusin",
+    (event) => {
+      if (event.target instanceof HTMLInputElement) {
+        void ask({ type: "fieldFocused" }).catch(() => null);
+      }
+    },
+    true,
+  );
+
+  document.addEventListener(
+    "submit",
+    (event) => {
+      if (event.target instanceof HTMLFormElement) {
+        capture(event.target);
+      }
+    },
+    true,
+  );
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (event.target instanceof Element && looksLikeSubmit(event.target)) {
+        capture(event.target.closest("form"));
+      }
+    },
+    true,
+  );
+
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.type === "password") {
+        capture(event.target.form);
+      }
+    },
+    true,
+  );
+
+  new MutationObserver(scheduleScan).observe(document.documentElement, { childList: true, subtree: true });
+  void scan();
+};

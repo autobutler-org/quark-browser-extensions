@@ -43,7 +43,8 @@ is locked.
 
 ## Install (sideload)
 
-1. Download the `quark-vault-extension` artifact from the latest CI run, or run `npm ci && npm run package`.
+1. Download the `quark-vault-extension` artifact from the latest CI run, or run `npm ci && npm run package`, which
+   writes the zips to `.output/`.
 2. Unzip `quark-vault-chrome.zip`.
 3. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick the unzipped folder.
 4. Click the Quark Vault toolbar button and connect to your Quark (for example `https://quark.local`).
@@ -53,8 +54,9 @@ extension can't reach a server Chrome doesn't trust.
 
 ## Firefox
 
-`npm run package` also builds `quark-vault-firefox.zip` (Firefox 128+). To try it, open `about:debugging` › This Firefox
-› **Load Temporary Add-on** and pick `dist/firefox/manifest.json`. Differences from Chrome:
+`npm run package` also builds `quark-vault-firefox.zip` (Firefox 128+) and `quark-vault-sources.zip`, the source
+archive AMO asks for. To try it, run `npm run build:firefox`, open `about:debugging` › This Firefox › **Load Temporary
+Add-on** and pick `.output/firefox-mv3/manifest.json`. Differences from Chrome:
 
 - If Firefox hasn't granted access to websites, the popup shows **Allow** so the extension can fill logins there.
 - The other-password-managers check can turn off Firefox's own password saving, but not other add-ons: Firefox
@@ -71,12 +73,15 @@ the shortcut.
 
 ```sh
 npm ci
-npm run watch          # rebuild dist/chrome and dist/firefox on change; load one unpacked, then reload it
+npm run dev            # WXT dev mode: builds .output/chrome-mv3-dev, opens Chrome with it loaded, reloads on change
+npm run dev:firefox    # the same in Firefox
+npm run build          # production builds in .output/chrome-mv3 and .output/firefox-mv3
 npm run check          # typecheck + unit tests
-CHROME_PATH=/path/to/chromium npm run test:e2e   # loads dist/ into Chromium against a mock Quark
+CHROME_PATH=/path/to/chromium npm run test:e2e   # loads .output/chrome-mv3 into Chromium against a mock Quark
 ```
 
-`test:e2e` builds `dist/chrome` and needs Chromium or Chrome for Testing: branded Chrome ignores `--load-extension`. Set `E2E_SCREENSHOTS` to
+The build is [WXT](https://wxt.dev) (`wxt.config.ts`); `wxt build -b edge` also works. `test:e2e` builds
+`.output/chrome-mv3` and needs Chromium or Chrome for Testing: branded Chrome ignores `--load-extension`. Set `E2E_SCREENSHOTS` to
 a folder to save screenshots of each screen, and `E2E_API_PORT` / `E2E_SITE_PORT` to move the mock off 18080 / 18081.
 
 ```text
@@ -85,7 +90,8 @@ src/content/      finds login forms, draws the inline picker, fills fields
 src/popup/        toolbar popup: connect, unlock, entries
 src/options/      settings and the other-password-managers check
 src/shared/       API client, host matching, message types, error copy
-static/           manifest, HTML, CSS, icons
+entrypoints/      WXT entrypoints: background, content script, popup and options pages
+static/           CSS and icons, copied as-is (the manifest is in wxt.config.ts)
 ```
 
 ## Not yet
