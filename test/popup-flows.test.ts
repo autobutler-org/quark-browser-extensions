@@ -1,4 +1,6 @@
-import { fakeI18n } from "./fakeChrome";
+import { fakeChrome, fakeI18n, type FakeArea } from "./fakeChrome";
+import { accountId } from "../src/shared/authKey";
+import { legacyUpgradeNeeded } from "../src/shared/errors";
 import type { Request } from "../src/shared/messages";
 import type { SaveOffer } from "../src/background/save";
 import { defaultSettings, err, ok, type ApiError, type Result, type Settings, type VaultState } from "../src/shared/types";
@@ -71,6 +73,8 @@ const browser = {
   closed: 0,
 };
 
+let storage: { local: FakeArea; session: FakeArea };
+
 beforeEach(() => {
   Object.assign(worker, {
     state: unlocked,
@@ -84,8 +88,10 @@ beforeEach(() => {
     asked: [],
   });
   Object.assign(browser, { url: "chrome-extension://quark/", siteAccess: true, grantSites: true, tabsOpened: [], shortcut: "", clipboard: [], closed: 0 });
+  storage = fakeChrome().chrome.storage;
   vi.stubGlobal("chrome", {
     i18n: fakeI18n(),
+    storage,
     runtime: {
       getURL: (path: string) => `${browser.url}${path}`,
       openOptionsPage: () => Promise.resolve(),
@@ -200,6 +206,58 @@ describe("connecting", () => {
     expect(heading(app)).toBe("Connect to your Quark");
     expect(alertText(app)).not.toBe("");
     expect(buttonNamed(app, "Connect")?.disabled).toBe(false);
+  });
+});
+
+describe("a legacy account's one-time upgrade (#76)", () => {
+  const legacyUpgrade = { server: "https://quark.local", username: "oldadmin" };
+
+  beforeEach(() => {
+    worker.state = { kind: "disconnected" };
+    worker.connect = err({ kind: "refused", reason: legacyUpgradeNeeded(legacyUpgrade.server), legacyUpgrade });
+  });
+
+  const askedForUpgrade = async (): Promise<HTMLElement> => {
+    const app = await openPopup();
+    typeInto(app, "server", "quark.local");
+    typeInto(app, "username", "oldadmin");
+    typeInto(app, "password", "pw");
+    await submitForm(app);
+    return app;
+  };
+
+  it("asks before the password goes, for that server and account, and keeps them in the form", async () => {
+    const app = await askedForUpgrade();
+    const confirm = app.querySelector<HTMLInputElement>("#legacy-upgrade")!;
+    expect(confirm.required).toBe(true);
+    expect(confirm.closest<HTMLElement>(".error-box")?.hidden).toBe(false);
+    expect(confirm.closest("label")?.textContent).toBe("Send my Quark password to quark.local this one time");
+    expect(app.textContent).toContain("needs your Quark password once");
+    expect(app.querySelector<HTMLInputElement>("#server")!.value).toBe("https://quark.local");
+    expect(app.querySelector<HTMLInputElement>("#username")!.value).toBe("oldadmin");
+    expect(storage.session.items.size).toBe(0);
+  });
+
+  it("records the consent just before connecting again", async () => {
+    const app = await askedForUpgrade();
+    worker.connect = null;
+    app.querySelector<HTMLInputElement>("#legacy-upgrade")!.checked = true;
+    typeInto(app, "password", "pw");
+    await submitForm(app);
+    expect(storage.session.items.get("legacyUpgradeConsent")).toMatchObject({ id: accountId(legacyUpgrade.server, "oldadmin") });
+    expect(asked("connect")).toHaveLength(2);
+    expect(app.querySelector("#search")).not.toBeNull();
+  });
+
+  it("drops the question once the form names another account", async () => {
+    const app = await askedForUpgrade();
+    const confirm = app.querySelector<HTMLInputElement>("#legacy-upgrade")!;
+    confirm.checked = true;
+    typeInto(app, "username", "someone-else");
+    expect(confirm.closest<HTMLElement>(".error-box")?.hidden).toBe(true);
+    expect(confirm.required).toBe(false);
+    await submitForm(app);
+    expect(storage.session.items.size).toBe(0);
   });
 });
 

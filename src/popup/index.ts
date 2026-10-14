@@ -1,16 +1,18 @@
 import { h, icon, icons } from "../shared/dom";
-import { errorText, stateText } from "../shared/errors";
+import { errorText, legacyUpgradeNeeded, stateText } from "../shared/errors";
 import {
   hostOf,
   insecureServerWarning,
   isFallback,
   mayHaveOtp,
   needsInsecureConfirmation,
+  normalizeServer,
   searchEntries,
   serverTransport,
   type SiteMatch,
 } from "../shared/host";
 import { formatDuration, formatNumber, t } from "../shared/i18n";
+import { upgradeLedger } from "../shared/authKey";
 import { ask } from "../shared/messages";
 import type { SaveAction, SaveOffer } from "../background/save";
 import { currentBrowser, siteOrigins } from "../shared/platform";
@@ -19,7 +21,7 @@ import { focusFallback, replaceKeepingFocus } from "./focus";
 import { showWelcome, welcomeSections } from "./welcome";
 import { saveBarCopy } from "../shared/saveCopy";
 import { fillShortcut, shortcutHelp } from "../shared/shortcut";
-import type { ApiError, EntrySummary, Result, VaultState } from "../shared/types";
+import type { ApiError, EntrySummary, LegacyUpgrade, Result, VaultState } from "../shared/types";
 
 type Tab = Readonly<{ id: number | null; url: string }>;
 
@@ -43,6 +45,8 @@ type Model = Readonly<{
   welcome: "hidden" | "offered" | "reading";
   // The entry whose "Fill anyway" warning is open: one saved for another site than this page.
   confirming: number | null;
+  // The Quark called this account legacy and wants its password once; the connect form asks before sending it.
+  legacyUpgrade: LegacyUpgrade | null;
 }>;
 
 document.title = t("extName");
@@ -68,6 +72,7 @@ let model: Model = {
   editingAddress: false,
   welcome: "hidden",
   confirming: null,
+  legacyUpgrade: null,
 };
 
 const update = (patch: Partial<Model>): void => {
@@ -121,18 +126,20 @@ const loadEntries = async (): Promise<void> => {
 
 const applyState = async (result: Result<VaultState>): Promise<void> => {
   if (!result.ok) {
-    update({ busy: false, error: errorText(result.error) });
+    const legacyUpgrade = (result.error.kind === "refused" ? result.error.legacyUpgrade : undefined) ?? null;
+    update({ busy: false, error: legacyUpgrade === null ? errorText(result.error) : "", legacyUpgrade });
     return;
   }
-  update({ busy: false, error: "", state: result.value, editingAddress: false });
+  update({ busy: false, error: "", state: result.value, editingAddress: false, legacyUpgrade: null });
   if (result.value.kind === "unlocked") {
     await loadEntries();
   }
 };
 
 const connectView = (): HTMLElement => {
-  const server = h("input", { id: "server", type: "url", placeholder: "https://quark.local", value: serverOf(model.state), autocomplete: "url", required: true });
-  const username = h("input", { id: "username", type: "text", autocomplete: "username", required: true });
+  const legacy = model.legacyUpgrade;
+  const server = h("input", { id: "server", type: "url", placeholder: "https://quark.local", value: legacy?.server ?? serverOf(model.state), autocomplete: "url", required: true });
+  const username = h("input", { id: "username", type: "text", autocomplete: "username", value: legacy?.username ?? "", required: true });
   const password = h("input", { id: "password", type: "password", autocomplete: "current-password", required: true });
   const persist = h("input", { id: "persist", type: "checkbox" });
   const allowInsecure = h("input", { id: "allow-insecure", type: "checkbox" });
@@ -148,9 +155,32 @@ const connectView = (): HTMLElement => {
   };
   server.addEventListener("input", syncInsecure);
   syncInsecure();
+  // Shown only while the form still names the server and account that asked, so the consent can't go elsewhere.
+  const allowUpgrade = h("input", { id: "legacy-upgrade", type: "checkbox" });
+  const upgrade =
+    legacy === null
+      ? null
+      : h(
+          "div",
+          { className: "error-box", role: "alert" },
+          h("div", {}, legacyUpgradeNeeded(legacy.server)),
+          h("label", { className: "check" }, allowUpgrade, t("popupLegacyUpgradeConfirm", hostOf(legacy.server))),
+        );
+  const syncUpgrade = (): void => {
+    if (legacy !== null && upgrade !== null) {
+      upgrade.hidden = normalizeServer(server.value) !== legacy.server || username.value !== legacy.username;
+      allowUpgrade.required = !upgrade.hidden;
+    }
+  };
+  server.addEventListener("input", syncUpgrade);
+  username.addEventListener("input", syncUpgrade);
+  syncUpgrade();
   const submit = async (event: Event): Promise<void> => {
     event.preventDefault();
     update({ busy: true, error: "" });
+    if (legacy !== null && upgrade?.hidden === false && allowUpgrade.checked) {
+      await upgradeLedger.giveConsent(legacy.server, legacy.username);
+    }
     await applyState(
       await ask({
         type: "connect",
@@ -185,6 +215,7 @@ const connectView = (): HTMLElement => {
       insecure,
       field("username", t("popupUsername"), username),
       field("password", t("popupPassword"), password),
+      upgrade,
       h("label", { className: "check" }, persist, t("popupPersist")),
       errorBox(),
       h("div", { className: "spacer" }),

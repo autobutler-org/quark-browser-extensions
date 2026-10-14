@@ -79,6 +79,33 @@
   "errorQuarkTooOld": {
     "message": "Your Quark is too old for this extension. Update your Quark, then sign in again."
   },
+  "errorLegacyUpgrade": {
+    "message": "$HOST$ says this account was made before auth keys and needs your Quark password once to move it to one. After that, only the key is sent. Confirm below to send it this one time.",
+    "description": "HOST is the Quark's address.",
+    "placeholders": {
+      "host": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorLegacyAgain": {
+    "message": "$HOST$ asked for your password again, but this account has already moved to an auth key, so the extension didn't send it. A Quark asks only once; this one may be misconfigured or not the server you think it is.",
+    "description": "HOST is the Quark's address.",
+    "placeholders": {
+      "host": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorLegacyInsecure": {
+    "message": "$HOST$ asked for your password to move this account to an auth key, but the address uses plain http, so the extension didn't send it. Sign in once over https or in the Quark app, then try again.",
+    "description": "HOST is the Quark's address.",
+    "placeholders": {
+      "host": {
+        "content": "$1"
+      }
+    }
+  },
   "errorSignedOut": {
     "message": "Your Quark session ended. Sign in again."
   },
@@ -569,6 +596,15 @@
   },
   "popupInsecureConfirm": {
     "message": "I understand this connection is unencrypted"
+  },
+  "popupLegacyUpgradeConfirm": {
+    "message": "Send my Quark password to $HOST$ this one time",
+    "description": "HOST is the Quark's address.",
+    "placeholders": {
+      "host": {
+        "content": "$1"
+      }
+    }
   },
   "popupServer": {
     "message": "Quark address"

@@ -1,9 +1,16 @@
+import { hostOf } from "./host";
 import { t } from "./i18n";
 import type { ApiError, VaultState } from "./types";
 
 export const extensionTooOld = (): string => t("errorExtensionTooOld");
 
 export const quarkTooOld = (): string => t("errorQuarkTooOld");
+
+export const legacyAgain = (server: string): string => t("errorLegacyAgain", hostOf(server));
+
+export const legacyUpgradeNeeded = (server: string): string => t("errorLegacyUpgrade", hostOf(server));
+
+export const legacyInsecure = (server: string): string => t("errorLegacyInsecure", hostOf(server));
 
 export const errorText = (error: ApiError): string => {
   switch (error.kind) {
