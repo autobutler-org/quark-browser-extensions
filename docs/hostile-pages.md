@@ -127,3 +127,11 @@ A refused subframe holds its answer for half a second, so on a page with a visib
 **Result:** nothing is filled, and the page gets nothing. Until #129 the picker filled the field it opened on without checking it again.
 
 **Defense:** the picker checks its field again when the user picks, before it asks the worker for the login, and `fillLogin` checks it once more when the login arrives. A field the page has hidden in between is refused with "Couldn't find the login fields on this page."
+
+### Synthetic keyboard events opening the picker or moving focus
+
+**The page:** on the login's own site, every 100 ms, untrusted `keydown`, `keypress` and `keyup` events for ArrowDown, Enter and Space targeting the field, the Quark button's host, the element under the button, and the focused element. These keys activate buttons or open pickers in native controls. The attack runs while the picker is closed, and again while it is open, adding Escape and attempting navigation with arrow keys.
+
+**Result:** the picker stays closed, no focus moves, and nothing is filled even after many synthetic attacks. The user's own Tab, Alt+ArrowDown, Escape, and other keyboard shortcuts work as normal. If the user presses a trusted Enter while a login is focused in the picker, it fills.
+
+**Defense:** only trusted key events (those the user generates, not the page) open the picker or move focus. The extension checks `trusted(event)` for every key event that would open the picker or move focus: Tab in the field moves to the button, Alt+ArrowDown in the field opens the picker, and Escape closes it. The browser fires trusted events only in response to user input; pages cannot create trusted events. When a page dispatches a synthetic `KeyboardEvent`, its `isTrusted` flag is false. The content script checks this flag in `onFieldKey` (src/content/picker.ts, line 350) before handling keyboard shortcuts. `e2e/hostile/picker.spec.ts` tests this end-to-end: synthetic keyboard events on the inline button and its open picker fill nothing, while the user's own trusted Enter fills the login.
