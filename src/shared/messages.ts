@@ -4,7 +4,7 @@ import type { Credentials, EntrySummary, Result, Settings, VaultState } from "./
 
 export type Request =
   | Readonly<{ type: "state" }>
-  | Readonly<{ type: "connect"; server: string; username: string; password: string; persist: boolean }>
+  | Readonly<{ type: "connect"; server: string; username: string; password: string; persist: boolean; allowInsecure: boolean }>
   | Readonly<{ type: "signOut" }>
   | Readonly<{ type: "unlock"; masterPassword: string }>
   | Readonly<{ type: "lock" }>
@@ -61,12 +61,13 @@ export type Responses = {
   removeNeverSave: readonly string[];
 };
 
+// Carries no secret: it goes to every frame in the tab. A frame that looks like the target asks for the
+// credentials with fillFromPage, where the worker checks the frame's browser-reported URL before answering.
 export type FillCommand = Readonly<{
   type: "fill";
-  credentials: Credentials;
+  entryId: number;
   entryUrl: string;
   entryHost: string;
-  autoSubmit: boolean;
   // The top frame's URL, verified by the service worker with frame 0. Frames use it only where
   // location.ancestorOrigins is missing (Firefox).
   topUrl?: string;

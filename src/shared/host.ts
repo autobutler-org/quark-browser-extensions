@@ -73,3 +73,37 @@ export const normalizeServer = (input: string): string => {
     return "";
   }
 };
+
+// Loopback never leaves the machine, so plain http there is as private as https.
+export const isLoopbackHost = (hostname: string): boolean => {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  return host === "localhost" || host.endsWith(".localhost") || host === "[::1]" || /^127(\.\d{1,3}){3}$/.test(host);
+};
+
+// "insecure" means the sign-in, the master password, the token and every decrypted entry cross the network in
+// cleartext, so the extension only connects there after an explicit confirmation.
+export type ServerTransport = "https" | "loopback" | "insecure";
+
+export const serverTransport = (server: string): ServerTransport => {
+  try {
+    const url = new URL(server);
+    if (url.protocol === "https:") {
+      return "https";
+    }
+    return isLoopbackHost(url.hostname) ? "loopback" : "insecure";
+  } catch {
+    return "insecure";
+  }
+};
+
+export const insecureServerRefusal =
+  "This Quark address uses plain http, so your passwords would cross the network unencrypted. Use an https address, or confirm that you understand the risk.";
+
+// Whether what's typed in the connect form's address box needs the "unencrypted" confirmation.
+export const needsInsecureConfirmation = (input: string): boolean => {
+  const server = normalizeServer(input);
+  return server !== "" && serverTransport(server) === "insecure";
+};
+
+export const insecureServerWarning =
+  "Connected over plain http. Your passwords cross the network unencrypted. Switch to an https address.";

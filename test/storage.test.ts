@@ -8,6 +8,7 @@ beforeEach(() => {
   vi.resetModules();
   fake = fakeChrome();
   vi.stubGlobal("chrome", fake.chrome);
+  vi.stubGlobal("indexedDB", fake.idb.indexedDB);
 });
 
 afterEach(() => {
@@ -21,25 +22,124 @@ const stored = () => ({
   session: fake.chrome.storage.session.items.get("connection"),
 });
 
+const sealed = () => fake.chrome.storage.local.items.get("sealedConnection") as Record<string, string> | undefined;
+
+const sealKey = () => fake.idb.stores.get("keys")?.get("seal");
+
+// What content scripts can read: everything in storage.local (storage.session is for trusted contexts).
+const readableByContentScripts = () => JSON.stringify([...fake.chrome.storage.local.items.values()]);
+
+// A browser restart empties storage.session and the worker's memory, and keeps storage.local and IndexedDB.
+const restart = async () => {
+  fake.chrome.storage.session.items.clear();
+  vi.resetModules();
+  return storage();
+};
+
 describe("storage", () => {
-  it("keeps a connection for the browser session unless asked to persist it", async () => {
+  it("keeps a connection for the browser session unless asked to stay signed in", async () => {
     const { saveConnection, loadConnection, loadServer } = await storage();
-    await saveConnection(connection, false);
+    expect(await saveConnection(connection, false)).toBe(false);
     expect(stored()).toEqual({ local: undefined, session: connection });
+    expect(sealed()).toBeUndefined();
     expect(await loadConnection()).toEqual(connection);
     expect(await loadServer()).toBe(connection.server);
 
-    await saveConnection(connection, true);
-    expect(stored()).toEqual({ local: connection, session: undefined });
+    const restarted = await restart();
+    expect(await restarted.loadConnection()).toBeNull();
+    expect(await restarted.loadServer()).toBe(connection.server);
+  });
+
+  it("never puts the token where content scripts can read it, even to stay signed in", async () => {
+    const { saveConnection, loadConnection } = await storage();
+    expect(await saveConnection(connection, true)).toBe(true);
+    expect(stored()).toEqual({ local: undefined, session: connection });
+    expect(sealed()).toEqual({ server: connection.server, iv: expect.any(String), data: expect.any(String) });
+    expect(readableByContentScripts()).not.toContain(connection.token);
+    expect(sealKey()).toBeInstanceOf(CryptoKey);
+    expect((sealKey() as CryptoKey).extractable).toBe(false);
     expect(await loadConnection()).toEqual(connection);
   });
 
-  it("clears the connection from both areas", async () => {
-    const { clearConnection, loadConnection } = await storage();
+  it("stays signed in across a browser restart", async () => {
+    const { saveConnection } = await storage();
+    await saveConnection(connection, true);
+    const restarted = await restart();
+    expect(stored().session).toBeUndefined();
+    expect(await restarted.loadConnection()).toEqual(connection);
+    expect(stored()).toEqual({ local: undefined, session: connection });
+  });
+
+  it("restores once when asked for the connection in parallel", async () => {
+    const { saveConnection } = await storage();
+    await saveConnection(connection, true);
+    const restarted = await restart();
+    const loads = await Promise.all([restarted.loadConnection(), restarted.loadConnection(), restarted.loadConnection()]);
+    expect(loads).toEqual([connection, connection, connection]);
+  });
+
+  it("drops a sealed token whose key is gone", async () => {
+    const { saveConnection } = await storage();
+    await saveConnection(connection, true);
+    fake.idb.stores.get("keys")?.clear();
+    const restarted = await restart();
+    expect(await restarted.loadConnection()).toBeNull();
+    expect(sealed()).toBeUndefined();
+  });
+
+  it("drops a sealed token that was tampered with or moved to another server", async () => {
+    const { saveConnection } = await storage();
+    await saveConnection(connection, true);
+    const original = sealed() as Record<string, string>;
+    const tampered = [
+      { ...original, server: "https://evil.example" },
+      { ...original, data: btoa("not the token") },
+      { ...original, iv: "%%%" },
+    ];
+    for (const blob of tampered) {
+      await fake.chrome.storage.local.set({ sealedConnection: blob });
+      const restarted = await restart();
+      expect(await restarted.loadConnection()).toBeNull();
+      expect(sealed()).toBeUndefined();
+      await restarted.saveConnection(connection, true);
+    }
+  });
+
+  it("ignores a malformed sealed token", async () => {
+    const { loadConnection } = await storage();
+    await fake.chrome.storage.local.set({ sealedConnection: { server: connection.server } });
+    expect(await loadConnection()).toBeNull();
+  });
+
+  it("moves a plaintext token an older build left in storage.local under a seal", async () => {
+    await fake.chrome.storage.local.set({ server: connection.server, connection });
+    const { loadConnection } = await storage();
+    expect(await loadConnection()).toEqual(connection);
+    expect(stored()).toEqual({ local: undefined, session: connection });
+    expect(readableByContentScripts()).not.toContain(connection.token);
+    expect(await (await restart()).loadConnection()).toEqual(connection);
+  });
+
+  it("still signs in for the browser session when the token can't be sealed", async () => {
+    vi.stubGlobal("indexedDB", {
+      open: () => {
+        throw new Error("IndexedDB is off in this profile");
+      },
+    });
+    const { saveConnection, loadConnection } = await storage();
+    expect(await saveConnection(connection, true)).toBe(false);
+    expect(sealed()).toBeUndefined();
+    expect(await loadConnection()).toEqual(connection);
+  });
+
+  it("clears the connection from both areas and forgets the seal key", async () => {
+    const { saveConnection, clearConnection, loadConnection } = await storage();
+    await saveConnection(connection, true);
     await fake.chrome.storage.local.set({ connection });
-    await fake.chrome.storage.session.set({ connection: { ...connection, token: "other" } });
     await clearConnection();
     expect(stored()).toEqual({ local: undefined, session: undefined });
+    expect(sealed()).toBeUndefined();
+    expect(sealKey()).toBeUndefined();
     expect(await loadConnection()).toBeNull();
   });
 
@@ -55,6 +155,25 @@ describe("storage", () => {
     await fake.chrome.storage.session.set({ connection: { server: "https://quark.local" } });
     await fake.chrome.storage.local.set({ connection: "secret-token" });
     expect(await loadConnection()).toBeNull();
+    expect(stored().local).toBeUndefined();
+  });
+
+  it("restricts storage.session to trusted contexts", async () => {
+    const setAccessLevel = vi.spyOn(fake.chrome.storage.session, "setAccessLevel");
+    const { restrictSessionStorage } = await storage();
+    await restrictSessionStorage();
+    expect(setAccessLevel).toHaveBeenCalledWith({ accessLevel: "TRUSTED_CONTEXTS" });
+  });
+
+  it("gets by without setAccessLevel, as in Firefox, or when it throws", async () => {
+    const { restrictSessionStorage } = await storage();
+    const session = fake.chrome.storage.session as { setAccessLevel?: unknown };
+    session.setAccessLevel = async () => {
+      throw new Error("not supported");
+    };
+    await expect(restrictSessionStorage()).resolves.toBeUndefined();
+    delete session.setAccessLevel;
+    await expect(restrictSessionStorage()).resolves.toBeUndefined();
   });
 
   it("decodes settings and de-duplicates the never-save list", async () => {
@@ -76,11 +195,16 @@ describe("the worker drops the connection", () => {
   const json = (status: number, body: unknown = {}) =>
     new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-  // Puts a token in both areas, the way an upgrade from an older build or a race could leave it.
+  // Signs in to stay signed in, and leaves an older build's plaintext copy in storage.local as well.
   const signedIn = async () => {
-    await fake.chrome.storage.local.set({ server: connection.server, connection });
-    await fake.chrome.storage.session.set({ connection });
+    const { saveConnection } = await storage();
+    await saveConnection(connection, true);
+    await fake.chrome.storage.local.set({ connection });
   };
+
+  const gone = () => ({ ...stored(), sealed: sealed(), key: sealKey() });
+
+  const signedOut = { local: undefined, session: undefined, sealed: undefined, key: undefined };
 
   const startWorker = async (fetchFn: (url: string, init?: RequestInit) => Promise<Response>) => {
     const fetchSpy = vi.fn(fetchFn);
@@ -95,7 +219,7 @@ describe("the worker drops the connection", () => {
     const fetchSpy = await startWorker(async () => json(200));
     const reply = await fake.send({ type: "signOut" }, popup);
     expect(reply).toEqual({ ok: true, value: { kind: "signedOut", server: connection.server } });
-    expect(stored()).toEqual({ local: undefined, session: undefined });
+    expect(gone()).toEqual(signedOut);
     expect(fetchSpy).toHaveBeenCalledWith(`${connection.server}/api/v0/auth/logout`, expect.objectContaining({ method: "POST" }));
   });
 
@@ -105,7 +229,7 @@ describe("the worker drops the connection", () => {
       throw new Error("offline");
     });
     await fake.send({ type: "signOut" }, popup);
-    expect(stored()).toEqual({ local: undefined, session: undefined });
+    expect(gone()).toEqual(signedOut);
   });
 
   it("when the server answers 401", async () => {
@@ -113,7 +237,7 @@ describe("the worker drops the connection", () => {
     await startWorker(async () => json(401, { error: "authentication required" }));
     const reply = await fake.send({ type: "entries" }, popup);
     expect(reply).toEqual({ ok: false, error: { kind: "signedOut" } });
-    expect(stored()).toEqual({ local: undefined, session: undefined });
+    expect(gone()).toEqual(signedOut);
   });
 
   it("when the vault status check answers 401", async () => {
@@ -121,14 +245,15 @@ describe("the worker drops the connection", () => {
     await startWorker(async () => json(401));
     const reply = await fake.send({ type: "state" }, popup);
     expect(reply).toEqual({ kind: "signedOut", server: connection.server });
-    expect(stored()).toEqual({ local: undefined, session: undefined });
+    expect(gone()).toEqual(signedOut);
   });
 
   it("but keeps it on other errors", async () => {
     await signedIn();
     await startWorker(async () => json(500, { error: "boom" }));
     await fake.send({ type: "entries" }, popup);
-    expect(stored()).toEqual({ local: connection, session: connection });
+    expect(stored().session).toEqual(connection);
+    expect(sealed()).toBeDefined();
   });
 
   it("but not for a web page that asks", async () => {
@@ -136,7 +261,8 @@ describe("the worker drops the connection", () => {
     const fetchSpy = await startWorker(async () => json(200));
     const page = { id: extensionId, url: "https://evil.io/", tab: { id: 1 } as chrome.tabs.Tab, frameId: 0 };
     expect(fake.send({ type: "signOut" }, page)).toBeUndefined();
-    expect(stored()).toEqual({ local: connection, session: connection });
+    expect(stored().session).toEqual(connection);
+    expect(sealed()).toBeDefined();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

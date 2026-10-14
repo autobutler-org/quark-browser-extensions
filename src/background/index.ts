@@ -1,5 +1,14 @@
 import { createApi } from "../shared/api";
-import { frameMayFill, hostMatches, hostOf, matchEntries, normalizeHost, normalizeServer } from "../shared/host";
+import {
+  frameMayFill,
+  hostMatches,
+  hostOf,
+  insecureServerRefusal,
+  matchEntries,
+  normalizeHost,
+  normalizeServer,
+  serverTransport,
+} from "../shared/host";
 import type { Hello, PageCommand, PageReply, Request, Responses } from "../shared/messages";
 import { err, ok, type Connection, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
 import { parseOtpSecret, totp } from "../shared/totp";
@@ -22,6 +31,7 @@ import {
   loadServer,
   loadNeverSave,
   loadSettings,
+  restrictSessionStorage,
   saveConnection,
   saveNeverSave,
   saveSettings,
@@ -135,9 +145,10 @@ const otpFor = async (entryId: number, sender: Sender | null): Promise<Responses
   return params === null ? refused("This login has no one-time code saved.") : ok(await totp(params, Date.now()));
 };
 
+// Credentials never ride on this message, because it reaches every frame in the tab. The frame that has the
+// login form asks for them with fillFromPage, which checks that frame's own URL in the worker.
 const fillInTab = async (tabId: number, entryId: number): Promise<Responses["fillInTab"]> => {
-  const [settings, entry, topUrl] = await Promise.all([
-    loadSettings(),
+  const [entry, topUrl] = await Promise.all([
     withConnection((conn) => api.getEntry(conn, entryId)),
     tabTopUrl(tabId),
   ]);
@@ -146,10 +157,9 @@ const fillInTab = async (tabId: number, entryId: number): Promise<Responses["fil
   }
   const command: PageCommand = {
     type: "fill",
-    credentials: { username: entry.value.username, password: entry.value.password },
+    entryId,
     entryUrl: entry.value.url,
     entryHost: entry.value.urlHost,
-    autoSubmit: settings.autoSubmit,
     topUrl,
   };
   try {
@@ -321,6 +331,9 @@ const connect = async (
   if (server === "") {
     return err({ kind: "network", message: "invalid address" });
   }
+  if (serverTransport(server) === "insecure" && !request.allowInsecure) {
+    return refused(insecureServerRefusal);
+  }
   const token = await api.login(server, request.username, request.password);
   if (!token.ok) {
     return token;
@@ -402,6 +415,8 @@ const fillGenerated = async (tabId: number): Promise<void> => {
 };
 
 export const main = (): void => {
+  void restrictSessionStorage();
+
   chrome.commands.onCommand.addListener((command, tab) => {
     if (command === "fill-login") {
       void onShortcut(tab);

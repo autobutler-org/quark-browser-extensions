@@ -1,0 +1,54 @@
+# Security notes
+
+What the extension does to keep your Quark session and vault entries away from web pages, and where its protection stops. Issue #24 has the background.
+
+## Plain http Quark addresses
+
+When you sign in, the extension sends your username and auth key to your Quark. After that it sends a bearer token with every request, the vault password when you unlock, and every decrypted entry it fills. Over plain `http://`, anyone on the network path can read all of that.
+
+The policy:
+
+| Address | What happens |
+| --- | --- |
+| `https://…` | Connects. |
+| `http://` to loopback: `localhost` (and `*.localhost`), `127.0.0.0/8`, `[::1]` | Connects. Loopback traffic never leaves the machine. |
+| Any other `http://`, such as a LAN IP or `quark.local` | The connect form shows a warning and won't submit until you tick **I understand this connection is unencrypted**. The service worker enforces this as well: a `connect` request for a non-loopback http address without `allowInsecure: true` is refused before any request goes out. |
+
+While connected to a non-loopback http Quark, the popup keeps a warning on the unlock, entries and status screens.
+
+The extension doesn't store the confirmation. You confirm again each time you sign in. An address with no scheme is treated as `https://`. IPv4-mapped loopback (`[::ffff:127.0.0.1]`) isn't treated as loopback, so it asks too.
+
+The code is in `src/shared/host.ts` (`isLoopbackHost`, `serverTransport`, `needsInsecureConfirmation`) and in `connect` in `src/background/index.ts`.
+
+## Where the session token lives
+
+The Quark session token belongs to an admin account, so it can do anything an admin can for the life of the session. Content scripts run inside web pages, and a compromised renderer can drive them. They can read `chrome.storage.local`, and `setAccessLevel` can't restrict that area. So the token never goes into `storage.local` in plaintext.
+
+- **The live token** is kept only in `chrome.storage.session`. That area is held in memory and cleared when the browser exits. In Chrome it is limited to trusted contexts (extension pages and the service worker). The worker also calls `storage.session.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })` on startup, so the restriction holds even if Chrome's default ever changes. Firefox also keeps `storage.session` from content scripts by default. A browser that lacks `setAccessLevel`, or throws on it, keeps that default, and the worker goes on without the call.
+- **"Stay signed in"** encrypts the token at rest:
+  - On sign-in, the worker generates a non-extractable AES-GCM-256 key and stores it in the extension origin's IndexedDB (`src/background/sealKey.ts`). Content scripts can't open that database, because a content script's IndexedDB is the page's.
+  - The token is encrypted with that key, with the server address bound in as associated data. Only the ciphertext goes into `storage.local`, under `sealedConnection`.
+  - After a browser restart, the first request for the connection decrypts the token back into `storage.session`.
+  - If the ciphertext has been tampered with, has been moved to another server address, or its key is gone, the extension signs out cleanly instead.
+- **Signing out, or a 401 from Quark,** removes the session copy and the ciphertext, and deletes the key.
+- **Upgrading from an older build:** a plaintext `connection` left in `storage.local` is moved under a seal the first time the worker reads it, so the plaintext copy is deleted.
+- **If sealing fails,** for example when IndexedDB is unavailable in a private-only profile, you stay signed in for this browser session only.
+
+### What this does and doesn't protect
+
+- **Protected:** web pages, content scripts and compromised renderers. The ciphertext in `storage.local` is useless to them without the key, and they can't reach the key or `storage.session`.
+- **Not protected:** someone who copies your browser profile from disk. Chrome and Firefox save IndexedDB, CryptoKeys included, without a user secret, so with the whole profile they can decrypt the token. This is the price of "stay signed in" with no prompt. The alternatives were to keep the token only for the browser session, or to ask for your password again after every restart, and both would make "stay signed in" mean nothing. If someone may copy your profile, leave **Stay signed in** unticked. You can also revoke the browser's session any time in Quark's **Settings › Sessions**.
+- **Still open (needs Quark):** the token carries full admin rights. A token scoped to the vault would limit the damage if it leaked.
+
+## Who gets credentials when filling
+
+The popup's **Fill**, the keyboard shortcut and the context menu all fill through `fillInTab`. It messages every frame in the tab, so that a login form in a same-site iframe still fills. That message (`FillCommand` in `src/shared/messages.ts`) contains the entry's id, URL and host, and **no username or password**.
+
+Each frame decides what to do with the message using `fillDecision` in `src/content/frame.ts`:
+
+- A frame without login fields stays quiet.
+- Another site's iframe also stays quiet, so the frame that fills gets to answer.
+- A top frame for a different site refuses and says why.
+- A frame that fits the entry asks the worker for the credentials with `fillFromPage`.
+
+The worker answers `fillFromPage` only after it checks the requesting frame. It uses the frame URL and frame id that the browser reports, not anything the page says. For a subframe it also checks the top frame's URL, which it gets by asking frame 0. These are the same checks the inline picker and one-time codes use. A frame that lies in its own check still gets refused by the worker.
