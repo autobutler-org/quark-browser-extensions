@@ -67,16 +67,16 @@ The worker answers `fillFromPage` only after it checks the requesting frame. It 
 
 A page on the login's own site can still run hostile script: a third-party tag, an XSS. It can lay out decoy fields the user never sees, ahead of the real form, to catch a fill that has no target field, or hide the real field once the inline picker is open (issue #129). So a username or password field is filled only when the user can see it (`isLoginField` in `src/content/forms.ts`). It must be:
 
-- Shown: not `display:none`, `visibility:hidden`, `[hidden]` or disabled, itself or through an ancestor.
+- Shown: not `display:none`, `visibility:hidden` or `visibility:collapse`, `[hidden]` or disabled, itself or through an ancestor.
 - Reachable: not `tabindex=-1`, and not under `aria-hidden="true"`, the marks spam honeypots carry.
-- Opaque: its opacity times every ancestor's is at least 0.1.
-- Not clipped away: no `clip: rect(…)` narrower than 4px, `clip-path: inset(50%)` or a zero circle on it or an ancestor.
-- Rendered and big enough: the browser's `checkVisibility()` passes (a closed `<details>` fails it), and its box is at least 4px by 4px after any ancestor with `overflow: hidden` or `clip` cuts it.
+- Opaque: its opacity times every ancestor's, each multiplied by the `opacity()` functions in its `filter`, is at least 0.1.
+- Not clipped or masked away: no `clip: rect(…)` narrower than 4px, and no `mask-image` made only of gradients whose every colour is transparent, on it or an ancestor.
+- Rendered and big enough: the browser's `checkVisibility()` passes (a closed `<details>` fails it), and its box is at least 4px by 4px after every ancestor's `clip-path` and any ancestor with `overflow: hidden` or `clip` cut it. A clip-path is read as the browser computes it: `inset()` in pixels, percentages or a `calc()` of the two (which is also how Chromium reports `rect()` and `xywh()`), `rect()` and `xywh()`, `polygon()`, which counts only if its part inside the element covers 4px by 4px and 16 square pixels, and `circle()` or `ellipse()` by their bounds. A polygon's or circle's bounds stand for its shape. A clip-path clips positioned descendants too, so it counts whatever the containing block.
 - On the page: not moved left of or above the page, nor past the right edge of a page that can't scroll sideways. A fixed field must sit in the viewport. Below the fold still counts, and so does a field scrolled out of view inside a scrolling panel: the user can scroll to either.
 
 The popup's **Fill**, the shortcut and the context menu skip fields that fail, so they fill the real form behind any decoys. The inline picker checks its field again when the user picks, before it asks the worker for the login, and `fillLogin` checks once more when the login arrives. A field hidden in between gets nothing, and the picker says it couldn't find the login fields. Real forms with floating labels, screen-reader-only labels, or a two-step page's visually hidden username field still fill; their fixtures are in `test/fixtures/forms/`. One-time code fields keep the looser checks: some code inputs are transparent boxes drawn over digit cells.
 
-Not covered: a field covered by another element, or drawn in the page's background color. Those need hit testing, which pages can fool as easily.
+Not covered: a field covered by another element, or drawn in the page's background color. Those need hit testing, which pages can fool as easily. Also not covered (#142): a mask from an image (`url()`), a mask sized or placed off the element, a `clip-path` of `path()`, `shape()` or `url()`, an SVG `filter`, and a clip-path value this can't read (an `em` length, a four-value position). Each counts as showing the field.
 
 ## Submit after filling
 

@@ -8,13 +8,14 @@ To run them: `npm run test:e2e:mock -- hostile/`.
 
 ## Results
 
-An attack **succeeds** if the password reaches page script without the user knowingly filling a visible field on the login's own site, or reaches another origin. None of the attacks below succeeds. Three did when these tests were written; #129 and #130 fixed them. If an attack is found to succeed, its test is marked `test.fail` and points to the issue that tracks the fix. When the fix lands, the test starts to pass, Playwright reports it as unexpected, and the mark comes off.
+An attack **succeeds** if the password reaches page script without the user knowingly filling a visible field on the login's own site, or reaches another origin. None of the attacks below succeeds. Three did when these tests were written; #129 and #130 fixed them. The second security review found more ways around the #129 checks; #142 fixed those. If an attack is found to succeed, its test is marked `test.fail` and points to the issue that tracks the fix. When the fix lands, the test starts to pass, Playwright reports it as unexpected, and the mark comes off.
 
 | Attack | Result | Test |
 | --- | --- | --- |
 | Hidden decoy password fields, filled on load | Blocked | `decoy.spec.ts` › isn't filled on load |
 | Hidden decoy fields, inline picker on the real field | Blocked | `decoy.spec.ts` › doesn't catch a fill from the inline picker |
 | Hidden decoy fields, popup Fill or shortcut | Blocked since [#129](https://github.com/autobutler-org/quark-browser-extensions/issues/129) | `decoy.spec.ts` › doesn't catch a fill from the popup or the shortcut |
+| The same, hidden by `visibility:collapse`, `filter`, a transparent mask or a `clip-path` | Blocked since [#142](https://github.com/autobutler-org/quark-browser-extensions/issues/142) | `decoy.spec.ts` › a decoy password field, visibility:collapse (and the six styles after it) |
 | Cross-origin parent framing the login form | Blocked | `cross-origin.spec.ts` › a cross-origin parent can't get a login filled |
 | Form whose action posts to another origin | Blocked by default | `cross-origin.spec.ts` › is filled but not submitted |
 | The same, with **Submit after filling** on | Blocked since [#130](https://github.com/autobutler-org/quark-browser-extensions/issues/130) | `cross-origin.spec.ts` › a form posting to another origin isn't submitted |
@@ -29,15 +30,15 @@ Legitimate fills still work beside each attack: the picker on the real field of 
 
 ### Decoy password fields
 
-**The page:** on the login's own site, a username and password pair styled to be invisible, ahead of the real sign-in form, with listeners that keep whatever lands in them. One page per style: moved off-screen (`position:absolute; left:-10000px`), `opacity:0`, and 1px by 1px. This is how third-party tracking scripts have collected passwords from password managers that fill on page load.
+**The page:** on the login's own site, a username and password pair styled to be invisible, ahead of the real sign-in form, with listeners that keep whatever lands in them. One page per style: moved off-screen (`position:absolute; left:-10000px`), `opacity:0`, 1px by 1px, and since #142 `visibility:collapse`, `filter:opacity(0)`, `mask-image:linear-gradient(transparent,transparent)`, and the clip-paths `polygon(0 0,0 0,0 0)`, `inset(100px)`, `inset(0 100% 0 0)` and `circle(1px)`. Chromium paints none of the #142 styles, yet `checkVisibility()` passes and the border box stays full. This is how third-party tracking scripts have collected passwords from password managers that fill on page load.
 
 **Result:**
 
 - Nothing is filled on load. The extension fills only when the user acts: the inline picker, the popup, the keyboard shortcut or the context menu.
 - The inline picker, opened on the real password field, fills that field and its username. The decoys stay empty.
-- The popup's Fill, the keyboard shortcut and the context menu fill the real form, and the decoys stay empty. Until #129 they filled the decoys: they have no target field, so `fillLogin` takes the page's first password field, and the visibility checks then caught `display:none`, `visibility:hidden`, `[hidden]`, `tabindex=-1` and `aria-hidden` but none of these three styles.
+- The popup's Fill, the keyboard shortcut and the context menu fill the real form, and the decoys stay empty. Until #129 they filled the decoys: they have no target field, so `fillLogin` takes the page's first password field, and the visibility checks then caught `display:none`, `visibility:hidden`, `[hidden]`, `tabindex=-1` and `aria-hidden` but none of these three styles. Until #142 the same went for the seven styles added then: the checks read `visibility: hidden` but not `collapse`, the `opacity` property but not `filter`, no masks, and only a leading percentage `inset()` or a zero-radius circle in `clip-path`.
 
-**Defense:** no fill without a user action, and only into fields the user can see: opaque, at least 4px by 4px, not clipped away, and on the page (`isLoginField` in `src/content/forms.ts`; [security.md](security.md#which-fields-get-a-login) has the rules). `test/forms-hidden.test.ts` and the `login-decoy-*` fixtures cover each style without a browser.
+**Defense:** no fill without a user action, and only into fields the user can see: opaque (filters included), at least 4px by 4px, not clipped or masked away, and on the page (`isLoginField` in `src/content/forms.ts`; [security.md](security.md#which-fields-get-a-login) has the rules). `test/forms-hidden.test.ts` and the `login-decoy-*` fixtures cover each style without a browser.
 
 ### A cross-origin parent framing the login form
 
