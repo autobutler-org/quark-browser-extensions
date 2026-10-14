@@ -20,12 +20,32 @@ import {
 import { fillDecision, frameTopUrl } from "./frame";
 import { attachPicker, type PickerHandle } from "./picker";
 
-const decorated = new WeakMap<HTMLInputElement, PickerHandle>();
+// A Map, not a WeakMap: each scan destroys the pickers whose field the page has removed.
+const decorated = new Map<HTMLInputElement, PickerHandle>();
 let hello: Promise<Hello | null> | null = null;
 
+// Kept only while the worker is connected: a failed or locked reply is asked again on the next scan with fields,
+// so a form shown after unlocking still gets its picker.
 const greet = (): Promise<Hello | null> => {
-  hello ??= ask({ type: "hello" }).catch(() => null);
+  if (hello === null) {
+    const asked = ask({ type: "hello" }).catch(() => null);
+    hello = asked;
+    void asked.then((reply) => {
+      if ((reply === null || !reply.connected) && hello === asked) {
+        hello = null;
+      }
+    });
+  }
   return hello;
+};
+
+const forgetDetached = (): void => {
+  decorated.forEach((handle, field) => {
+    if (!field.isConnected) {
+      handle.destroy();
+      decorated.delete(field);
+    }
+  });
 };
 
 const fill = (credentials: Credentials, autoSubmit: boolean, target: HTMLInputElement | null): boolean => {
@@ -70,6 +90,7 @@ const suggest = (field: HTMLInputElement) => async (): Promise<string | null> =>
 };
 
 const scan = async (): Promise<void> => {
+  forgetDetached();
   const passwords = passwordFields(document).filter((field) => !decorated.has(field));
   const codes = otpFields(document).filter((field) => !decorated.has(field));
   const identifier = identifierField(document);
@@ -238,10 +259,14 @@ const handleCommand = (command: PageCommand): PageReply | Promise<PageReply> | s
   }
 };
 
+// 400 ms after the first mutation, not the last: a page that changes more often than that (a clock, a ticker)
+// would otherwise keep pushing the scan back forever.
 let timer: ReturnType<typeof setTimeout> | undefined;
 const scheduleScan = (): void => {
-  clearTimeout(timer);
-  timer = setTimeout(() => void scan(), 400);
+  timer ??= setTimeout(() => {
+    timer = undefined;
+    void scan();
+  }, 400);
 };
 
 export const main = (): void => {
