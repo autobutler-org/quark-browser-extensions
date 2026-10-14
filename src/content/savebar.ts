@@ -7,35 +7,49 @@ const css = `
 :host { all: initial; }
 .bar {
   position: fixed; top: 16px; right: 16px; z-index: 2147483647; width: 340px; box-sizing: border-box;
-  padding: 14px; border-radius: 12px; background: #0F172A; border: 1px solid #1E293B;
-  box-shadow: 0 16px 40px rgba(2, 6, 23, 0.35); color: #E2E8F0;
+  max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-y: auto;
+  padding: 14px; border-radius: 12px; background: var(--card); border: 1px solid var(--border);
+  box-shadow: 0 16px 40px rgba(2, 6, 23, 0.35); color: var(--fg);
   font: 14px/1.4 "IBM Plex Sans", system-ui, sans-serif; display: flex; flex-direction: column; gap: 10px;
+}
+.bar:focus { outline: none; }
+.bar:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 372px) {
+  .bar { top: 8px; right: 8px; }
 }
 .head { display: flex; gap: 10px; align-items: flex-start; }
 .mark {
-  width: 28px; height: 28px; flex-shrink: 0; border-radius: 8px; background: #0EA5E9; color: #FFFFFF;
+  width: 28px; height: 28px; flex-shrink: 0; border-radius: 8px; background: var(--primary); color: var(--primary-fg);
   display: flex; align-items: center; justify-content: center;
 }
-.title { font-weight: 600; }
-.sub { font-size: 12px; color: #94A3B8; word-break: break-all; }
-.actions { display: flex; gap: 8px; align-items: center; }
+.head > div:last-child { min-width: 0; }
+.title { font-weight: 600; overflow-wrap: anywhere; }
+.sub { font-size: 12px; color: var(--muted); word-break: break-all; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .spacer { flex-grow: 1; }
 button {
-  height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #1E293B; background: #131C2E;
-  color: #E2E8F0; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  min-height: 36px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--control); background: var(--card);
+  color: var(--fg); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
 }
-button.primary { border: none; background: #0284C7; color: #FFFFFF; }
-button.quiet { padding: 0; border: none; background: transparent; color: #94A3B8; font-weight: 500; }
-button.quiet:hover { color: #E2E8F0; }
-button:focus-visible { outline: 2px solid #7DD3FC; outline-offset: 2px; }
-.error { font-size: 13px; color: #FCA5A5; }
+button.primary { border-color: var(--primary); background: var(--primary); color: var(--primary-fg); }
+button.quiet { padding: 6px 0; border-color: transparent; background: transparent; color: var(--muted); font-weight: 500; }
+button.quiet:hover { color: var(--fg); }
+button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.error { font-size: 13px; color: var(--error-fg); }
 `;
 
 let current: HTMLElement | null = null;
+let previous: HTMLElement | null = null;
 
 export const hideSaveBar = (): void => {
+  // Hand focus back to wherever it was before the bar took it, unless the user has moved on.
+  const hadFocus = current !== null && current.ownerDocument.activeElement === current;
   current?.remove();
   current = null;
+  if (hadFocus && previous?.isConnected === true) {
+    previous.focus({ preventScroll: true });
+  }
+  previous = null;
 };
 
 export const showSaveBar = (
@@ -54,8 +68,14 @@ export const showSaveBar = (
   const bar = h$(
     doc,
     "div",
-    { className: "bar", role: "dialog", "aria-label": copy.title },
-    h$(doc, "div", { className: "head" }, mark, h$(doc, "div", {}, h$(doc, "div", { className: "title" }, copy.title), h$(doc, "div", { className: "sub" }, copy.sub))),
+    { className: "bar", role: "dialog", "aria-labelledby": "quark-save-title", "aria-describedby": "quark-save-sub", tabindex: "-1" },
+    h$(
+      doc,
+      "div",
+      { className: "head" },
+      mark,
+      h$(doc, "div", {}, h$(doc, "div", { className: "title", id: "quark-save-title" }, copy.title), h$(doc, "div", { className: "sub", id: "quark-save-sub" }, copy.sub)),
+    ),
   );
   const actions = h$(doc, "div", { className: "actions" });
   const quiet = copy.actions.filter(([action]) => action === "never");
@@ -84,10 +104,17 @@ export const showSaveBar = (
   bar.append(actions);
   bar.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
       void onAction("dismiss").then(hideSaveBar);
     }
   });
   shadow.append(bar);
+  const active = doc.activeElement;
   doc.body.append(host);
   current = host;
+  previous = active instanceof HTMLElement && active !== doc.body ? active : null;
+  // Move focus to the bar so a keyboard or screen-reader user lands on it (and hears its name)
+  // instead of having to Tab through the whole page; Escape dismisses it.
+  bar.focus({ preventScroll: true });
 };
