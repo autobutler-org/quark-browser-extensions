@@ -14,6 +14,7 @@ import {
   type SaveAction,
   type SaveOffer,
 } from "./save";
+import { isTopFrame, route, type ContentScriptHandlers, type ExtensionPageHandlers, type Sender } from "./gate";
 import { createCache, deriveState, stateFromError } from "./state";
 import {
   clearConnection,
@@ -28,17 +29,6 @@ import {
 
 const api = createApi((input, init) => fetch(input, init));
 const entriesCache = createCache<readonly EntrySummary[]>(30_000);
-
-type Sender = chrome.runtime.MessageSender;
-
-const fromExtensionOrigin = (sender: Sender): boolean => (sender.url ?? "").startsWith(chrome.runtime.getURL(""));
-
-const isExtensionPage = (sender: Sender): boolean => sender.id === chrome.runtime.id && fromExtensionOrigin(sender);
-
-const isContentScript = (sender: Sender): boolean =>
-  sender.id === chrome.runtime.id && !fromExtensionOrigin(sender) && sender.tab !== undefined;
-
-const isTopFrame = (sender: Sender): boolean => sender.frameId === 0;
 
 const tabTopUrl = async (tabId: number): Promise<string> => {
   const reply: unknown = await chrome.tabs.sendMessage(tabId, { type: "whereAmI" }, { frameId: 0 }).catch(() => undefined);
@@ -350,92 +340,45 @@ const signOut = async (): Promise<Responses["signOut"]> => {
   return ok(await currentState());
 };
 
-type Handler = (request: Request, sender: Sender) => Promise<unknown> | null;
-
-const forExtensionPages: Handler = (request, sender) => {
-  if (!isExtensionPage(sender)) {
-    return null;
-  }
-  switch (request.type) {
-    case "state":
-      return currentState();
-    case "connect":
-      return connect(request);
-    case "signOut":
-      return signOut();
-    case "unlock":
-      return withConnection((conn) => api.unlock(conn, request.masterPassword)).then(async (result) =>
-        result.ok || result.error.kind !== "locked"
-          ? stateAfter(result)
-          : ok(stateFromError(await loadServer(), result.error)),
-      );
-    case "lock":
-      return withConnection((conn) => api.lock(conn)).then(stateAfter);
-    case "entries":
-      return entries();
-    case "matches":
-      return matchesFor(request.pageUrl ?? "");
-    case "fillInTab":
-      return fillInTab(request.tabId, request.entryId);
-    case "reveal":
-      return withConnection((conn) => api.getEntry(conn, request.entryId)).then((entry) =>
-        entry.ok ? ok({ username: entry.value.username, password: entry.value.password }) : entry,
-      );
-    case "generate":
-      return withConnection((conn) => api.generate(conn));
-    case "otp":
-      return otpFor(request.entryId, null);
-    case "pendingOffer":
-      return offerFor(request.tabId);
-    case "resolveSave":
-      return request.tabId === undefined ? Promise.resolve(refused("No tab to save from.")) : resolveSave(request.tabId, request.action);
-    case "neverSaveList":
-      return loadNeverSave();
-    case "removeNeverSave":
-      return loadNeverSave().then((hosts) => saveNeverSave(hosts.filter((host) => host !== request.host)));
-    case "settings":
-      return loadSettings();
-    case "saveSettings":
-      return saveSettings(request.settings).then(applyIdleInterval);
-    case "hello":
-    case "fillFromPage":
-    case "fieldFocused":
-    case "otpFromPage":
-    case "generateForPage":
-    case "captured":
-    case "myOffer":
-      return null;
-  }
+const forExtensionPages: ExtensionPageHandlers = {
+  state: () => currentState(),
+  connect: (request) => connect(request),
+  signOut: () => signOut(),
+  unlock: (request) =>
+    withConnection((conn) => api.unlock(conn, request.masterPassword)).then(async (result) =>
+      result.ok || result.error.kind !== "locked"
+        ? stateAfter(result)
+        : ok(stateFromError(await loadServer(), result.error)),
+    ),
+  lock: () => withConnection((conn) => api.lock(conn)).then(stateAfter),
+  entries: () => entries(),
+  matches: (request) => matchesFor(request.pageUrl ?? ""),
+  fillInTab: (request) => fillInTab(request.tabId, request.entryId),
+  reveal: (request) =>
+    withConnection((conn) => api.getEntry(conn, request.entryId)).then((entry) =>
+      entry.ok ? ok({ username: entry.value.username, password: entry.value.password }) : entry,
+    ),
+  generate: () => withConnection((conn) => api.generate(conn)),
+  otp: (request) => otpFor(request.entryId, null),
+  pendingOffer: (request) => offerFor(request.tabId),
+  resolveSave: (request) =>
+    request.tabId === undefined ? Promise.resolve(refused("No tab to save from.")) : resolveSave(request.tabId, request.action),
+  neverSaveList: () => loadNeverSave(),
+  removeNeverSave: (request) => loadNeverSave().then((hosts) => saveNeverSave(hosts.filter((host) => host !== request.host))),
+  settings: () => loadSettings(),
+  saveSettings: (request) => saveSettings(request.settings).then(applyIdleInterval),
 };
 
-const topFrameOnly = new Set<Request["type"]>(["captured", "myOffer", "resolveSave"]);
-
-const forContentScripts: Handler = (request, sender) => {
-  if (!isContentScript(sender) || (topFrameOnly.has(request.type) && !isTopFrame(sender))) {
-    return null;
-  }
-  switch (request.type) {
-    case "hello":
-      return hello(sender);
-    case "fieldFocused":
-      return rebuildMenu(sender.url ?? "").then(() => null);
-    case "otpFromPage":
-      return otpFor(request.entryId, sender);
-    case "generateForPage":
-      return withConnection((conn) => api.generate(conn, Math.max(12, Math.min(64, request.length))));
-    case "captured":
-      return captured(sender, request.username, request.password);
-    case "myOffer":
-      return myOffer(sender);
-    case "resolveSave":
-      return sender.tab?.id === undefined ? null : resolveSave(sender.tab.id, request.action);
-    case "matches":
-      return matchesFor(sender.url ?? "");
-    case "fillFromPage":
-      return fillFromPage(sender, request.entryId);
-    default:
-      return null;
-  }
+const forContentScripts: ContentScriptHandlers = {
+  hello: (sender) => hello(sender),
+  fieldFocused: (sender) => rebuildMenu(sender.url ?? "").then(() => null),
+  otpFromPage: (request, sender) => otpFor(request.entryId, sender),
+  generateForPage: (request) => withConnection((conn) => api.generate(conn, Math.max(12, Math.min(64, request.length)))),
+  captured: (request, sender) => captured(sender, request.username, request.password),
+  myOffer: (sender) => myOffer(sender),
+  resolveSave: (request, tabId) => resolveSave(tabId, request.action),
+  matches: (sender) => matchesFor(sender.url ?? ""),
+  fillFromPage: (request, sender) => fillFromPage(sender, request.entryId),
 };
 
 const applyIdleInterval = (settings: Settings): Settings => {
@@ -490,7 +433,8 @@ export const main = (): void => {
   void loadSettings().then(applyIdleInterval);
 
   chrome.runtime.onMessage.addListener((request: Request, sender, sendResponse) => {
-    const pending = forExtensionPages(request, sender) ?? forContentScripts(request, sender);
+    const self = { id: chrome.runtime.id, pagesUrl: chrome.runtime.getURL("") };
+    const pending = route(request, sender, self, { pages: forExtensionPages, content: forContentScripts });
     if (pending === null) {
       return false;
     }
