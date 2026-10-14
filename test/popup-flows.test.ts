@@ -266,6 +266,7 @@ describe("the connect form", () => {
     expect(document.activeElement?.id).toBe("server");
     expect(alertText(app)).toContain("Can't reach your Quark");
     expect(alertText(app)).toContain("Tried https://quark.local");
+    expect(alertText(app)).toContain("http://quark.local");
   });
 
   it("keeps Stay signed in and the password when the Quark asks for a legacy upgrade (#98)", async () => {
