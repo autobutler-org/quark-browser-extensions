@@ -63,6 +63,12 @@ Each frame decides what to do with the message using `fillDecision` in `src/cont
 
 The worker answers `fillFromPage` only after it checks the requesting frame. It uses the frame URL and frame id that the browser reports, not anything the page says. For a subframe it also checks the top frame's URL, which it gets by asking frame 0. These are the same checks the inline picker and one-time codes use. A frame that lies in its own check still gets refused by the worker.
 
+## Generating a password
+
+**Suggest strong password**, on a new-password field, runs in that field's frame. It asks the worker for a password sized to the field's `maxlength` (from 12 to 20 characters) and fills the field and its confirmation.
+
+Right-click › **Generate password** goes only to the frame you clicked (issue #74). The worker sends `fillGenerated` with that click's `frameId` (`src/background/index.ts`); when the browser doesn't report one, it uses frame 0, and it never broadcasts to the tab. The frame fills only the password field you are on, and only one you can see and reach (`fillGeneratedHere` in `src/content/index.ts`). A field that is off-screen, hidden, or kept out of keyboard reach is left alone, and there is no fallback to another field, so a page that embeds a sign-up iframe can't collect the password through fields of its own. A new-password field also fills its confirmation. The length is 20 characters, not the field's `maxlength`.
+
 ## Filling a login on a site it isn't saved for
 
 The popup lists every vault entry, with search. An entry that matches the page fills with one click, through `fillInTab` as above. Any other entry shows **Fill anyway**. That button only opens a warning naming the entry's saved host and the page's host (port included), plus a note when the page is plain http. Nothing is filled until you click **Fill on ‹page host›** in that warning.
@@ -87,4 +93,4 @@ The keyboard shortcut, the context menu and the inline picker keep their host ch
 - An IP address matches only itself.
 - A single-label host that isn't on the list (`localhost`, an intranet name) stays a parent of its subdomains.
 
-Scheme and port don't widen the match. A different port or scheme is shown as a labelled fallback and is never filled without a pick. A plain `http://` page is refused unless it is loopback or the entry itself was saved with an `http://` URL (`mayFill`).
+Scheme and port don't widen the match. A different port or scheme is shown as a labelled fallback and is never filled without a pick. A plain `http://` page is refused unless the host is `localhost`, `127.0.0.1` or `[::1]`, or the entry itself was saved with an `http://` URL (`mayFill`). That is narrower than loopback for a Quark address: `127.0.0.2` and `*.localhost` are not treated as secure pages.
