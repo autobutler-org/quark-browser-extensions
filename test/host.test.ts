@@ -1,4 +1,15 @@
-import { frameMayFill, hostMatches, hostOf, isSecurePage, matchEntries, mayFill, normalizeServer, searchEntries } from "../src/shared/host";
+import {
+  frameMayFill,
+  hostMatches,
+  hostOf,
+  isFallback,
+  isSecurePage,
+  matchEntries,
+  mayFill,
+  normalizeServer,
+  primaryMatches,
+  searchEntries,
+} from "../src/shared/host";
 import type { EntrySummary } from "../src/shared/types";
 
 const entry = (id: number, name: string, urlHost: string): EntrySummary => ({
@@ -35,8 +46,82 @@ describe("matchEntries", () => {
       entry(3, "Gist", "gist.github.com"),
       entry(4, "Other", "gitlab.com"),
     ];
-    expect(matchEntries(entries, "gist.github.com").map((e) => e.id)).toEqual([3, 2, 1]);
-    expect(matchEntries(entries, "github.com").map((e) => e.id)).toEqual([2, 1]);
+    expect(matchEntries(entries, "https://gist.github.com/").map((e) => e.id)).toEqual([3, 2, 1]);
+    expect(matchEntries(entries, "https://github.com/login").map((e) => e.id)).toEqual([2, 1]);
+  });
+
+  it("matches nothing on a page that isn't a URL", () => {
+    expect(matchEntries([entry(1, "A", "github.com")], "github.com")).toEqual([]);
+  });
+
+  describe("by origin", () => {
+    // Self-hosters run many services on one box; each port is its own site.
+    const local = [
+      entry(1, "Router", "localhost"),
+      entry(2, "NAS", "localhost"),
+      entry(3, "Quark", "localhost"),
+      entry(4, "Old NAS", "localhost"),
+      entry(5, "Docs", "localhost"),
+    ];
+    const urls: Record<number, string> = {
+      1: "http://localhost:8099/basic.html",
+      2: "http://localhost:8087/login",
+      3: "https://localhost:8087",
+      4: "http://localhost:8087/",
+      5: "localhost",
+    };
+    const urlOf = (e: { id: number }) => urls[e.id];
+    const view = (pageUrl: string) =>
+      matchEntries(local, pageUrl, urlOf).map(({ id, kind, where, note }) => ({ id, kind, where, note }));
+
+    it("ranks exact-origin matches first and labels other ports and schemes as fallbacks", () => {
+      expect(view("http://localhost:8087/login")).toEqual([
+        { id: 2, kind: "exact", where: "localhost:8087/login", note: "" },
+        { id: 4, kind: "exact", where: "localhost:8087", note: "" },
+        { id: 1, kind: "otherPort", where: "localhost:8099/basic.html", note: "Different port" },
+        { id: 5, kind: "otherScheme", where: "https://localhost", note: "Saved for https" },
+        { id: 3, kind: "otherScheme", where: "https://localhost:8087", note: "Saved for https" },
+      ]);
+    });
+
+    it("counts only exact and same-site matches as primary", () => {
+      expect(primaryMatches(matchEntries(local, "http://localhost:8099/", urlOf)).map((e) => e.id)).toEqual([1]);
+      expect(primaryMatches(matchEntries(local, "http://localhost:9000/", urlOf))).toEqual([]);
+      expect(matchEntries(local, "http://localhost:9000/", urlOf).every(isFallback)).toBe(true);
+    });
+
+    it("never offers an http entry on an https page without saying so", () => {
+      const [match] = matchEntries([entry(1, "Shop", "shop.example")], "https://shop.example/", () => "http://shop.example/");
+      expect(match).toMatchObject({ kind: "otherScheme", where: "http://shop.example", note: "Saved for http" });
+    });
+
+    it("never offers an https entry on an http page without saying so", () => {
+      const [match] = matchEntries([entry(1, "Shop", "shop.example")], "http://shop.example/", () => "https://shop.example/");
+      expect(match).toMatchObject({ kind: "otherScheme", note: "Saved for https" });
+    });
+
+    it("treats default ports as the same origin", () => {
+      expect(matchEntries([entry(1, "A", "example.com")], "https://example.com:443/", () => "https://example.com")[0]?.kind).toBe("exact");
+      expect(matchEntries([entry(1, "A", "example.com")], "http://example.com/", () => "http://example.com:80/")[0]?.kind).toBe("exact");
+    });
+
+    it("keeps subdomain matches on the same scheme and port as primary", () => {
+      expect(matchEntries([entry(1, "A", "github.com")], "https://gist.github.com/", () => "https://github.com/login")[0]).toMatchObject({
+        kind: "site",
+        where: "github.com/login",
+      });
+    });
+
+    it("reads an entry URL without a scheme, or an unknown URL, as https on the default port", () => {
+      expect(matchEntries([entry(1, "A", "github.com")], "https://github.com/", () => "github.com/login")[0]?.kind).toBe("exact");
+      expect(matchEntries([entry(1, "A", "github.com")], "https://github.com/")[0]).toMatchObject({ kind: "exact", where: "github.com" });
+      expect(matchEntries([entry(1, "A", "github.com")], "https://github.com/", () => "ftp://github.com")[0]?.kind).toBe("exact");
+      expect(matchEntries([entry(1, "A", "github.com")], "https://github.com/", () => "http://[github.com")[0]?.kind).toBe("exact");
+    });
+
+    it("still filters by host, whatever the entry's URL claims", () => {
+      expect(matchEntries([entry(1, "A", "github.com")], "https://evil.io/", () => "https://evil.io/")).toEqual([]);
+    });
   });
 });
 
@@ -130,22 +215,25 @@ describe("host matching edge cases", () => {
       expect(hostMatches(entryHost, hostOf(pageUrl))).toBe(expected);
     });
 
-    // Known gap: IP hosts go through the same suffix rule as domain names, so a partial address
-    // matches a full one. Quark's own URL parsing keeps such hosts as written.
-    it.fails("doesn't treat the tail of an IPv4 address as a parent domain", () => {
+    it("doesn't treat the tail of an IPv4 address as a parent domain", () => {
       expect(hostMatches("168.1.1", "192.168.1.1")).toBe(false);
     });
 
-    // Known gap: a bare IPv6 host (as Go's URL.Hostname() returns it) never matches the bracketed
-    // form the browser reports.
-    it.fails("matches a bare IPv6 entry host on the bracketed page host", () => {
+    // Quark stores a bare IPv6 host, as Go's URL.Hostname() returns it.
+    it("matches a bare IPv6 entry host on the bracketed page host", () => {
       expect(hostMatches("::1", hostOf("http://[::1]/"))).toBe(true);
     });
 
-    it("treats only IPv4 loopback over http as secure", () => {
+    it("doesn't treat IPv6 addresses as parent domains", () => {
+      expect(hostMatches("::1", hostOf("http://[2001:db8::1]/"))).toBe(false);
+      expect(hostMatches("[::1]", "[::1].example")).toBe(false);
+    });
+
+    it("treats IPv4 and IPv6 loopback over http as secure", () => {
       expect(isSecurePage("http://127.0.0.1:8080/")).toBe(true);
       expect(isSecurePage("http://127.0.0.2/")).toBe(false);
-      expect(isSecurePage("http://[::1]/")).toBe(false);
+      expect(isSecurePage("http://[::1]/")).toBe(true);
+      expect(isSecurePage("http://[::2]/")).toBe(false);
     });
   });
 
@@ -183,10 +271,11 @@ describe("host matching edge cases", () => {
       expect(hostMatches(entryHost, hostOf(pageUrl))).toBe(expected);
     });
 
-    // Known gap: entry hosts are compared as stored. If Quark stores an IDN host in Unicode, it
-    // never matches the punycode host the browser reports.
-    it.fails("matches a Unicode entry host on its punycode page", () => {
+    // Quark stores the host as typed, so an IDN host can arrive in Unicode.
+    it("matches a Unicode entry host on its punycode page", () => {
       expect(hostMatches("bücher.de", hostOf("https://bücher.de/"))).toBe(true);
+      expect(hostMatches("BÜCHER.de", hostOf("https://shop.bücher.de/"))).toBe(true);
+      expect(hostMatches("аpple.com", hostOf("https://apple.com/"))).toBe(false);
     });
 
     it("normalizes an IDN server address to punycode", () => {
@@ -208,9 +297,19 @@ describe("host matching edge cases", () => {
       expect(mayFill("http://192.168.1.1:8080/", "http://192.168.1.1:8080", "192.168.1.1")).toBe(true);
     });
 
-    it("never matches an entry host that carries a port", () => {
-      expect(hostMatches("quark.local:8443", hostOf("https://quark.local:8443/"))).toBe(false);
+    it("matches an entry host that carries a port on its host", () => {
+      expect(hostMatches("quark.local:8443", hostOf("https://quark.local:8443/"))).toBe(true);
+      expect(hostMatches("[::1]:8080", hostOf("http://[::1]:8080/"))).toBe(true);
+      expect(hostMatches("quark.local:8443", hostOf("https://evil.local:8443/"))).toBe(false);
     });
+
+    it.each(["evil.io/github.com", "github.com@evil.io", "evil.io#github.com", "evil.io\\github.com", "git hub.com", "quark.local:99999"])(
+      "never matches the malformed entry host %s",
+      (entryHost) => {
+        expect(hostMatches(entryHost, "github.com")).toBe(false);
+        expect(hostMatches(entryHost, "evil.io")).toBe(false);
+      },
+    );
 
     it.each([
       ["[::1]:8080", "https://[::1]:8080"],

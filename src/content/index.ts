@@ -82,7 +82,7 @@ const scan = async (): Promise<void> => {
   if (greeting.connected) {
     signups.forEach((field) => {
       if (!decorated.has(field)) {
-        decorated.set(field, attachPicker(field, [], location.hostname, { onPick: pick(field), onSuggest: suggest(field) }));
+        decorated.set(field, attachPicker(field, [], location.host, { onPick: pick(field), onSuggest: suggest(field) }));
       }
     });
   }
@@ -92,7 +92,7 @@ const scan = async (): Promise<void> => {
   const attach = (onPick: (field: HTMLInputElement) => (entry: EntrySummary) => Promise<string | null>) =>
     (field: HTMLInputElement): void => {
       if (!decorated.has(field)) {
-        decorated.set(field, attachPicker(field, greeting.matches, location.hostname, { onPick: onPick(field) }));
+        decorated.set(field, attachPicker(field, greeting.matches, location.host, { onPick: onPick(field) }));
       }
     };
   passwords.filter((field) => !signups.includes(field)).forEach(attach(pick));

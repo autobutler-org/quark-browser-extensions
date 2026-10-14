@@ -1,5 +1,6 @@
 import { h$, icon, icons } from "../shared/dom";
 import { adoptStyles } from "./styles";
+import { isFallback, type SiteMatch } from "../shared/host";
 import type { EntrySummary } from "../shared/types";
 
 const css = `
@@ -32,6 +33,9 @@ const css = `
 .item:hover .avatar, .item:focus-visible .avatar { background: #0EA5E9; color: #FFFFFF; }
 .name { font-size: 14px; font-weight: 500; color: #E2E8F0; }
 .hint { font-size: 12px; color: #94A3B8; }
+.where { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; color: #94A3B8; overflow-wrap: anywhere; }
+.note { color: #FBBF24; }
+.subhead { padding: 8px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #FBBF24; }
 .error { padding: 10px; font-size: 13px; line-height: 1.4; color: #FCA5A5; }
 `;
 
@@ -49,7 +53,7 @@ const initial = (name: string): string => (name.trim()[0] ?? "?").toUpperCase();
 
 export const attachPicker = (
   field: HTMLInputElement,
-  matches: readonly EntrySummary[],
+  matches: readonly SiteMatch[],
   pageHost: string,
   { onPick, onSuggest }: PickerHandlers,
 ): PickerHandle => {
@@ -90,7 +94,16 @@ export const attachPicker = (
     panel.append(h$(doc, "div", { className: "error", role: "alert" }, message));
   };
 
-  const item = (panel: HTMLElement, entry: EntrySummary): HTMLButtonElement =>
+  const where = (entry: SiteMatch): HTMLElement =>
+    h$(
+      doc,
+      "div",
+      { className: "where" },
+      entry.where,
+      entry.note === "" ? null : h$(doc, "span", { className: "note" }, ` · ${entry.note}`),
+    );
+
+  const item = (panel: HTMLElement, entry: SiteMatch): HTMLButtonElement =>
     h$(
       doc,
       "button",
@@ -103,7 +116,7 @@ export const attachPicker = (
         }) as EventListener,
       },
       h$(doc, "div", { className: "avatar", "aria-hidden": "true" }, initial(entry.name)),
-      h$(doc, "div", { className: "name" }, entry.name),
+      h$(doc, "div", {}, h$(doc, "div", { className: "name" }, entry.name), where(entry)),
     );
 
   const suggestItem = (panel: HTMLElement, suggest: () => Promise<string | null>): HTMLButtonElement => {
@@ -135,7 +148,12 @@ export const attachPicker = (
     if (onSuggest !== undefined) {
       panel.append(suggestItem(panel, onSuggest));
     }
-    matches.forEach((entry) => panel.append(item(panel, entry)));
+    const fallbacks = matches.filter(isFallback);
+    matches.filter((entry) => !isFallback(entry)).forEach((entry) => panel.append(item(panel, entry)));
+    if (fallbacks.length > 0) {
+      panel.append(h$(doc, "div", { className: "subhead", role: "presentation" }, "Saved for another port or scheme"));
+      fallbacks.forEach((entry) => panel.append(item(panel, entry)));
+    }
     anchor.append(panel);
     trigger.setAttribute("aria-expanded", "true");
     panel.querySelector<HTMLButtonElement>(".item")?.focus();

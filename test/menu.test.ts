@@ -1,13 +1,16 @@
 import { entryIdFromMenu, maxMenuEntries, menuItems, shortcutPlan } from "../src/shared/menu";
-import type { EntrySummary } from "../src/shared/types";
+import type { MatchKind, SiteMatch } from "../src/shared/host";
 
-const entry = (id: number, name: string): EntrySummary => ({
+const entry = (id: number, name: string, kind: MatchKind = "exact"): SiteMatch => ({
   id,
   name,
   urlHost: "example.com",
   folderId: null,
   createdAt: "",
   updatedAt: "",
+  kind,
+  where: kind === "otherPort" ? "example.com:8443" : "example.com",
+  note: kind === "otherPort" ? "Different port" : "",
 });
 
 describe("menuItems", () => {
@@ -19,6 +22,10 @@ describe("menuItems", () => {
     const items = menuItems(Array.from({ length: 12 }, (_, i) => entry(i + 1, i === 0 ? "Tom & Jerry" : `E${i}`)));
     expect(items).toHaveLength(maxMenuEntries);
     expect(items[0]).toEqual({ id: "fill:1", title: "Fill Tom && Jerry", enabled: true });
+  });
+
+  it("names where a fallback was saved", () => {
+    expect(menuItems([entry(1, "Admin", "otherPort")])).toEqual([{ id: "fill:1", title: "Fill Admin (example.com:8443)", enabled: true }]);
   });
 });
 
@@ -39,5 +46,14 @@ describe("shortcutPlan", () => {
     expect(shortcutPlan([entry(3, "A")])).toEqual({ kind: "fill", entryId: 3 });
     expect(shortcutPlan([entry(3, "A"), entry(4, "B")])).toEqual({ kind: "picker" });
     expect(shortcutPlan([])).toEqual({ kind: "popup" });
+  });
+
+  it("fills the single exact match even with fallbacks around it", () => {
+    expect(shortcutPlan([entry(3, "A"), entry(4, "B", "otherPort")])).toEqual({ kind: "fill", entryId: 3 });
+  });
+
+  it("never fills a fallback without a pick", () => {
+    expect(shortcutPlan([entry(4, "B", "otherPort")])).toEqual({ kind: "picker" });
+    expect(shortcutPlan([entry(4, "B", "otherScheme")])).toEqual({ kind: "picker" });
   });
 });

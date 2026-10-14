@@ -1,6 +1,14 @@
 import { h, icon, icons } from "../shared/dom";
 import { errorText, stateText } from "../shared/errors";
-import { hostOf, insecureServerWarning, needsInsecureConfirmation, searchEntries, serverTransport } from "../shared/host";
+import {
+  hostOf,
+  insecureServerWarning,
+  isFallback,
+  needsInsecureConfirmation,
+  searchEntries,
+  serverTransport,
+  type SiteMatch,
+} from "../shared/host";
 import { ask } from "../shared/messages";
 import type { SaveAction, SaveOffer } from "../background/save";
 import { currentBrowser, siteOrigins } from "../shared/platform";
@@ -15,7 +23,7 @@ type Model = Readonly<{
   error: string;
   busy: boolean;
   entries: readonly EntrySummary[];
-  matches: readonly EntrySummary[];
+  matches: readonly SiteMatch[];
   query: string;
   generated: string;
   notice: string;
@@ -316,15 +324,48 @@ const othersBanner = (): HTMLElement | null =>
 
 const initial = (name: string): string => (name.trim()[0] ?? "?").toUpperCase();
 
-const matchCard = (entry: EntrySummary, index: number): HTMLElement =>
-  h(
+// The first exact or same-site match is the one to fill; a fallback is never highlighted.
+const matchCard = (entry: SiteMatch, index: number): HTMLElement => {
+  const first = index === 0 && !isFallback(entry);
+  return h(
     "div",
-    { className: index === 0 ? "match first" : "match" },
+    { className: first ? "match first" : "match" },
     h("div", { className: "avatar", "aria-hidden": "true" }, initial(entry.name)),
-    h("div", { className: "grow" }, h("div", { className: "name" }, entry.name), h("div", { className: "mono muted small" }, entry.urlHost)),
+    h(
+      "div",
+      { className: "grow" },
+      h("div", { className: "name" }, entry.name),
+      h("div", { className: "mono muted small" }, entry.note === "" ? entry.where : `${entry.where} · ${entry.note}`),
+    ),
     iconButton(`Copy one-time code for ${entry.name}`, icons.clock, () => void copyCode(entry)),
-    h("button", { className: index === 0 ? "fill primary" : "fill", type: "button", onclick: (() => void fillEntry(entry)) as EventListener }, "Fill"),
+    h("button", { className: first ? "fill primary" : "fill", type: "button", onclick: (() => void fillEntry(entry)) as EventListener }, "Fill"),
   );
+};
+
+const pageSite = (url: string): string => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+};
+
+const matchSections = (): readonly HTMLElement[] => {
+  const pageHost = pageSite(model.tab.url);
+  const primary = model.matches.filter((entry) => !isFallback(entry));
+  const fallbacks = model.matches.filter(isFallback);
+  const section = (label: string, matches: readonly SiteMatch[]): HTMLElement =>
+    h(
+      "section",
+      { className: "matches" },
+      h("div", { className: "section-head" }, h("div", { className: "section-label grow" }, label), h("div", { className: "mono accent small" }, pageHost)),
+      ...matches.map(matchCard),
+    );
+  return [
+    ...(primary.length === 0 ? [] : [section("On this site", primary)]),
+    ...(fallbacks.length === 0 ? [] : [section("Other port or scheme", fallbacks)]),
+  ];
+};
 
 const entryRow = (entry: EntrySummary): HTMLElement =>
   h(
@@ -340,7 +381,6 @@ const autoLockText = (state: VaultState): string =>
     : "Unlocked";
 
 const entriesView = (state: VaultState): HTMLElement => {
-  const pageHost = hostOf(model.tab.url);
   const search = h("input", { id: "search", type: "search", placeholder: "Search the vault", value: model.query, autocomplete: "off" });
   const list = h("div", { className: "list" });
   const renderList = (): void => {
@@ -371,14 +411,7 @@ const entriesView = (state: VaultState): HTMLElement => {
     h(
       "div",
       { className: "scroll" },
-      model.matches.length === 0 || model.query !== ""
-        ? null
-        : h(
-            "section",
-            { className: "matches" },
-            h("div", { className: "section-head" }, h("div", { className: "section-label grow" }, "On this site"), h("div", { className: "mono accent small" }, pageHost)),
-            ...model.matches.map(matchCard),
-          ),
+      ...(model.query === "" ? matchSections() : []),
       list,
     ),
     h("footer", { className: "status" }, h("span", { className: "dot" }), h("span", { className: "grow" }, autoLockText(state)), h("span", { className: "mono", title: model.shortcut === "" ? "" : "Fill shortcut" }, model.shortcut === "" ? hostOf(serverOf(state)) : model.shortcut)),

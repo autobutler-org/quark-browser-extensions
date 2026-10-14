@@ -7,7 +7,9 @@ import {
   matchEntries,
   normalizeHost,
   normalizeServer,
+  primaryMatches,
   serverTransport,
+  type SiteMatch,
 } from "../shared/host";
 import type { Hello, PageCommand, PageReply, Request, Responses } from "../shared/messages";
 import { err, ok, type Connection, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
@@ -39,6 +41,14 @@ import {
 
 const api = createApi((input, init) => fetch(input, init));
 const entriesCache = createCache<readonly EntrySummary[]>(30_000);
+// Each entry's full URL, which the list leaves out, so matches can be ranked by origin. Kept in memory only
+// and dropped with the list; an edited entry gets a new updatedAt and is looked up again.
+const entryUrls = new Map<number, Readonly<{ updatedAt: string; url: string }>>();
+
+const forgetEntries = (): void => {
+  entriesCache.clear();
+  entryUrls.clear();
+};
 
 const tabTopUrl = async (tabId: number): Promise<string> => {
   const reply: unknown = await chrome.tabs.sendMessage(tabId, { type: "whereAmI" }, { frameId: 0 }).catch(() => undefined);
@@ -63,7 +73,7 @@ const withConnection = async <T>(run: (connection: Connection) => Promise<Result
   }
   const result = await run(connection);
   if (!result.ok && result.error.kind === "signedOut") {
-    entriesCache.clear();
+    forgetEntries();
     await clearConnection();
   }
   return result;
@@ -80,8 +90,8 @@ const currentState = async (): Promise<VaultState> => {
 };
 
 const stateAfter = async (result: Result<unknown>): Promise<Result<VaultState>> => {
-  entriesCache.clear();
-  menuHost = null;
+  forgetEntries();
+  menuOrigin = null;
   return result.ok ? ok(await currentState()) : err(result.error);
 };
 
@@ -97,9 +107,31 @@ const entries = async (): Promise<Result<readonly EntrySummary[]>> => {
   return result;
 };
 
-const matchesFor = async (pageUrl: string): Promise<Result<readonly EntrySummary[]>> => {
+const knownUrl = (entry: EntrySummary): string | undefined => {
+  const known = entryUrls.get(entry.id);
+  return known?.updatedAt === entry.updatedAt ? known.url : undefined;
+};
+
+const learnUrls = async (candidates: readonly EntrySummary[]): Promise<void> => {
+  const missing = candidates.filter((entry) => knownUrl(entry) === undefined);
+  await Promise.all(
+    missing.map(async (entry) => {
+      const detail = await withConnection((conn) => api.getEntry(conn, entry.id));
+      if (detail.ok) {
+        entryUrls.set(entry.id, { updatedAt: entry.updatedAt, url: detail.value.url });
+      }
+    }),
+  );
+};
+
+const matchesFor = async (pageUrl: string): Promise<Result<readonly SiteMatch[]>> => {
   const result = await entries();
-  return result.ok ? ok(matchEntries(result.value, hostOf(pageUrl))) : result;
+  if (!result.ok) {
+    return result;
+  }
+  const pageHost = hostOf(pageUrl);
+  await learnUrls(result.value.filter((entry) => hostMatches(entry.urlHost, pageHost)));
+  return ok(matchEntries(result.value, pageUrl, knownUrl));
 };
 
 const refused = (reason: string) => err({ kind: "refused", reason } as const);
@@ -178,7 +210,16 @@ const setBadge = async (tabId: number, count: number, enabled: boolean): Promise
   await chrome.action.setBadgeText({ tabId, text: enabled && count > 0 ? String(count) : "" });
 };
 
-let menuHost: string | null = null;
+// The origin the context menu was last built for; the menu differs between ports on one host.
+let menuOrigin: string | null = null;
+
+const originOf = (url: string): string => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "";
+  }
+};
 
 const pendings = new Map<number, Pending>();
 
@@ -235,8 +276,8 @@ const resolveSave = async (tabId: number, action: SaveAction): Promise<Result<nu
   const finish = <T>(result: Result<T>): Result<null> => {
     if (result.ok) {
       pendings.delete(tabId);
-      entriesCache.clear();
-      menuHost = null;
+      forgetEntries();
+      menuOrigin = null;
       return ok(null);
     }
     return result;
@@ -262,11 +303,11 @@ const resolveSave = async (tabId: number, action: SaveAction): Promise<Result<nu
 };
 
 const rebuildMenu = async (pageUrl: string): Promise<void> => {
-  const host = hostOf(pageUrl);
-  if (host === menuHost) {
+  const origin = originOf(pageUrl);
+  if (origin === menuOrigin) {
     return;
   }
-  menuHost = host;
+  menuOrigin = origin;
   const result = await matchesFor(pageUrl);
   await chrome.contextMenus.removeAll();
   chrome.contextMenus.create({ id: menuRoot, title: "Quark Vault", contexts: ["editable"] });
@@ -319,7 +360,7 @@ const hello = async (sender: Sender): Promise<Hello> => {
   const result = await matchesFor(sender.url ?? "");
   const matches = result.ok ? result.value : [];
   if (sender.tab?.id !== undefined && isTopFrame(sender)) {
-    await setBadge(sender.tab.id, matches.length, settings.badge);
+    await setBadge(sender.tab.id, primaryMatches(matches).length, settings.badge);
   }
   return { settings, matches, connected: (await loadConnection()) !== null };
 };
@@ -348,7 +389,7 @@ const signOut = async (): Promise<Responses["signOut"]> => {
   if (connection !== null) {
     await api.logout(connection);
   }
-  entriesCache.clear();
+  forgetEntries();
   await clearConnection();
   return ok(await currentState());
 };
@@ -402,7 +443,7 @@ const applyIdleInterval = (settings: Settings): Settings => {
 const onIdleState = async (state: IdleState): Promise<void> => {
   const settings = await loadSettings();
   if (idleAction(state, settings) === "lock" && (await loadConnection()) !== null) {
-    entriesCache.clear();
+    forgetEntries();
     await withConnection((conn) => api.lock(conn));
   }
 };
