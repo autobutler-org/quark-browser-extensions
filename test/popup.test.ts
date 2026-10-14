@@ -6,13 +6,16 @@ import type { SiteMatch } from "../src/shared/host";
 import { defaultSettings, ok, type EntrySummary, type VaultState } from "../src/shared/types";
 
 // The popup talks to the worker only through ask(), so the tests answer for it.
-const worker = vi.hoisted((): { state: unknown; welcomeSeen: boolean; sent: Request[]; refuseFill: string; entries: EntrySummary[] } => ({
-  state: null,
-  welcomeSeen: true,
-  sent: [],
-  refuseFill: "",
-  entries: [],
-}));
+const worker = vi.hoisted(
+  (): { state: unknown; welcomeSeen: boolean; sent: Request[]; refuseFill: string; entries: EntrySummary[]; fallbacks: SiteMatch[] } => ({
+    state: null,
+    welcomeSeen: true,
+    sent: [],
+    refuseFill: "",
+    entries: [],
+    fallbacks: [],
+  }),
+);
 vi.mock("../src/shared/messages", () => ({
   ask: (request: Request) => {
     worker.sent.push(request);
@@ -32,7 +35,7 @@ const answer = (request: Request): unknown => {
     case "entries":
       return ok(worker.entries);
     case "matches":
-      return ok([match(1, "Work mail"), match(3, "Old work mail")]);
+      return ok([match(1, "Work mail"), match(3, "Old work mail"), ...worker.fallbacks]);
     case "pendingOffer":
       return null;
     case "reveal":
@@ -95,6 +98,7 @@ afterEach(() => {
   worker.welcomeSeen = true;
   worker.sent = [];
   worker.refuseFill = "";
+  worker.fallbacks = [];
   clipboard.length = 0;
   tabUrl = "https://example.com/login";
   vi.unstubAllGlobals();
@@ -271,6 +275,22 @@ describe("all entries", () => {
 
     button(app, "Fill on example.com").click();
     await vi.waitFor(() => expect(fills()).toEqual([{ type: "fillAnyway", tabId: 7, entryId: 2, pageHost: "example.com" }]));
+  });
+
+  it("asks before filling a login saved for another port on this host, naming where it was saved", async () => {
+    worker.fallbacks = [{ ...match(4, "Admin"), kind: "otherPort", where: "example.com:8443", note: "Different port" }];
+    worker.entries = [...worker.entries, entry(4, "Admin", "example.com")];
+    const app = await openPopup(unlocked);
+    const card = [...app.querySelectorAll<HTMLElement>(".match")].find((found) => found.textContent?.includes("Admin"))!;
+    const fill = card.querySelector<HTMLButtonElement>(".fill")!;
+    expect(fill.getAttribute("aria-label")).toBe("Fill anyway Admin");
+    fill.click();
+    await settle();
+    expect(fills()).toEqual([]);
+    expect(app.querySelectorAll("#fill-anyway-4")).toHaveLength(1);
+    expect(app.querySelector("#fill-anyway-4")?.textContent).toContain("Admin is saved for example.com:8443, not example.com.");
+    button(app, "Fill on example.com").click();
+    await vi.waitFor(() => expect(fills()).toEqual([{ type: "fillAnyway", tabId: 7, entryId: 4, pageHost: "example.com" }]));
   });
 
   it("fills nothing when the warning is cancelled", async () => {

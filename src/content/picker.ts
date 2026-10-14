@@ -200,7 +200,10 @@ export const attachPicker = (
         role: "menuitem",
         tabindex: "-1",
         "aria-label": t("pickerFillItem", entry.name, whereText(entry)),
-        onclick: (() => run(panel, () => onPick(entry), t("pickerFilled", entry.name))) as EventListener,
+        onclick: (() =>
+          isFallback(entry)
+            ? showError(panel, t("pickerFallbackInPopup", entry.name, entry.where, pageHost))
+            : run(panel, () => onPick(entry), t("pickerFilled", entry.name))) as EventListener,
       },
       h$(doc, "div", { className: "avatar", "aria-hidden": "true" }, initial(entry.name)),
       h$(doc, "div", { className: "text" }, h$(doc, "div", { className: "name" }, entry.name), where(entry)),
@@ -238,6 +241,7 @@ export const attachPicker = (
     }
     const fallbacks = matches.filter(isFallback);
     matches.filter((entry) => !isFallback(entry)).forEach((entry) => menu.append(item(panel, entry)));
+    const leading = menu.childElementCount;
     if (fallbacks.length > 0) {
       const label = t("pickerFallbacks");
       const group = h$(doc, "div", { className: "group", role: "group", "aria-label": label }, h$(doc, "div", { className: "subhead", "aria-hidden": "true" }, label));
@@ -252,7 +256,12 @@ export const attachPicker = (
     if (count === 0) {
       announce(t("pickerNoLogins"));
     }
-    focusItem(focusLast ? count - 1 : 0);
+    if (focusLast || leading > 0) {
+      focusItem(focusLast ? count - 1 : 0);
+    } else {
+      focusItem(-1);
+      trigger.focus();
+    }
   };
 
   const toggle = (event: Event): void => {

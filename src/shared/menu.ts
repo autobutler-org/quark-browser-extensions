@@ -1,5 +1,5 @@
 import { t } from "./i18n";
-import { isFallback, primaryMatches, type SiteMatch } from "./host";
+import { primaryMatches, type SiteMatch } from "./host";
 
 export const menuRoot = "quark-vault";
 export const generateMenuId = "generate";
@@ -12,16 +12,17 @@ export type MenuItem = Readonly<{
   enabled: boolean;
 }>;
 
-// A fallback (another port or scheme on this host) names where it was saved, so it's never mistaken for
-// a login for this page.
-export const menuItems = (matches: readonly SiteMatch[]): readonly MenuItem[] =>
-  matches.length === 0
+// A fallback (another port or scheme on this host) is left out: filling one needs the popup's confirmation.
+export const menuItems = (matches: readonly SiteMatch[]): readonly MenuItem[] => {
+  const primary = primaryMatches(matches);
+  return primary.length === 0
     ? [{ id: "none", title: t("menuNoLogins"), enabled: false }]
-    : matches.slice(0, maxMenuEntries).map((entry) => ({
+    : primary.slice(0, maxMenuEntries).map((entry) => ({
         id: `${fillPrefix}${entry.id}`,
-        title: (isFallback(entry) ? t("menuFillWhere", entry.name, entry.where) : t("fillName", entry.name)).replaceAll("&", "&&"),
+        title: t("fillName", entry.name).replaceAll("&", "&&"),
         enabled: true,
       }));
+};
 
 export const entryIdFromMenu = (menuItemId: string | number): number | null => {
   const id = String(menuItemId);
@@ -37,11 +38,12 @@ export type ShortcutPlan =
   | Readonly<{ kind: "picker" }>
   | Readonly<{ kind: "popup" }>;
 
-// Only a single exact or same-site match is filled straight away; a fallback always needs a pick.
+// Only a single exact or same-site match is filled straight away. With fallbacks alone, the popup opens, since
+// only its confirmation can fill one.
 export const shortcutPlan = (matches: readonly SiteMatch[]): ShortcutPlan => {
-  if (matches.length === 0) {
+  const [only, ...rest] = primaryMatches(matches);
+  if (only === undefined) {
     return { kind: "popup" };
   }
-  const [only, ...rest] = primaryMatches(matches);
-  return only !== undefined && rest.length === 0 ? { kind: "fill", entryId: only.id } : { kind: "picker" };
+  return rest.length === 0 ? { kind: "fill", entryId: only.id } : { kind: "picker" };
 };

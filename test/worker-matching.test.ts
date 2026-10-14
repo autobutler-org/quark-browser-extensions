@@ -118,17 +118,48 @@ describe("matching logins to the page by origin", () => {
     const create = vi.spyOn(fake.chrome.contextMenus, "create");
     const titles = () => create.mock.calls.map((args) => ((args as unknown[])[0] as { title?: string } | undefined)?.title).filter((title) => title?.startsWith("Fill"));
     await fake.send({ type: "fieldFocused" }, page("http://localhost:8099/basic.html"));
-    expect(titles()).toEqual(["Fill Router", "Fill NAS (localhost:8087/login)", "Fill Quark (https://localhost:8087)"]);
+    expect(titles()).toEqual(["Fill Router"]);
     create.mockClear();
     await fake.send({ type: "fieldFocused" }, page("http://localhost:8087/login"));
-    expect(titles()).toEqual(["Fill NAS", "Fill Router (localhost:8099/basic.html)", "Fill Quark (https://localhost:8087)"]);
+    expect(titles()).toEqual(["Fill NAS"]);
+    create.mockClear();
+    await fake.send({ type: "fieldFocused" }, page("https://localhost:8087/"));
+    expect(titles()).toEqual(["Fill Quark"]);
   });
 
-  it("still fills a fallback the user picks, on the same host only", async () => {
+  it("hands a page only the logins saved for its scheme and port", async () => {
     await startWorker();
-    expect(await fake.send({ type: "fillFromPage", entryId: 1 }, page("http://localhost:9000/"))).toMatchObject({
+    expect(await fake.send({ type: "fillFromPage", entryId: 1 }, page("http://localhost:8099/"))).toMatchObject({
       ok: true,
       value: { password: "Router-secret" },
+    });
+    expect(await fake.send({ type: "fillFromPage", entryId: 2 }, page("http://localhost:8087/"))).toMatchObject({
+      ok: true,
+      value: { password: "NAS-secret" },
+    });
+    expect(await fake.send({ type: "fillFromPage", entryId: 3 }, page("https://localhost:8087/"))).toMatchObject({
+      ok: true,
+      value: { password: "Quark-secret" },
+    });
+  });
+
+  it("refuses a fallback to the page, so another port or scheme never gets it with one click", async () => {
+    await startWorker();
+    expect(await fake.send({ type: "fillFromPage", entryId: 1 }, page("http://localhost:9000/"))).toMatchObject({
+      ok: false,
+      error: { kind: "refused" },
+    });
+    expect(await fake.send({ type: "fillFromPage", entryId: 2 }, page("http://localhost:8099/"))).toMatchObject({
+      ok: false,
+      error: { kind: "refused" },
+    });
+    expect(await fake.send({ type: "fillFromPage", entryId: 3 }, page("http://localhost:8087/"))).toMatchObject({
+      ok: false,
+      error: { kind: "refused" },
+    });
+    expect(await fake.send({ type: "otpFromPage", entryId: 2 }, page("http://localhost:8099/"))).toMatchObject({
+      ok: false,
+      error: { kind: "refused" },
     });
     expect(await fake.send({ type: "fillFromPage", entryId: 4 }, page("http://localhost:9000/"))).toMatchObject({
       ok: false,

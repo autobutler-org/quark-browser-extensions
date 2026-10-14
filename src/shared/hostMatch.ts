@@ -1,5 +1,5 @@
 import { parse } from "tldts/dist/index.esm.min.js";
-import { byName, hostOf, isSecurePage, type MatchKind, type SiteMatch } from "./host";
+import { byName, type MatchKind, type SiteMatch } from "./host";
 import { t } from "./i18n";
 import type { EntrySummary } from "./types";
 
@@ -101,6 +101,9 @@ const pageOrigin = (pageUrl: string): Origin | null => {
   }
 };
 
+const savedOrigin = (entryUrl: string, entryHost: string): Origin =>
+  entryOrigin(entryUrl) ?? { protocol: "https:", host: siteHost(entryHost), port: "443", display: entryHost, path: "" };
+
 const kindOf = (page: Origin, entry: Origin): MatchKind => {
   if (entry.protocol !== page.protocol) {
     return "otherScheme";
@@ -136,8 +139,7 @@ export const matchEntries = (
   return entries
     .filter((entry) => hostMatches(entry.urlHost, page.host))
     .map((entry): SiteMatch => {
-      const known = entryOrigin(urlOf(entry) ?? "");
-      const origin = known ?? { protocol: "https:", host: siteHost(entry.urlHost), port: "443", display: entry.urlHost, path: "" };
+      const origin = savedOrigin(urlOf(entry) ?? "", entry.urlHost);
       const kind = kindOf(page, origin);
       const scheme = kind === "otherScheme" ? `${origin.protocol}//` : "";
       return { ...entry, kind, where: `${scheme}${origin.display}${origin.path}`, note: noteFor(kind, origin) };
@@ -146,12 +148,16 @@ export const matchEntries = (
 };
 
 export const mayFill = (pageUrl: string, entryUrl: string, entryHost: string): boolean => {
-  const insecureAllowed = entryUrl.trim().toLowerCase().startsWith("http://");
-  return hostMatches(entryHost, hostOf(pageUrl)) && (isSecurePage(pageUrl) || insecureAllowed);
+  const page = pageOrigin(pageUrl);
+  if (page === null || !hostMatches(entryHost, page.host)) {
+    return false;
+  }
+  const kind = kindOf(page, savedOrigin(entryUrl, entryHost));
+  return kind === "exact" || kind === "site";
 };
 
 export const frameMayFill = (frameUrl: string, topUrl: string, entryUrl: string, entryHost: string): boolean =>
-  mayFill(frameUrl, entryUrl, entryHost) && hostMatches(entryHost, hostOf(topUrl));
+  mayFill(frameUrl, entryUrl, entryHost) && mayFill(topUrl, entryUrl, entryHost);
 
 // The site a host belongs to: its registrable domain, or the host itself when it has none (an IP address, a
 // suffix on the list, a single-label name).
