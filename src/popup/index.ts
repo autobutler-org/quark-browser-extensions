@@ -14,6 +14,7 @@ import { ask } from "../shared/messages";
 import type { SaveAction, SaveOffer } from "../background/save";
 import { currentBrowser, siteOrigins } from "../shared/platform";
 import { unreachableHint } from "./address";
+import { focusFallback, replaceKeepingFocus } from "./focus";
 import { showWelcome, welcomeSections } from "./welcome";
 import { saveBarCopy } from "../shared/saveCopy";
 import { fillShortcut, shortcutHelp } from "../shared/shortcut";
@@ -42,6 +43,9 @@ type Model = Readonly<{
 }>;
 
 const root = document.getElementById("app") as HTMLElement;
+// Lives outside the re-rendered tree, so a screen reader hears each notice once, however often the view is rebuilt.
+const announcer = h("div", { className: "visually-hidden", role: "status" });
+document.body.append(announcer);
 
 let model: Model = {
   state: null,
@@ -227,13 +231,13 @@ const welcomeView = (): HTMLElement =>
   );
 
 const unlockView = (): HTMLElement => {
-  const master = h("input", { id: "master", type: "password", autocomplete: "current-password", required: true });
+  const master = h("input", { id: "master", type: "password", autocomplete: "current-password", required: true, "data-autofocus": true });
   const submit = async (event: Event): Promise<void> => {
     event.preventDefault();
     update({ busy: true, error: "" });
     await applyState(await ask({ type: "unlock", masterPassword: master.value }));
   };
-  const view = h(
+  return h(
     "div",
     { className: "screen" },
     header([iconButton("Options", icons.settings, () => void chrome.runtime.openOptionsPage())], hostOf(serverOf(model.state))),
@@ -254,8 +258,6 @@ const unlockView = (): HTMLElement => {
       h("button", { className: "primary", type: "submit", disabled: model.busy }, model.busy ? "Unlocking…" : "Unlock"),
     ),
   );
-  queueMicrotask(() => master.focus());
-  return view;
 };
 
 const copy = async (entry: EntrySummary): Promise<void> => {
@@ -409,7 +411,11 @@ const matchCard = (entry: SiteMatch, index: number): HTMLElement => {
       h("div", { className: "mono muted small" }, entry.note === "" ? entry.where : `${entry.where} · ${entry.note}`),
     ),
     mayHaveOtp(entry) ? iconButton(`Copy one-time code for ${entry.name}`, icons.clock, () => void copyCode(entry)) : null,
-    h("button", { className: first ? "fill primary" : "fill", type: "button", onclick: (() => void fillEntry(entry)) as EventListener }, "Fill"),
+    h(
+      "button",
+      { className: first ? "fill primary" : "fill", type: "button", "aria-label": `Fill ${entry.name}`, onclick: (() => void fillEntry(entry)) as EventListener },
+      "Fill",
+    ),
   );
 };
 
@@ -452,7 +458,7 @@ const autoLockText = (state: VaultState): string =>
     : "Unlocked";
 
 const entriesView = (state: VaultState): HTMLElement => {
-  const search = h("input", { id: "search", type: "search", placeholder: "Search the vault", value: model.query, autocomplete: "off" });
+  const search = h("input", { id: "search", type: "search", placeholder: "Search the vault", value: model.query, autocomplete: "off", "data-autofocus": true });
   const list = h("div", { className: "list" });
   const renderList = (): void => {
     const found = searchEntries(model.entries, search.value);
@@ -466,7 +472,6 @@ const entriesView = (state: VaultState): HTMLElement => {
     renderList();
   });
   renderList();
-  queueMicrotask(() => search.focus());
 
   return h(
     "div",
@@ -477,7 +482,7 @@ const entriesView = (state: VaultState): HTMLElement => {
     siteAccessBanner(),
     saveBanner(),
     othersBanner(),
-    model.notice === "" ? null : h("div", { className: "notice", role: "status" }, model.notice),
+    model.notice === "" ? null : h("div", { className: "notice" }, model.notice),
     errorBox(),
     h(
       "div",
@@ -538,8 +543,19 @@ const view = (): HTMLElement => {
   }
 };
 
+let announced = "";
+
 const render = (): void => {
-  root.replaceChildren(view());
+  const focus = replaceKeepingFocus(root, view());
+  if (focus === "lost") {
+    focusFallback(root);
+  } else if (focus === "none") {
+    root.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+  }
+  if (model.notice !== announced) {
+    announced = model.notice;
+    announcer.textContent = model.notice;
+  }
 };
 
 const currentTab = async (): Promise<Tab> => {
