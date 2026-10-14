@@ -9,6 +9,7 @@ import {
   fillNewPassword,
   fillOtp,
   generatedLength,
+  identifierField,
   isNewPasswordField,
   looksLikeSubmit,
   otpFields,
@@ -70,7 +71,9 @@ const suggest = (field: HTMLInputElement) => async (): Promise<string | null> =>
 const scan = async (): Promise<void> => {
   const passwords = passwordFields(document).filter((field) => !decorated.has(field));
   const codes = otpFields(document).filter((field) => !decorated.has(field));
-  const fields = [...passwords, ...codes];
+  const identifier = identifierField(document);
+  const identifiers = identifier === null || decorated.has(identifier) ? [] : [identifier];
+  const fields = [...passwords, ...codes, ...identifiers];
   if (fields.length === 0) {
     return;
   }
@@ -97,6 +100,8 @@ const scan = async (): Promise<void> => {
     };
   passwords.filter((field) => !signups.includes(field)).forEach(attach(pick));
   codes.forEach(attach(pickOtp));
+  // Only with matches: the button on an email field tells the user Quark can sign in here.
+  identifiers.forEach(attach(pick));
 };
 
 const isTop = window === window.top;
@@ -104,12 +109,17 @@ const isTop = window === window.top;
 const topUrl = (verifiedTopUrl: string | undefined): string =>
   frameTopUrl(isTop, location.href, location.ancestorOrigins, verifiedTopUrl);
 
-const hasLoginFields = (): boolean => passwordFields(document).length > 0 || otpFields(document).length > 0;
+const hasLoginFields = (): boolean =>
+  passwordFields(document).length > 0 || otpFields(document).length > 0 || identifierField(document) !== null;
 
 const openPicker = (): PageReply | null => {
   const active = document.activeElement;
   const focused = active instanceof HTMLInputElement ? decorated.get(active) : undefined;
-  const handle = focused ?? passwordFields(document).map((field) => decorated.get(field)).find((found) => found !== undefined);
+  const handle =
+    focused ??
+    [...passwordFields(document), identifierField(document)]
+      .map((field) => (field === null ? undefined : decorated.get(field)))
+      .find((found) => found !== undefined);
   if (handle === undefined) {
     return null;
   }
