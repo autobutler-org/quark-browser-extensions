@@ -34,6 +34,7 @@
     --error-bg: #fef2f2;
     --error-border: #fecaca;
     --error-fg: #b91c1c;
+    --success: #047857;
     --focus: #0369a1;
     color-scheme: light;
   }

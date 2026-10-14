@@ -21,7 +21,7 @@ describe.each([
 
   it("keeps text at 4.5:1 or more on every surface", () => {
     for (const surface of surfaces) {
-      for (const text of ["fg", "muted", "accent", "error-fg"]) {
+      for (const text of ["fg", "muted", "accent", "error-fg", "success"]) {
         expect(contrast(theme[text]!, theme[surface]!), `${text} on ${surface}`).toBeGreaterThanOrEqual(4.5);
       }
     }
