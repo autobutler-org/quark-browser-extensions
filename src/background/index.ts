@@ -1,5 +1,14 @@
 import { createApi } from "../shared/api";
-import { frameMayFill, hostMatches, hostOf, matchEntries, normalizeHost, normalizeServer } from "../shared/host";
+import {
+  frameMayFill,
+  hostMatches,
+  hostOf,
+  insecureServerRefusal,
+  matchEntries,
+  normalizeHost,
+  normalizeServer,
+  serverTransport,
+} from "../shared/host";
 import type { Hello, PageCommand, PageReply, Request, Responses } from "../shared/messages";
 import { err, ok, type Connection, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
 import { parseOtpSecret, totp } from "../shared/totp";
@@ -320,6 +329,9 @@ const connect = async (
   const server = normalizeServer(request.server);
   if (server === "") {
     return err({ kind: "network", message: "invalid address" });
+  }
+  if (serverTransport(server) === "insecure" && !request.allowInsecure) {
+    return refused(insecureServerRefusal);
   }
   const token = await api.login(server, request.username, request.password);
   if (!token.ok) {

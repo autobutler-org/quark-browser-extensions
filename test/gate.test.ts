@@ -43,7 +43,7 @@ const strangers: Record<string, Sender> = {
 // the tables below say who may send it.
 const requests: { [K in Request["type"]]: Extract<Request, { type: K }> } = {
   state: { type: "state" },
-  connect: { type: "connect", server: "quark.local", username: "u", password: "p", persist: false },
+  connect: { type: "connect", server: "quark.local", username: "u", password: "p", persist: false, allowInsecure: false },
   signOut: { type: "signOut" },
   unlock: { type: "unlock", masterPassword: "m" },
   lock: { type: "lock" },

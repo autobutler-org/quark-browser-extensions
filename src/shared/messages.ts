@@ -4,7 +4,7 @@ import type { Credentials, EntrySummary, Result, Settings, VaultState } from "./
 
 export type Request =
   | Readonly<{ type: "state" }>
-  | Readonly<{ type: "connect"; server: string; username: string; password: string; persist: boolean }>
+  | Readonly<{ type: "connect"; server: string; username: string; password: string; persist: boolean; allowInsecure: boolean }>
   | Readonly<{ type: "signOut" }>
   | Readonly<{ type: "unlock"; masterPassword: string }>
   | Readonly<{ type: "lock" }>

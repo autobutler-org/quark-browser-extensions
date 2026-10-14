@@ -1,6 +1,6 @@
 import { h, icon, icons } from "../shared/dom";
 import { errorText, stateText } from "../shared/errors";
-import { hostOf, searchEntries } from "../shared/host";
+import { hostOf, insecureServerWarning, needsInsecureConfirmation, searchEntries, serverTransport } from "../shared/host";
 import { ask } from "../shared/messages";
 import type { SaveAction, SaveOffer } from "../background/save";
 import { currentBrowser, siteOrigins } from "../shared/platform";
@@ -72,6 +72,10 @@ const errorBox = (): HTMLElement | null => (model.error === "" ? null : h("div",
 
 const serverOf = (state: VaultState | null): string => (state !== null && "server" in state ? state.server : "");
 
+// Stays on screen for as long as the extension talks to a non-loopback Quark over plain http.
+const insecureBanner = (state: VaultState): HTMLElement | null =>
+  serverTransport(serverOf(state)) === "insecure" ? h("div", { className: "error-box", role: "status" }, insecureServerWarning) : null;
+
 const loadEntries = async (): Promise<void> => {
   const [entries, matches, settings, saveOffer] = await Promise.all([
     ask({ type: "entries" }),
@@ -104,11 +108,31 @@ const connectView = (): HTMLElement => {
   const username = h("input", { id: "username", type: "text", autocomplete: "username", required: true });
   const password = h("input", { id: "password", type: "password", autocomplete: "current-password", required: true });
   const persist = h("input", { id: "persist", type: "checkbox" });
+  const allowInsecure = h("input", { id: "allow-insecure", type: "checkbox" });
+  const insecure = h(
+    "div",
+    { className: "error-box", role: "alert" },
+    h("div", {}, "This address uses plain http, not https. Your Quark password, vault password and every login you fill would cross the network unencrypted, where anyone on it can read them."),
+    h("label", { className: "check" }, allowInsecure, "I understand this connection is unencrypted"),
+  );
+  const syncInsecure = (): void => {
+    insecure.hidden = !needsInsecureConfirmation(server.value);
+    allowInsecure.required = !insecure.hidden;
+  };
+  server.addEventListener("input", syncInsecure);
+  syncInsecure();
   const submit = async (event: Event): Promise<void> => {
     event.preventDefault();
     update({ busy: true, error: "" });
     await applyState(
-      await ask({ type: "connect", server: server.value, username: username.value, password: password.value, persist: persist.checked }),
+      await ask({
+        type: "connect",
+        server: server.value,
+        username: username.value,
+        password: password.value,
+        persist: persist.checked,
+        allowInsecure: !insecure.hidden && allowInsecure.checked,
+      }),
     );
   };
   return h(
@@ -125,6 +149,7 @@ const connectView = (): HTMLElement => {
         h("p", { className: "muted" }, "Sign in with an admin account. This browser shows up in Settings › Sessions, where you can revoke it any time."),
       ),
       field("server", "Quark address", server),
+      insecure,
       field("username", "Username", username),
       field("password", "Password", password),
       h("label", { className: "check" }, persist, "Stay signed in after Chrome closes"),
@@ -146,6 +171,7 @@ const unlockView = (): HTMLElement => {
     "div",
     { className: "screen" },
     header([iconButton("Options", icons.settings, () => void chrome.runtime.openOptionsPage())], hostOf(serverOf(model.state))),
+    model.state === null ? null : insecureBanner(model.state),
     h(
       "form",
       { className: "body", onsubmit: ((event: Event) => void submit(event)) as EventListener },
@@ -336,6 +362,7 @@ const entriesView = (state: VaultState): HTMLElement => {
     { className: "screen" },
     header([iconButton("Generate password", icons.key, () => void generate()), iconButton("Lock vault", icons.lock, () => void lock())]),
     h("div", { className: "search" }, icon(document, icons.search, 16), h("label", { for: "search", className: "visually-hidden" }, "Search the vault"), search),
+    insecureBanner(state),
     siteAccessBanner(),
     saveBanner(),
     othersBanner(),
@@ -363,6 +390,7 @@ const messageView = (state: VaultState): HTMLElement =>
     "div",
     { className: "screen" },
     header([], hostOf(serverOf(state))),
+    insecureBanner(state),
     h(
       "div",
       { className: "body" },
