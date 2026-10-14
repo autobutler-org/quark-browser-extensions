@@ -31,7 +31,47 @@ jobs:
             .output/quark-vault-firefox.zip
             .output/quark-vault-sources.zip
 
+  # The end-to-end tests against a real `quark serve --insecure`, built from
+  # autobutler-org/quark at QUARK_REF: the Go server only, no Flutter. Set the
+  # repository variable QUARK_REF to test another commit, branch or tag.
   e2e:
+    runs-on: ubuntu-latest
+    env:
+      QUARK_REF: ${{ vars.QUARK_REF || '7a2e6688a62c891ea79caafabdd683503d202754' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: autobutler-org/quark
+          ref: ${{ env.QUARK_REF }}
+          path: quark-src
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: quark-src/go.mod
+          cache-dependency-path: quark-src/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Build Quark
+        run: QUARK_SRC="$GITHUB_WORKSPACE/quark-src" scripts/build-quark.sh
+      - name: End-to-end tests against Quark
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-quark-results
+          include-hidden-files: true
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+            e2e/.quark/serve.log
+
+  # The same tests against the offline mock, so it keeps matching the real
+  # server: the contract test in e2e/connect.spec.ts runs against both.
+  e2e-mock:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,8 +80,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright-core install --with-deps chromium
-      - name: Smoke test in Chromium
-        run: |
-          export CHROME_PATH="$(node -e "import('playwright-core').then((p) => console.log(p.chromium.executablePath()))")"
-          npm run test:e2e
+      - run: npx playwright install --with-deps chromium
+      - name: End-to-end tests against the mock Quark
+        run: npm run test:e2e:mock
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-mock-results
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
