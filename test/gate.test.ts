@@ -51,6 +51,7 @@ const requests: { [K in Request["type"]]: Extract<Request, { type: K }> } = {
   matches: { type: "matches", pageUrl: "https://github.com/" },
   fillFromPage: { type: "fillFromPage", entryId: 1 },
   fillInTab: { type: "fillInTab", entryId: 1, tabId: 7 },
+  fillAnyway: { type: "fillAnyway", entryId: 1, tabId: 7, pageHost: "github.com" },
   reveal: { type: "reveal", entryId: 1 },
   generate: { type: "generate" },
   settings: { type: "settings" },
@@ -83,6 +84,7 @@ const audience: Record<Request["type"], Audience> = {
   matches: "both",
   fillFromPage: "content",
   fillInTab: "pages",
+  fillAnyway: "pages",
   reveal: "pages",
   generate: "pages",
   settings: "pages",
@@ -129,6 +131,7 @@ const pageHandlerNames = [
   "entries",
   "matches",
   "fillInTab",
+  "fillAnyway",
   "reveal",
   "generate",
   "otp",
@@ -321,6 +324,31 @@ describe("route", () => {
     expect(route(unknown, topFrame, self, handlers)).toBeNull();
     expect(pages).toEqual([]);
     expect(content).toEqual([]);
+  });
+});
+
+describe("fillAnyway", () => {
+  // The one request that fills an entry into a site it isn't saved for, so nothing a page can send may start it.
+  it.each<SenderCase>([
+    ["the popup", popup, true],
+    ["the options page in a tab", options, true],
+    ["a content script in the top frame", topFrame, false],
+    ["a content script in a sub frame", subFrame, false],
+    ...strangerCases,
+  ])("from %s → %s", (_, sender, allowed) => {
+    const { pages, content, handlers } = setup();
+    const pending = route(requests.fillAnyway, sender, self, handlers);
+    expect(pending !== null).toBe(allowed);
+    expect(pages).toEqual(allowed ? [{ handler: "fillAnyway", args: [requests.fillAnyway] }] : []);
+    expect(content).toEqual([]);
+  });
+
+  it("isn't something a content script can ask for, even claiming the popup's url", () => {
+    const { pages, content, handlers } = setup();
+    const spoofed: Sender = { ...topFrame, url: "https://evil.io/", origin: "chrome-extension://quark-vault-id" };
+    expect(route(requests.fillAnyway, spoofed, self, handlers)).toBeNull();
+    expect(forContentScripts(requests.fillAnyway, topFrame, self, handlers.content)).toBeNull();
+    expect([pages, content]).toEqual([[], []]);
   });
 });
 

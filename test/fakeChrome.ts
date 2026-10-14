@@ -47,7 +47,12 @@ export const fakeChrome = () => {
     runtime: { id: extensionId, getURL: (path: string) => `${extensionUrl}${path}`, onMessage },
     commands: { onCommand: event() },
     contextMenus: { onClicked: event(), removeAll: () => Promise.resolve(undefined), create: () => undefined },
-    tabs: { onUpdated: event(), onRemoved: event(), sendMessage: () => Promise.resolve(undefined) },
+    tabs: {
+      onUpdated: event(),
+      onRemoved: event(),
+      sendMessage: () => Promise.resolve(undefined),
+      get: (id: number): Promise<chrome.tabs.Tab> => Promise.resolve({ id } as chrome.tabs.Tab),
+    },
     idle: { onStateChanged: event(), setDetectionInterval: () => undefined },
     action: {
       setBadgeBackgroundColor: () => Promise.resolve(undefined),

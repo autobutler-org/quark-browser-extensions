@@ -26,6 +26,7 @@ import {
   type SaveOffer,
 } from "./save";
 import { isTopFrame, route, type ContentScriptHandlers, type ExtensionPageHandlers, type Sender } from "./gate";
+import { grantAllows, grantFor, manualFillCommand, manualFillRefusal, type ManualGrant } from "./manual";
 import { createCache, deriveState, stateFromError } from "./state";
 import {
   clearConnection,
@@ -46,9 +47,13 @@ const entriesCache = createCache<readonly EntrySummary[]>(30_000);
 // the list; an edited entry gets a new updatedAt and is looked up again.
 const entryUrls = new Map<number, Readonly<{ updatedAt: string; url: string; hasTotp: boolean }>>();
 
+// Manual fills the user confirmed in the popup, by tab; see manual.ts.
+const manualGrants = new Map<number, ManualGrant>();
+
 const forgetEntries = (): void => {
   entriesCache.clear();
   entryUrls.clear();
+  manualGrants.clear();
 };
 
 const tabTopUrl = async (tabId: number): Promise<string> => {
@@ -159,6 +164,12 @@ const fillFromPage = async (
   if (!entry.ok) {
     return entry;
   }
+  // A fill the user confirmed for a site the entry isn't saved for is used once and never submits the form.
+  const grant = sender.tab?.id === undefined ? undefined : manualGrants.get(sender.tab.id);
+  if (grant !== undefined && grantAllows(grant, sender, entryId, Date.now())) {
+    manualGrants.delete(grant.tabId);
+    return ok({ username: entry.value.username, password: entry.value.password, autoSubmit: false });
+  }
   if (!frameMayFill(pageUrl, pageUrl, entry.value.url, entry.value.urlHost)) {
     return refused("This login doesn't belong to this site.");
   }
@@ -212,6 +223,44 @@ const fillInTab = async (tabId: number, entryId: number): Promise<Responses["fil
     return reply;
   } catch {
     return refused("This page can't be filled. Reload it and try again.");
+  }
+};
+
+// The popup's "Fill anyway", after the user confirmed filling an entry into a page on another site. The tab's URL
+// comes from the browser, and must still be on the host the user confirmed. Only frame 0 hears about it, and it
+// collects the credentials with fillFromPage under a one-time grant.
+const fillAnyway = async (tabId: number, entryId: number, pageHost: string): Promise<Responses["fillAnyway"]> => {
+  const [entry, tab] = await Promise.all([
+    withConnection((conn) => api.getEntry(conn, entryId)),
+    chrome.tabs.get(tabId).catch(() => undefined),
+  ]);
+  if (!entry.ok) {
+    return entry;
+  }
+  const tabUrl = tab?.url ?? "";
+  const refusal = manualFillRefusal(tabUrl, pageHost);
+  if (refusal !== null) {
+    return refused(refusal);
+  }
+  if (frameMayFill(tabUrl, tabUrl, entry.value.url, entry.value.urlHost)) {
+    return fillInTab(tabId, entryId);
+  }
+  const grant = grantFor(tabId, entryId, tabUrl, Date.now());
+  if (grant === null) {
+    return refused("This page can't be filled.");
+  }
+  manualGrants.set(tabId, grant);
+  try {
+    const reply = await chrome.tabs.sendMessage<PageCommand, PageReply | undefined>(tabId, manualFillCommand(entryId, tabUrl), {
+      frameId: 0,
+    });
+    return reply ?? refused("Couldn't find login fields on this page. If it just loaded, reload it and try again.");
+  } catch {
+    return refused("This page can't be filled. Reload it and try again.");
+  } finally {
+    if (manualGrants.get(tabId) === grant) {
+      manualGrants.delete(tabId);
+    }
   }
 };
 
@@ -418,6 +467,7 @@ const forExtensionPages: ExtensionPageHandlers = {
   entries: () => entries(),
   matches: (request) => matchesFor(request.pageUrl ?? ""),
   fillInTab: (request) => fillInTab(request.tabId, request.entryId),
+  fillAnyway: (request) => fillAnyway(request.tabId, request.entryId, request.pageHost),
   reveal: (request) =>
     withConnection((conn) => api.getEntry(conn, request.entryId)).then((entry) =>
       entry.ok ? ok({ username: entry.value.username, password: entry.value.password }) : entry,
@@ -493,6 +543,7 @@ export const main = (): void => {
 
   chrome.tabs.onRemoved.addListener((tabId) => {
     pendings.delete(tabId);
+    manualGrants.delete(tabId);
   });
 
   chrome.idle.onStateChanged.addListener((state) => void onIdleState(state));

@@ -35,6 +35,7 @@ export type ExtensionPageHandlers = Readonly<{
   entries: () => Promise<unknown>;
   matches: (request: Of<"matches">) => Promise<unknown>;
   fillInTab: (request: Of<"fillInTab">) => Promise<unknown>;
+  fillAnyway: (request: Of<"fillAnyway">) => Promise<unknown>;
   reveal: (request: Of<"reveal">) => Promise<unknown>;
   generate: () => Promise<unknown>;
   otp: (request: Of<"otp">) => Promise<unknown>;
@@ -86,6 +87,8 @@ export const forExtensionPages = (
       return handlers.matches(request);
     case "fillInTab":
       return handlers.fillInTab(request);
+    case "fillAnyway":
+      return handlers.fillAnyway(request);
     case "reveal":
       return handlers.reveal(request);
     case "generate":

@@ -13,6 +13,8 @@ export type Request =
   | Readonly<{ type: "matches"; pageUrl?: string }>
   | Readonly<{ type: "fillFromPage"; entryId: number }>
   | Readonly<{ type: "fillInTab"; entryId: number; tabId: number }>
+  // The user confirmed filling an entry saved for another site into the page on `pageHost` (host and port).
+  | Readonly<{ type: "fillAnyway"; entryId: number; tabId: number; pageHost: string }>
   | Readonly<{ type: "reveal"; entryId: number }>
   | Readonly<{ type: "generate" }>
   | Readonly<{ type: "settings" }>
@@ -45,6 +47,7 @@ export type Responses = {
   matches: Result<readonly SiteMatch[]>;
   fillFromPage: Result<Credentials & Readonly<{ autoSubmit: boolean }>>;
   fillInTab: Result<null>;
+  fillAnyway: Result<null>;
   reveal: Result<Credentials>;
   generate: Result<string>;
   settings: Settings;
