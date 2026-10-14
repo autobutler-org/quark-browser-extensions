@@ -2,3 +2,5 @@
 .quark/
 test-results/
 playwright-report/
+# The Firefox that npm run firefox:install downloads
+.firefox/
