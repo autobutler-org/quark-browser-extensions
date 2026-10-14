@@ -52,6 +52,12 @@ document.getElementById("f").addEventListener("submit", e => { e.preventDefault(
   const bound = await listen(server, port);
   return {
     url: `http://localhost:${bound}`,
-    stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    stop: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        // A page can keep its test site's connection open after its assertions finish. Do not make teardown wait
+        // indefinitely for Chromium to release it.
+        server.closeAllConnections();
+      }),
   };
 };
