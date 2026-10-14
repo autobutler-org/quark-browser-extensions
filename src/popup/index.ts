@@ -40,7 +40,10 @@ type Model = Readonly<{
   entries: readonly EntrySummary[];
   matches: readonly SiteMatch[];
   query: string;
+  // The last generated password, in this popup's memory only; shown masked until the user reveals it, and
+  // forgotten when the vault locks, the user dismisses it, or the popup closes.
   generated: string;
+  revealGenerated: boolean;
   notice: string;
   showOthers: boolean;
   shortcut: string;
@@ -73,6 +76,7 @@ let model: Model = {
   matches: [],
   query: "",
   generated: "",
+  revealGenerated: false,
   notice: "",
   showOthers: false,
   shortcut: "",
@@ -95,6 +99,16 @@ const update = (patch: Partial<Model>): void => {
     ...patch,
   };
   render();
+};
+
+// A notice is a passing confirmation, so it goes after a few seconds, or sooner when it stops being true.
+const noticeMs = 5000;
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+
+const showNotice = (notice: string, ms = noticeMs): void => {
+  clearTimeout(noticeTimer);
+  update({ notice, error: "" });
+  noticeTimer = setTimeout(() => update({ notice: "" }), Math.min(ms, noticeMs));
 };
 
 const text = (result: Result<unknown>): string => (result.ok ? "" : errorText(result.error));
@@ -164,6 +178,8 @@ const connectFailed = (error: ApiError): void => {
   }
 };
 
+const forgetGenerated = (state: VaultState): Partial<Model> => (state.kind === "unlocked" ? {} : { generated: "", revealGenerated: false });
+
 const applyState = async (result: Result<VaultState>): Promise<void> => {
   if (!result.ok) {
     if (model.draft === null) {
@@ -173,7 +189,7 @@ const applyState = async (result: Result<VaultState>): Promise<void> => {
     }
     return;
   }
-  update({ busy: false, error: "", state: result.value, editingAddress: false, legacyUpgrade: null, draft: null });
+  update({ busy: false, error: "", state: result.value, editingAddress: false, legacyUpgrade: null, draft: null, ...forgetGenerated(result.value) });
   if (result.value.kind === "unlocked") {
     await loadEntries();
   }
@@ -358,7 +374,7 @@ const copy = async (entry: EntrySummary, what: "username" | "password" = "passwo
     return;
   }
   await navigator.clipboard.writeText(result.value[what]);
-  update({ notice: what === "username" ? t("popupCopiedUsername", entry.name) : t("popupCopiedPassword", entry.name), error: "" });
+  showNotice(what === "username" ? t("popupCopiedUsername", entry.name) : t("popupCopiedPassword", entry.name));
 };
 
 const copyCode = async (entry: EntrySummary): Promise<void> => {
@@ -368,7 +384,8 @@ const copyCode = async (entry: EntrySummary): Promise<void> => {
     return;
   }
   await navigator.clipboard.writeText(result.value.code);
-  update({ notice: t("popupCopiedCode", entry.name, formatDuration(result.value.secondsLeft, "second", "narrow")), error: "" });
+  // The countdown would go stale, so the notice goes when the code changes.
+  showNotice(t("popupCopiedCode", entry.name, formatDuration(result.value.secondsLeft, "second", "narrow")), result.value.secondsLeft * 1000);
 };
 
 const fillEntry = async (entry: EntrySummary): Promise<void> => {
@@ -413,7 +430,46 @@ const generate = async (): Promise<void> => {
     return;
   }
   await navigator.clipboard.writeText(result.value);
-  update({ generated: result.value, notice: t("popupGenerated") });
+  model = { ...model, generated: result.value, revealGenerated: false };
+  showNotice(t("popupGenerated"));
+};
+
+const copyGenerated = async (): Promise<void> => {
+  await navigator.clipboard.writeText(model.generated);
+  showNotice(t("popupCopiedGenerated"));
+};
+
+// Hidden until the user asks to see it, so it isn't on screen for someone looking over their shoulder.
+const generatedPanel = (): HTMLElement | null => {
+  if (model.generated === "") {
+    return null;
+  }
+  const link = (label: string, visible: string, onclick: () => void, muted = false): HTMLElement =>
+    h("button", { className: muted ? "link muted" : "link", type: "button", "aria-label": label, onclick: onclick as EventListener }, visible);
+  // One id for Show and Hide, so focus stays on the toggle when it flips.
+  const toggle = (label: string, visible: string, reveal: boolean): HTMLElement =>
+    h("button", { className: "link", type: "button", id: "generated-reveal", "aria-label": label, onclick: (() => update({ revealGenerated: reveal })) as EventListener }, visible);
+  const shown = model.revealGenerated;
+  return h(
+    "section",
+    { className: "banner generated", "aria-label": t("popupGeneratedTitle") },
+    h("div", { className: "section-label" }, t("popupGeneratedTitle")),
+    h(
+      "div",
+      { className: "generated-value" },
+      shown
+        ? h("div", { className: "mono grow" }, model.generated)
+        : h("div", { className: "grow" }, h("span", { className: "mono", "aria-hidden": "true" }, "•".repeat(12)), h("span", { className: "visually-hidden" }, t("popupGeneratedHidden"))),
+      shown ? toggle(t("popupHideGenerated"), t("popupHide"), false) : toggle(t("popupShowGenerated"), t("popupShow"), true),
+    ),
+    h(
+      "div",
+      { className: "confirm-actions" },
+      link(t("popupCopyGenerated"), t("popupCopy"), () => void copyGenerated()),
+      link(t("popupGenerateAnother"), t("popupGenerateAnother"), () => void generate()),
+      link(t("popupDismissGenerated"), t("dismiss"), () => update({ generated: "", revealGenerated: false }), true),
+    ),
+  );
 };
 
 const lock = async (): Promise<void> => {
@@ -441,7 +497,12 @@ const resolveSave = async (action: SaveAction): Promise<void> => {
     handleError(result.error);
     return;
   }
-  update({ saveOffer: null, notice: action === "save" ? t("popupSaved") : action === "update" ? t("popupUpdated") : "" });
+  if (action === "save" || action === "update") {
+    model = { ...model, saveOffer: null };
+    showNotice(action === "save" ? t("popupSaved") : t("popupUpdated"));
+  } else {
+    update({ saveOffer: null });
+  }
   await loadEntries();
 };
 
@@ -513,7 +574,7 @@ const matchCard = (entry: SiteMatch, index: number): HTMLElement => {
     h(
       "div",
       { className: "grow" },
-      h("div", { className: "name" }, entry.name),
+      h("div", { className: "name", title: entry.name }, entry.name),
       h("div", { className: "mono muted small" }, entry.note === "" ? entry.where : `${entry.where} · ${entry.note}`),
     ),
     mayHaveOtp(entry) ? iconButton(t("popupCopyCode", entry.name), icons.clock, () => void copyCode(entry)) : null,
@@ -569,26 +630,35 @@ const fillButton = (entry: EntrySummary): HTMLElement | null => {
       type: "button",
       "aria-label": t("popupFillAnywayName", entry.name),
       "aria-expanded": String(model.confirming === entry.id),
-      onclick: (() => update({ confirming: model.confirming === entry.id ? null : entry.id, error: "" })) as EventListener,
+      onclick: (() => toggleFillAnyway(entry)) as EventListener,
     },
     t("popupFillAnyway"),
   );
+};
+
+// Opens below its row, which may be at the bottom of the list, so it's brought into view.
+const toggleFillAnyway = (entry: EntrySummary): void => {
+  const opening = model.confirming !== entry.id;
+  update({ confirming: opening ? entry.id : null, error: "" });
+  if (opening) {
+    document.getElementById(`fill-anyway-${entry.id}`)?.scrollIntoView?.({ block: "nearest" });
+  }
 };
 
 const fillAnywayBox = (entry: EntrySummary): HTMLElement => {
   const pageHost = pageSite(model.tab.url);
   return h(
     "div",
-    { className: "error-box", role: "alert", id: `fill-anyway-${entry.id}` },
-    h("div", {}, entry.urlHost === "" ? t("popupFillAnywayNoSite", entry.name, pageHost) : t("popupFillAnywaySavedFor", entry.name, entry.urlHost, pageHost)),
-    /^http:/i.test(model.tab.url) ? h("div", {}, t("popupFillAnywayHttp", pageHost)) : null,
-    h("div", {}, t("popupFillAnywayTrust", pageHost)),
+    { className: "error-box confirm", role: "alert", id: `fill-anyway-${entry.id}` },
+    h("p", {}, entry.urlHost === "" ? t("popupFillAnywayNoSite", entry.name, pageHost) : t("popupFillAnywaySavedFor", entry.name, entry.urlHost, pageHost)),
+    /^http:/i.test(model.tab.url) ? h("p", {}, t("popupFillAnywayHttp", pageHost)) : null,
+    h("p", {}, t("popupFillAnywayTrust", pageHost)),
     h(
-      "button",
-      { className: "primary", type: "button", onclick: (() => void fillAnyway(entry)) as EventListener },
-      t("popupFillOn", pageHost),
+      "div",
+      { className: "confirm-actions" },
+      h("button", { className: "primary", type: "button", onclick: (() => void fillAnyway(entry)) as EventListener }, t("popupFillOn", pageHost)),
+      h("button", { className: "secondary", type: "button", onclick: (() => update({ confirming: null })) as EventListener }, t("cancel")),
     ),
-    h("button", { className: "secondary", type: "button", onclick: (() => update({ confirming: null })) as EventListener }, t("cancel")),
   );
 };
 
@@ -596,7 +666,14 @@ const entryRow = (entry: EntrySummary): readonly HTMLElement[] => [
   h(
     "div",
     { className: "row" },
-    h("div", { className: "grow" }, h("div", { className: "name" }, entry.name), h("div", { className: "mono muted small" }, entry.urlHost === "" ? t("popupNoSite") : entry.urlHost)),
+    h(
+      "div",
+      { className: "grow" },
+      h("div", { className: "name", title: entry.name }, entry.name),
+      entry.urlHost === ""
+        ? h("div", { className: "muted small" }, t("popupNoSite"))
+        : h("div", { className: "mono muted small host", title: entry.urlHost }, entry.urlHost),
+    ),
     iconButton(t("popupCopyUsername", entry.name), icons.user, () => void copy(entry, "username")),
     iconButton(t("popupCopyPassword", entry.name), icons.copy, () => void copy(entry)),
     mayHaveOtp(entry) ? iconButton(t("popupCopyCode", entry.name), icons.clock, () => void copyCode(entry)) : null,
@@ -615,9 +692,20 @@ const entriesView = (state: VaultState): HTMLElement => {
   const list = h("div", { className: "list" });
   const renderList = (): void => {
     const found = searchEntries(model.entries, search.value);
+    const query = search.value.trim();
     list.replaceChildren(
       h("div", { className: "section-label" }, t("popupAllEntries", formatNumber(found.length))),
       ...found.flatMap(entryRow),
+      ...(found.length > 0
+        ? []
+        : [
+            h(
+              "div",
+              { className: "empty" },
+              h("p", {}, query === "" ? t("popupNoEntries") : t("popupNoMatches", query)),
+              h("p", { className: "muted small" }, t("popupEntriesHint")),
+            ),
+          ]),
     );
   };
   search.addEventListener("input", () => {
@@ -635,6 +723,7 @@ const entriesView = (state: VaultState): HTMLElement => {
     siteAccessBanner(),
     saveBanner(),
     othersBanner(),
+    generatedPanel(),
     model.notice === "" ? null : h("div", { className: "notice" }, model.notice),
     errorBox(),
     h(
@@ -719,7 +808,7 @@ const currentTab = async (): Promise<Tab> => {
 
 const refresh = async (): Promise<void> => {
   const [state, settings] = await Promise.all([ask({ type: "state" }), ask({ type: "settings" })]);
-  update({ state, error: "", welcome: showWelcome(state, settings) ? "offered" : "hidden" });
+  update({ state, error: "", welcome: showWelcome(state, settings) ? "offered" : "hidden", ...forgetGenerated(state) });
   if (state.kind === "unlocked") {
     await loadEntries();
   }

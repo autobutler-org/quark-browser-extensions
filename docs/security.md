@@ -69,6 +69,8 @@ The worker answers `fillFromPage` only after it checks the requesting frame. It 
 
 Right-click › **Generate password** goes only to the frame you clicked (issue #74). The worker sends `fillGenerated` with that click's `frameId` (`src/background/index.ts`); when the browser doesn't report one, it uses frame 0, and it never broadcasts to the tab. The frame fills only the password field you are on, and only one you can see and reach (`fillGeneratedHere` in `src/content/index.ts`). A field that is off-screen, hidden, or kept out of keyboard reach is left alone, and there is no fallback to another field, so a page that embeds a sign-up iframe can't collect the password through fields of its own. A new-password field also fills its confirmation. The length is 20 characters, not the field's `maxlength`.
 
+The popup's **Generate password** copies a new password and shows it masked, with **Show**, **Copy** and **Generate another** (issue #111). It stays only in the popup's memory: it is never stored, never sent to the live region that announces notices, and is forgotten when you dismiss it, the vault locks or the popup closes.
+
 ## Filling a login on a site it isn't saved for
 
 The popup lists every vault entry, with search. An entry that matches the page fills with one click, through `fillInTab` as above. Any other entry shows **Fill anyway**. That button only opens a warning naming the entry's saved host and the page's host (port included), plus a note when the page is plain http. Nothing is filled until you click **Fill on ‹page host›** in that warning.

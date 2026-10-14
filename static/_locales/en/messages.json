@@ -825,6 +825,53 @@
   "popupLock": {
     "message": "Lock vault"
   },
+  "popupNoEntries": {
+    "message": "No entries yet"
+  },
+  "popupNoMatches": {
+    "message": "No entries match “$QUERY$”",
+    "placeholders": {
+      "query": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupEntriesHint": {
+    "message": "Entries are added in the Quark app, or when you save a login as you sign in."
+  },
+  "popupGeneratedTitle": {
+    "message": "Generated password"
+  },
+  "popupGeneratedHidden": {
+    "message": "Hidden"
+  },
+  "popupShow": {
+    "message": "Show"
+  },
+  "popupShowGenerated": {
+    "message": "Show the generated password"
+  },
+  "popupHide": {
+    "message": "Hide"
+  },
+  "popupHideGenerated": {
+    "message": "Hide the generated password"
+  },
+  "popupCopy": {
+    "message": "Copy"
+  },
+  "popupCopyGenerated": {
+    "message": "Copy the generated password"
+  },
+  "popupCopiedGenerated": {
+    "message": "Copied the generated password"
+  },
+  "popupGenerateAnother": {
+    "message": "Generate another"
+  },
+  "popupDismissGenerated": {
+    "message": "Dismiss the generated password"
+  },
   "popupUnreachable": {
     "message": "Can't reach your Quark"
   },
