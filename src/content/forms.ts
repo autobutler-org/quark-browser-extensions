@@ -1,4 +1,5 @@
 import { sameSiteAction } from "../shared/hostMatch";
+import type { FieldRules } from "../shared/password";
 import type { Credentials } from "../shared/types";
 
 const usernameTypes = new Set(["text", "email", "tel", ""]);
@@ -849,8 +850,11 @@ export const newPasswordGroup = (field: HTMLInputElement): readonly HTMLInputEle
 
 export const isNewPasswordField = (field: HTMLInputElement): boolean => newPasswordGroup(field).includes(field);
 
-export const generatedLength = (field: HTMLInputElement): number =>
-  field.maxLength > 0 ? Math.max(12, Math.min(20, field.maxLength)) : 20;
+export const fieldRules = (field: HTMLInputElement): FieldRules => ({
+  maxLength: field.maxLength,
+  minLength: field.minLength,
+  pattern: field.pattern,
+});
 
 export const fillNewPassword = (field: HTMLInputElement, password: string): void =>
   newPasswordGroup(field).forEach((input) => setValue(input, password));

@@ -26,6 +26,14 @@ const entries = [
 
 type Call = Readonly<{ method: string; path: string; body: unknown }>;
 
+type GenerateBody = Readonly<{ length: number; lowercase: boolean; uppercase: boolean; digits: boolean; symbols: boolean }>;
+
+// One character of each requested class in turn, so a draw always has every class it was asked for.
+const generatedFor = (body: GenerateBody): string => {
+  const chars = [body.lowercase && "a", body.uppercase && "A", body.digits && "2", body.symbols && "!"].filter((char) => char !== false);
+  return Array.from({ length: body.length }, (_, index) => chars[index % chars.length]).join("");
+};
+
 const json = (status: number, body: unknown = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
@@ -73,7 +81,7 @@ const quark = () => {
       return Promise.resolve(found === undefined ? json(404, { error: "not found" }) : json(200, found));
     }
     if (route === "POST /vault/generate") {
-      return Promise.resolve(json(200, { password: "G".repeat((body as { length: number }).length) }));
+      return Promise.resolve(json(200, { password: generatedFor(body as GenerateBody) }));
     }
     return Promise.resolve(json(404, { error: "no route" }));
   };
@@ -429,7 +437,7 @@ describe("the context menu", () => {
     await start();
     fired(fake.chrome.contextMenus.onClicked, { menuItemId: "generate" }, { id: tabId });
     await settle();
-    expect(sent.map((record) => record.message)).toEqual([{ type: "fillGenerated", password: "G".repeat(20) }]);
+    expect(sent.map((record) => record.message)).toEqual([{ type: "fillGenerated", password: "aA2!".repeat(5) }]);
   });
 
   it("sends nothing when generating fails", async () => {
@@ -450,16 +458,24 @@ describe("the context menu", () => {
 });
 
 describe("generating a password for a page", () => {
+  const every = ["lower", "upper", "digit", "symbol"] as const;
+
   it.each([
-    [4, 12],
+    [4, 4],
     [16, 16],
     [500, 64],
-  ])("asks the Quark for %i characters as %i", async (length, clamped) => {
+  ])("asks the Quark for %i characters and gets %i", async (length, clamped) => {
     await start();
-    expect(await fake.send({ type: "generateForPage", length }, frame("https://forum.example/join", 0))).toEqual({
+    expect(await fake.send({ type: "generateForPage", length, classes: every }, frame("https://forum.example/join", 0))).toEqual({
       ok: true,
-      value: "G".repeat(clamped),
+      value: "aA2!".repeat(16).slice(0, clamped),
     });
+  });
+
+  it("asks the Quark for only the classes the field allows", async () => {
+    await start();
+    const reply = await fake.send({ type: "generateForPage", length: 8, classes: ["lower", "digit"] }, frame("https://forum.example/join", 0));
+    expect(reply).toEqual({ ok: true, value: "a2a2a2a2" });
   });
 });
 

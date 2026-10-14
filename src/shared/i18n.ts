@@ -65,6 +65,7 @@ export const messagePlaceholders = {
   pickerFillItem: ["name", "where"],
   pickerFilled: ["name"],
   pickerFilledStrong: [],
+  pickerFilledShort: ["count"],
   pickerSuggest: [],
   pickerSuggestHint: [],
   pickerMenuLabel: ["host"],

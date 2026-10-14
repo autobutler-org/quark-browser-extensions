@@ -5,9 +5,33 @@ import type { PageCommand } from "../src/shared/messages";
 // field the user is on, and only one they can see and reach. It never falls back to another field, so a page
 // that embeds a sign-up iframe can't collect the password through its own off-screen new-password pair.
 
+type Suggest = () => Promise<string | null>;
+const suggestions = new Map<HTMLInputElement, Suggest>();
+
 vi.mock("../src/content/picker", () => ({
-  attachPicker: () => ({ open: () => undefined, destroy: () => undefined }),
+  attachPicker: (field: HTMLInputElement, _matches: unknown, _host: string, handlers: { onSuggest?: Suggest }) => {
+    if (handlers.onSuggest !== undefined) {
+      suggestions.set(field, handlers.onSuggest);
+    }
+    return { open: () => undefined, destroy: () => undefined };
+  },
 }));
+
+type Ask = Readonly<{ type: string; length?: number; classes?: readonly string[] }>;
+const asked: Ask[] = [];
+
+// The worker: connected, and a password of the requested length that cycles through the requested classes.
+const worker = (request: Ask): unknown => {
+  asked.push(request);
+  if (request.type === "hello") {
+    return { settings: { inlineButton: true }, matches: [], connected: true };
+  }
+  if (request.type === "generateForPage") {
+    const chars = (request.classes ?? []).map((name) => ({ lower: "a", upper: "A", digit: "2", symbol: "!" })[name] ?? "");
+    return { ok: true, value: Array.from({ length: request.length ?? 0 }, (_, index) => chars[index % chars.length]).join("") };
+  }
+  return null;
+};
 
 type Listener = (message: PageCommand, sender: { id: string }, reply: (value: unknown) => void) => boolean;
 
@@ -44,7 +68,7 @@ const setup = async (html: string, { framed = false } = {}): Promise<void> => {
     i18n: fakeI18n(),
     runtime: {
       id: "quark",
-      sendMessage: () => Promise.resolve(null),
+      sendMessage: (request: Ask) => Promise.resolve(worker(request)),
       onMessage: { addListener: (found: Listener) => (listener = found) },
     },
   });
@@ -86,6 +110,8 @@ const evilTop = `
 
 beforeEach(() => {
   listener = undefined;
+  suggestions.clear();
+  asked.length = 0;
 });
 
 afterEach(() => {
@@ -165,5 +191,47 @@ describe("a generated password in a child frame", () => {
     await setup(signup, { framed: true });
     await expect(generate()).resolves.toBe(noReply);
     expect(byTag("pw").value).toBe("");
+  });
+});
+
+// The field's own rules win over the worker's default length and classes (#131).
+describe("a generated password that fits the field", () => {
+  const generations = (): readonly Ask[] => asked.filter((request) => request.type === "generateForPage");
+
+  it("replaces a context-menu password too long for the field", async () => {
+    await setup(`<input type="password" autocomplete="new-password" maxlength="8" data-fx="pw">`);
+    byTag("pw").focus();
+    await expect(generate()).resolves.toEqual({ ok: true, value: null });
+    expect(generations()).toEqual([{ type: "generateForPage", length: 8, classes: ["lower", "upper", "digit", "symbol"] }]);
+    expect(byTag("pw").value).toBe("aA2!aA2!");
+  });
+
+  it("keeps a context-menu password the field accepts", async () => {
+    await setup(`<input type="password" autocomplete="new-password" maxlength="12" data-fx="pw">`);
+    byTag("pw").focus();
+    await expect(generate()).resolves.toEqual({ ok: true, value: null });
+    expect(generations()).toEqual([]);
+    expect(byTag("pw").value).toBe("GEN-SECRET");
+  });
+
+  it("suggests a full-strength password with no limit and says nothing more", async () => {
+    await setup(signup);
+    await expect(suggestions.get(byTag("pw"))?.()).resolves.toBeNull();
+    expect(generations()).toEqual([{ type: "generateForPage", length: 20, classes: ["lower", "upper", "digit", "symbol"] }]);
+    expect(byTag("confirm").value).toBe("aA2!".repeat(5));
+  });
+
+  it("fills a field too short to be safe and says the site limits it", async () => {
+    await setup(`<form><input type="password" autocomplete="new-password" maxlength="8" data-fx="pw"></form>`);
+    const note = await suggestions.get(byTag("pw"))?.();
+    expect(byTag("pw").value).toBe("aA2!aA2!");
+    expect(note).toEqual(expect.stringContaining("8"));
+  });
+
+  it("asks only for what the field's pattern allows", async () => {
+    await setup(`<form><input type="password" autocomplete="new-password" pattern="[A-Za-z0-9]{8,16}" data-fx="pw"></form>`);
+    await expect(suggestions.get(byTag("pw"))?.()).resolves.toBeNull();
+    expect(generations()).toEqual([{ type: "generateForPage", length: 16, classes: ["lower", "upper", "digit"] }]);
+    expect(byTag("pw").validity.patternMismatch).toBe(false);
   });
 });

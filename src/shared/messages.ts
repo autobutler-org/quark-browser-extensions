@@ -1,5 +1,6 @@
 import type { SaveAction, SaveOffer } from "../background/save";
 import type { SiteMatch } from "./host";
+import type { CharClass } from "./password";
 import type { OtpCode } from "./totp";
 import type { Credentials, EntrySummary, Result, Settings, VaultState } from "./types";
 
@@ -25,7 +26,7 @@ export type Request =
   | Readonly<{ type: "fieldFocused" }>
   | Readonly<{ type: "otpFromPage"; entryId: number }>
   | Readonly<{ type: "otp"; entryId: number }>
-  | Readonly<{ type: "generateForPage"; length: number }>
+  | Readonly<{ type: "generateForPage"; length: number; classes: readonly CharClass[] }>
   | Readonly<{ type: "captured"; username: string; password: string }>
   | Readonly<{ type: "myOffer" }>
   | Readonly<{ type: "pendingOffer"; tabId: number }>

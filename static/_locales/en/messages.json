@@ -267,6 +267,14 @@
   "pickerFilledStrong": {
     "message": "Filled a strong password"
   },
+  "pickerFilledShort": {
+    "message": "Filled, but this site limits passwords to $COUNT$ characters, which is weaker than Quark suggests",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
   "pickerSuggest": {
     "message": "Suggest strong password"
   },
