@@ -17,4 +17,27 @@ describe("Firefox extension page navigation", () => {
     await expect(openExtensionPage(page, "popup.html")).resolves.toBeUndefined();
     expect(evaluate).toHaveBeenCalledTimes(2);
   });
+
+  test("abandons an evaluation that never settles and polls again", async () => {
+    const url = `${origin}/popup.html`;
+    // A realm torn down mid-evaluate can leave the BiDi call unanswered.
+    const evaluate = vi.fn().mockReturnValueOnce(new Promise(() => {})).mockResolvedValue(`${url}\ncomplete`);
+    const page = { goto: vi.fn().mockResolvedValue(undefined), evaluate } as unknown as Page;
+
+    await expect(openExtensionPage(page, "popup.html")).resolves.toBeUndefined();
+    expect(evaluate).toHaveBeenCalledTimes(2);
+  }, 5_000);
+
+  test("fails at the deadline when every evaluation hangs", async () => {
+    vi.useFakeTimers();
+    try {
+      const page = { goto: vi.fn().mockResolvedValue(undefined), evaluate: vi.fn(() => new Promise(() => {})) } as unknown as Page;
+      const opened = openExtensionPage(page, "popup.html");
+      const outcome = expect(opened).rejects.toThrow(/did not finish loading/);
+      await vi.advanceTimersByTimeAsync(16_000);
+      await outcome;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
