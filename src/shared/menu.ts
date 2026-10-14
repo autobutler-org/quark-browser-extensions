@@ -1,4 +1,4 @@
-import type { EntrySummary } from "./types";
+import { isFallback, primaryMatches, type SiteMatch } from "./host";
 
 export const menuRoot = "quark-vault";
 export const generateMenuId = "generate";
@@ -11,12 +11,14 @@ export type MenuItem = Readonly<{
   enabled: boolean;
 }>;
 
-export const menuItems = (matches: readonly EntrySummary[]): readonly MenuItem[] =>
+// A fallback (another port or scheme on this host) names where it was saved, so it's never mistaken for
+// a login for this page.
+export const menuItems = (matches: readonly SiteMatch[]): readonly MenuItem[] =>
   matches.length === 0
     ? [{ id: "none", title: "No saved logins for this site", enabled: false }]
     : matches.slice(0, maxMenuEntries).map((entry) => ({
         id: `${fillPrefix}${entry.id}`,
-        title: `Fill ${entry.name.replaceAll("&", "&&")}`,
+        title: (isFallback(entry) ? `Fill ${entry.name} (${entry.where})` : `Fill ${entry.name}`).replaceAll("&", "&&"),
         enabled: true,
       }));
 
@@ -34,10 +36,11 @@ export type ShortcutPlan =
   | Readonly<{ kind: "picker" }>
   | Readonly<{ kind: "popup" }>;
 
-export const shortcutPlan = (matches: readonly EntrySummary[]): ShortcutPlan => {
-  const [only, ...rest] = matches;
-  if (only === undefined) {
+// Only a single exact or same-site match is filled straight away; a fallback always needs a pick.
+export const shortcutPlan = (matches: readonly SiteMatch[]): ShortcutPlan => {
+  if (matches.length === 0) {
     return { kind: "popup" };
   }
-  return rest.length === 0 ? { kind: "fill", entryId: only.id } : { kind: "picker" };
+  const [only, ...rest] = primaryMatches(matches);
+  return only !== undefined && rest.length === 0 ? { kind: "fill", entryId: only.id } : { kind: "picker" };
 };

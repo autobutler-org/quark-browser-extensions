@@ -1,4 +1,5 @@
 import type { SaveAction, SaveOffer } from "../background/save";
+import type { SiteMatch } from "./host";
 import type { OtpCode } from "./totp";
 import type { Credentials, EntrySummary, Result, Settings, VaultState } from "./types";
 
@@ -30,7 +31,7 @@ export type Request =
 
 export type Hello = Readonly<{
   settings: Settings;
-  matches: readonly EntrySummary[];
+  matches: readonly SiteMatch[];
   connected: boolean;
 }>;
 
@@ -41,7 +42,7 @@ export type Responses = {
   unlock: Result<VaultState>;
   lock: Result<VaultState>;
   entries: Result<readonly EntrySummary[]>;
-  matches: Result<readonly EntrySummary[]>;
+  matches: Result<readonly SiteMatch[]>;
   fillFromPage: Result<Credentials & Readonly<{ autoSubmit: boolean }>>;
   fillInTab: Result<null>;
   reveal: Result<Credentials>;

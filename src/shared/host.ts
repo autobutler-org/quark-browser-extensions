@@ -11,25 +11,137 @@ export const hostOf = (url: string): string => {
   }
 };
 
+// The host as the browser would see it: punycode, IPv4 in dotted-quad form, IPv6 in brackets, no port.
+// Anything that isn't a bare host (a path, credentials, a backslash) comes back empty so it never matches.
+const canonicalHost = (host: string): string => {
+  const trimmed = host.trim();
+  if (trimmed === "" || /[/?#@\\\s]/.test(trimmed)) {
+    return "";
+  }
+  const bareIpv6 = !trimmed.startsWith("[") && trimmed.split(":").length > 2;
+  try {
+    return new URL(`http://${bareIpv6 ? `[${trimmed}]` : trimmed}`).hostname;
+  } catch {
+    return "";
+  }
+};
+
+const isIpHost = (host: string): boolean => host.startsWith("[") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+
+const siteHost = (host: string): string => normalizeHost(canonicalHost(host));
+
+// Host-level match, which the worker's fill checks rely on: the same host, or a subdomain of a named
+// host. An IP address only ever matches itself.
 export const hostMatches = (entryHost: string, pageHost: string): boolean => {
-  const entry = normalizeHost(entryHost);
-  const page = normalizeHost(pageHost);
-  return entry !== "" && page !== "" && (page === entry || page.endsWith(`.${entry}`));
+  const entry = siteHost(entryHost);
+  const page = siteHost(pageHost);
+  if (entry === "" || page === "") {
+    return false;
+  }
+  return page === entry || (!isIpHost(entry) && !isIpHost(page) && page.endsWith(`.${entry}`));
 };
 
 const byName = (a: EntrySummary, b: EntrySummary): number =>
   a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 
+// exact: same scheme, host and port. site: same scheme and port on a subdomain of the entry's host.
+// otherPort and otherScheme are fallbacks: offered, but labelled and never filled without a pick.
+export type MatchKind = "exact" | "site" | "otherPort" | "otherScheme";
+
+export type SiteMatch = EntrySummary &
+  Readonly<{
+    kind: MatchKind;
+    // Where the entry was saved, with the port and path when they tell it apart from others on the host.
+    where: string;
+    // Why a fallback is only a fallback; empty for exact and site matches.
+    note: string;
+  }>;
+
+export const isFallback = (match: SiteMatch): boolean => match.kind === "otherPort" || match.kind === "otherScheme";
+
+const rankOf: Readonly<Record<MatchKind, number>> = { exact: 0, site: 1, otherPort: 2, otherScheme: 3 };
+
+const defaultPort = (protocol: string): string => (protocol === "https:" ? "443" : protocol === "http:" ? "80" : "");
+
+type Origin = Readonly<{ protocol: string; host: string; port: string; display: string; path: string }>;
+
+const originOf = (url: URL): Origin => ({
+  protocol: url.protocol,
+  host: siteHost(url.hostname),
+  port: url.port === "" ? defaultPort(url.protocol) : url.port,
+  display: url.host,
+  path: url.pathname === "/" ? "" : url.pathname,
+});
+
+// Quark reads a URL typed without a scheme as https, so this does too.
+const entryOrigin = (entryUrl: string): Origin | null => {
+  const trimmed = entryUrl.trim();
+  if (trimmed === "") {
+    return null;
+  }
+  try {
+    const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+    return url.protocol === "https:" || url.protocol === "http:" ? originOf(url) : null;
+  } catch {
+    return null;
+  }
+};
+
+const pageOrigin = (pageUrl: string): Origin | null => {
+  try {
+    return originOf(new URL(pageUrl));
+  } catch {
+    return null;
+  }
+};
+
+const kindOf = (page: Origin, entry: Origin): MatchKind => {
+  if (entry.protocol !== page.protocol) {
+    return "otherScheme";
+  }
+  if (entry.port !== page.port) {
+    return "otherPort";
+  }
+  return entry.host === page.host ? "exact" : "site";
+};
+
+const noteFor = (kind: MatchKind, entry: Origin): string => {
+  switch (kind) {
+    case "otherScheme":
+      return `Saved for ${entry.protocol.replace(":", "")}`;
+    case "otherPort":
+      return "Different port";
+    default:
+      return "";
+  }
+};
+
+// The list from Quark only carries each entry's host, so `urlOf` supplies the full URL where it's known.
+// An entry whose URL isn't known is taken as https on the default port, which is how Quark reads a bare host.
 export const matchEntries = (
   entries: readonly EntrySummary[],
-  pageHost: string,
-): readonly EntrySummary[] => {
-  const page = normalizeHost(pageHost);
-  const rank = (entry: EntrySummary): number => (normalizeHost(entry.urlHost) === page ? 0 : 1);
+  pageUrl: string,
+  urlOf: (entry: EntrySummary) => string | undefined = () => undefined,
+): readonly SiteMatch[] => {
+  const page = pageOrigin(pageUrl);
+  if (page === null) {
+    return [];
+  }
   return entries
-    .filter((entry) => hostMatches(entry.urlHost, pageHost))
-    .toSorted((a, b) => rank(a) - rank(b) || byName(a, b));
+    .filter((entry) => hostMatches(entry.urlHost, page.host))
+    .map((entry): SiteMatch => {
+      const known = entryOrigin(urlOf(entry) ?? "");
+      const origin = known ?? { protocol: "https:", host: siteHost(entry.urlHost), port: "443", display: entry.urlHost, path: "" };
+      const kind = kindOf(page, origin);
+      const scheme = kind === "otherScheme" ? `${origin.protocol}//` : "";
+      return { ...entry, kind, where: `${scheme}${origin.display}${origin.path}`, note: noteFor(kind, origin) };
+    })
+    .toSorted((a, b) => rankOf[a.kind] - rankOf[b.kind] || byName(a, b));
 };
+
+// Matches that may be filled or counted without the user choosing among fallbacks.
+export const primaryMatches = (matches: readonly SiteMatch[]): readonly SiteMatch[] =>
+  matches.filter((match) => !isFallback(match));
 
 export const searchEntries = (
   entries: readonly EntrySummary[],
@@ -46,7 +158,7 @@ export const searchEntries = (
 export const isSecurePage = (pageUrl: string): boolean => {
   try {
     const { protocol, hostname } = new URL(pageUrl);
-    return protocol === "https:" || hostname === "localhost" || hostname === "127.0.0.1";
+    return protocol === "https:" || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
   } catch {
     return false;
   }
