@@ -11,6 +11,11 @@ describe("decodeSettings", () => {
     });
   });
 
+  it("remembers that the welcome was seen", () => {
+    expect(decodeSettings({ welcomeSeen: true }).welcomeSeen).toBe(true);
+    expect(decodeSettings({}).welcomeSeen).toBe(false);
+  });
+
   it("keeps an allowed idle time", () => {
     expect(decodeSettings({ idleMinutes: 30 }).idleMinutes).toBe(30);
   });

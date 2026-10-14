@@ -111,7 +111,11 @@ export const othersSection = (): HTMLElement => {
             "div",
             { className: "grow" },
             h("div", {}, "Password manager extensions"),
-            h("div", { className: "muted small" }, "Proton Pass, Bitwarden, 1Password and others"),
+            h(
+              "div",
+              { className: "muted small" },
+              "Proton Pass, Bitwarden, 1Password and others. Checking asks for permission to manage extensions; Quark Vault only uses it to list password managers and to turn one off when you choose.",
+            ),
           ),
           button("Check", checkExtensions),
         ),

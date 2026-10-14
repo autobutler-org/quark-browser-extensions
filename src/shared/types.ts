@@ -46,6 +46,7 @@ export type Settings = Readonly<{
   othersReviewed: boolean;
   lockOnIdle: boolean;
   idleMinutes: IdleMinutes;
+  welcomeSeen: boolean;
 }>;
 
 export type BooleanSetting = {
@@ -59,6 +60,7 @@ export const defaultSettings: Settings = {
   othersReviewed: false,
   lockOnIdle: false,
   idleMinutes: 15,
+  welcomeSeen: false,
 };
 
 export type ApiError =

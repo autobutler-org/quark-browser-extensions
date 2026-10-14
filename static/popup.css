@@ -37,10 +37,16 @@ body {
 
 .body {
   flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 24px 20px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.body > * {
+  flex-shrink: 0;
 }
 
 .intro {
@@ -270,6 +276,10 @@ body {
 
 .link.muted {
   color: var(--muted);
+}
+
+.body .banner {
+  margin: 0;
 }
 
 .banner.save {

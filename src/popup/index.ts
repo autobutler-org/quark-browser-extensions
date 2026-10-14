@@ -14,6 +14,7 @@ import { ask } from "../shared/messages";
 import type { SaveAction, SaveOffer } from "../background/save";
 import { currentBrowser, siteOrigins } from "../shared/platform";
 import { unreachableHint } from "./address";
+import { showWelcome, welcomeSections } from "./welcome";
 import { saveBarCopy } from "../shared/saveCopy";
 import { fillShortcut, shortcutHelp } from "../shared/shortcut";
 import type { ApiError, EntrySummary, Result, VaultState } from "../shared/types";
@@ -36,6 +37,8 @@ type Model = Readonly<{
   needsSiteAccess: boolean;
   // The connect form is open over an unreachable Quark, so the address can be fixed without signing out.
   editingAddress: boolean;
+  // offered: the first-run banner shows on the connect form; reading: the welcome itself is open.
+  welcome: "hidden" | "offered" | "reading";
 }>;
 
 const root = document.getElementById("app") as HTMLElement;
@@ -55,6 +58,7 @@ let model: Model = {
   saveOffer: null,
   needsSiteAccess: false,
   editingAddress: false,
+  welcome: "hidden",
 };
 
 const update = (patch: Partial<Model>): void => {
@@ -160,8 +164,16 @@ const connectView = (): HTMLElement => {
         "div",
         { className: "intro" },
         h("h1", {}, "Connect to your Quark"),
-        h("p", { className: "muted" }, "Sign in with an admin account. This browser shows up in Settings › Sessions, where you can revoke it any time."),
+        // The first-run banner takes the revoke line's room; the welcome says it instead.
+        h(
+          "p",
+          { className: "muted" },
+          model.welcome === "offered"
+            ? "Sign in with an admin account; only admins can open the vault."
+            : "Sign in with an admin account; only admins can open the vault. You can revoke this browser in Settings › Sessions.",
+        ),
       ),
+      welcomeBanner(),
       field("server", "Quark address", server),
       insecure,
       field("username", "Username", username),
@@ -176,6 +188,43 @@ const connectView = (): HTMLElement => {
     ),
   );
 };
+
+const finishWelcome = async (): Promise<void> => {
+  const settings = await ask({ type: "settings" });
+  await ask({ type: "saveSettings", settings: { ...settings, welcomeSeen: true } });
+  update({ welcome: "hidden" });
+};
+
+const welcomeBanner = (): HTMLElement | null =>
+  model.welcome === "offered"
+    ? h(
+        "div",
+        { className: "banner", role: "status" },
+        h("div", { className: "grow" }, "New here? What you need, and why."),
+        h("button", { className: "link", type: "button", onclick: (() => update({ welcome: "reading" })) as EventListener }, "Read"),
+        h("button", { className: "link muted", type: "button", onclick: (() => void finishWelcome()) as EventListener }, "Dismiss"),
+      )
+    : null;
+
+const welcomeView = (): HTMLElement =>
+  h(
+    "div",
+    { className: "screen" },
+    header(),
+    h(
+      "div",
+      { className: "scroll" },
+      h(
+        "div",
+        { className: "body" },
+        h("div", { className: "intro" }, h("h1", {}, "Welcome to Quark Vault"), h("p", { className: "muted" }, "It fills logins from the password vault on your Quark.")),
+        ...welcomeSections(currentBrowser()).map((section) =>
+          h("div", { className: "intro" }, h("div", { className: "section-label" }, section.title), ...section.lines.map((line) => h("p", { className: "muted" }, line))),
+        ),
+        h("button", { className: "primary", type: "button", onclick: (() => void finishWelcome()) as EventListener }, "Got it"),
+      ),
+    ),
+  );
 
 const unlockView = (): HTMLElement => {
   const master = h("input", { id: "master", type: "password", autocomplete: "current-password", required: true });
@@ -473,6 +522,7 @@ const view = (): HTMLElement => {
   }
   switch (state.kind) {
     case "disconnected":
+      return model.welcome === "reading" ? welcomeView() : connectView();
     case "signedOut":
       return connectView();
     case "locked":
@@ -498,8 +548,8 @@ const currentTab = async (): Promise<Tab> => {
 };
 
 const refresh = async (): Promise<void> => {
-  const state = await ask({ type: "state" });
-  update({ state, error: "" });
+  const [state, settings] = await Promise.all([ask({ type: "state" }), ask({ type: "settings" })]);
+  update({ state, error: "", welcome: showWelcome(state, settings) ? "offered" : "hidden" });
   if (state.kind === "unlocked") {
     await loadEntries();
   }
