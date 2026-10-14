@@ -15,7 +15,7 @@ into the store dashboards by hand on the first submission (see
 | Support | https://github.com/autobutler-org/quark-browser-extensions/issues |
 | Privacy policy | [privacy-policy.md](privacy-policy.md), at a public URL (see below) |
 | Firefox add-on id | `vault@autobutler.org` |
-| Minimum versions | Chrome 116, Firefox 128 |
+| Minimum versions | Chrome 116, Firefox 140 (desktop; not offered for Firefox for Android) |
 
 `package.json` has no `homepage`, `bugs` or `repository` field. The URLs above
 are the repository's GitHub remote, the same one `.github/amo-metadata.json`

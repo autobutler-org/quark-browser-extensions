@@ -78,7 +78,7 @@ extension can't reach a server Chrome doesn't trust.
 
 ## Firefox
 
-`npm run package` also builds `quark-vault-firefox.zip` (Firefox 128+) and `quark-vault-sources.zip`, the source
+`npm run package` also builds `quark-vault-firefox.zip` (Firefox 140+, desktop only) and `quark-vault-sources.zip`, the source
 archive AMO asks for. To try it, run `npm run build:firefox`, open `about:debugging` › This Firefox › **Load Temporary
 Add-on** and pick `.output/firefox-mv3/manifest.json`. Differences from Chrome:
 

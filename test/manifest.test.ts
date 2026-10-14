@@ -31,7 +31,7 @@ describe("manifest", () => {
     expect(firefox.host_permissions).toEqual(["https://*/*", "http://*/*"]);
     expect(firefox.browser_specific_settings?.gecko).toEqual({
       id: "vault@autobutler.org",
-      strict_min_version: "128.0",
+      strict_min_version: "140.0",
       data_collection_permissions: { required: ["none"] },
     });
     expect(firefox.minimum_chrome_version).toBeUndefined();

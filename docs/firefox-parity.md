@@ -1,6 +1,6 @@
 # Firefox parity
 
-Checked on Firefox 158.0 (`e2e/.firefox`, linux-stable) against the production build in `.output/firefox-mv3`. `npm run test:e2e:firefox:mock` passed all three smoke tests. The other rows come from a throwaway extension in that same Firefox (content scripts, `permissions.request`, the real toolbar popup, clipboard, alarms, menus, IndexedDB, and `storage.session`). An OS screen lock was not simulated; the screen-lock row is from Firefox 158's idle implementation plus a live `chrome.idle.queryState(60)`.
+The Firefox build supports Firefox 140 and later on desktop (`strict_min_version` 140.0). Checked on Firefox 158.0 (`e2e/.firefox`, linux-stable) against the production build in `.output/firefox-mv3`. `npm run test:e2e:firefox:mock` passed all three smoke tests. The other rows come from a throwaway extension in that same Firefox (content scripts, `permissions.request`, the real toolbar popup, clipboard, alarms, menus, IndexedDB, and `storage.session`). An OS screen lock was not simulated; the screen-lock row is from Firefox 158's idle implementation plus a live `chrome.idle.queryState(60)`.
 
 | Area | Chrome | Firefox | Status |
 | --- | --- | --- | --- |
@@ -19,6 +19,6 @@ Checked on Firefox 158.0 (`e2e/.firefox`, linux-stable) against the production b
 | Alarms | Unused | Unused. An alarm with `delayInMinutes: 0.02` was created. | ok |
 | Screen lock | Idle state `"locked"` locks the vault even when lock-on-idle is off | `queryState` and `onStateChanged` only produce `"active"` and `"idle"`, so Firefox cannot see a screen lock. On Firefox the worker treats `"idle"` as the screen lock and locks the vault whether or not lock-on-idle is on. A locked screen therefore locks the vault once the idle time (15 minutes unless changed) passes with no input, not at the moment it locks, and an idle but unlocked computer locks it too. The options page still says the vault always locks when the screen locks; the Firefox wording is a follow-up. | fixed ([#132](https://github.com/autobutler-org/quark-browser-extensions/issues/132)) |
 
-These differences are already handled in the Firefox build: the event page, `options_ui` (Chrome uses `options_page`), the frame-0 URL fallback for Firefox versions before `ancestorOrigins`, shortcut steps in place of opening `about:addons`, and listing other password managers without a Turn off button (`canDisableOthers` is false).
+These differences are already handled in the Firefox build: the event page, `options_ui` (Chrome uses `options_page`), the frame-0 URL fallback for Firefox versions before `ancestorOrigins` (it arrived in Firefox 148, so the supported 140–147 still need it), shortcut steps in place of opening `about:addons`, and listing other password managers without a Turn off button (`canDisableOthers` is false).
 
 `scripting`, `web_accessible_resources`, and `alarms` are unused, so differences in those APIs do not affect this extension.
