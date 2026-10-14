@@ -14,6 +14,7 @@ import { ask } from "../shared/messages";
 import type { SaveAction, SaveOffer } from "../background/save";
 import { currentBrowser, siteOrigins } from "../shared/platform";
 import { saveBarCopy } from "../shared/saveCopy";
+import { fillShortcut, shortcutHelp } from "../shared/shortcut";
 import type { ApiError, EntrySummary, Result, VaultState } from "../shared/types";
 
 type Tab = Readonly<{ id: number | null; url: string }>;
@@ -323,6 +324,19 @@ const othersBanner = (): HTMLElement | null =>
       )
     : null;
 
+// Chrome pages and Firefox's about:addons can't be linked from an extension page, so open them with tabs.create;
+// Firefox doesn't allow even that, so it gets the steps on the options page.
+const openShortcutSettings = (): void => {
+  const { url } = shortcutHelp(currentBrowser(), model.shortcut);
+  void chrome.tabs.create({ url: url ?? `${chrome.runtime.getURL("options.html")}#shortcut` });
+  window.close();
+};
+
+const shortcutBadge = (): HTMLElement =>
+  model.shortcut === ""
+    ? h("button", { className: "link small", type: "button", title: shortcutHelp(currentBrowser(), "").steps, onclick: openShortcutSettings as EventListener }, "Fill shortcut: Not set")
+    : h("span", { className: "mono", title: "Fill shortcut" }, model.shortcut);
+
 const initial = (name: string): string => (name.trim()[0] ?? "?").toUpperCase();
 
 // The first exact or same-site match is the one to fill; a fallback is never highlighted.
@@ -415,7 +429,7 @@ const entriesView = (state: VaultState): HTMLElement => {
       ...(model.query === "" ? matchSections() : []),
       list,
     ),
-    h("footer", { className: "status" }, h("span", { className: "dot" }), h("span", { className: "grow" }, autoLockText(state)), h("span", { className: "mono", title: model.shortcut === "" ? "" : "Fill shortcut" }, model.shortcut === "" ? hostOf(serverOf(state)) : model.shortcut)),
+    h("footer", { className: "status" }, h("span", { className: "dot" }), h("span", { className: "grow" }, autoLockText(state)), shortcutBadge()),
   );
 };
 
@@ -476,13 +490,10 @@ const refresh = async (): Promise<void> => {
 };
 
 render();
-const fillShortcut = async (): Promise<string> =>
-  (await chrome.commands.getAll()).find((command) => command.name === "fill-login")?.shortcut ?? "";
-
 const needsSiteAccess = async (): Promise<boolean> =>
   currentBrowser() === "firefox" && !(await chrome.permissions.contains({ origins: [...siteOrigins] }));
 
-void Promise.all([currentTab(), fillShortcut(), needsSiteAccess()]).then(([tab, shortcut, siteAccess]) => {
+void Promise.all([currentTab(), chrome.commands.getAll().then(fillShortcut), needsSiteAccess()]).then(([tab, shortcut, siteAccess]) => {
   model = { ...model, tab, shortcut, needsSiteAccess: siteAccess };
   return refresh();
 });

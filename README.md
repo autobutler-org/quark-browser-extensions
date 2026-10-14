@@ -12,7 +12,9 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 - **Fill**: on a page with a password field, a Quark button appears in the field when the vault has a login for that
   site. The toolbar icon shows how many. Pick one, or press **Fill** in the popup.
 - **Shortcut and right-click**: `Ctrl+Shift+L` (`⌘⇧L` on macOS) fills the only match or opens the picker; right-click a field
-  for **Quark Vault › Fill …**. Rebind it at `chrome://extensions/shortcuts`.
+  for **Quark Vault › Fill …**. The browser skips the suggested keys when another extension already has them; the
+  popup footer and options then say **Not set** and link to `chrome://extensions/shortcuts` (in Firefox:
+  `about:addons` › gear › **Manage Extension Shortcuts**).
 - **One-time codes**: fields like "Enter verification code" (or a row of six digit boxes) get the same button when
   the entry has a TOTP secret. The secret stays in the service worker; only the code reaches the page.
 - **Sign-up forms**: new-password fields get **Suggest strong password**, which fills the field and its
