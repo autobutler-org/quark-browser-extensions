@@ -4,6 +4,10 @@
   "private": true,
   "description": "Chrome extension that fills logins from the password vault on your Quark",
   "license": "MIT-0",
+  "homepage": "https://github.com/autobutler-org/quark-browser-extensions",
+  "bugs": {
+    "url": "https://github.com/autobutler-org/quark-browser-extensions/issues"
+  },
   "type": "module",
   "scripts": {
     "build": "wxt build -b chrome && wxt build -b firefox",
