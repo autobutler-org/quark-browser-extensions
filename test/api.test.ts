@@ -213,6 +213,25 @@ describe("unlock", () => {
   });
 });
 
+describe("the request path (#144)", () => {
+  it("refuses to follow a redirect on any request", async () => {
+    const { api, calls } = respond(200, {});
+    await api.unlock(connection, "master");
+    await api.status(connection);
+    expect(calls.map((call) => call.init?.redirect)).toEqual(["error", "error"]);
+  });
+
+  it("refuses an answer from another origin", async () => {
+    const fetchFn: FetchFn = () => {
+      const response = new Response(JSON.stringify({ token: "abc" }), { status: 200 });
+      Object.defineProperty(response, "url", { value: "https://elsewhere.example/api/v0/vault/unlock" });
+      return Promise.resolve(response);
+    };
+    const result = await createApi(fetchFn).unlock(connection, "master");
+    expect(result).toEqual({ ok: false, error: { kind: "network", message: expect.stringContaining("elsewhere.example") as unknown } });
+  });
+});
+
 describe("authenticated requests", () => {
   it("sends the bearer token", async () => {
     const { api, calls } = respond(200, { entries: [] });

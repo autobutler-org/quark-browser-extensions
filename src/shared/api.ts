@@ -90,6 +90,18 @@ export const toApiError = ({ status, message }: Failure): ApiError => {
   }
 };
 
+// The answer has to come from the origin that was asked. A redirect is never followed, even to the same origin:
+// fetch would resend the method and body (a 307 or 308 keeps both) to wherever Location points, so a password
+// could reach another server before any check here ran (#144). The origin check catches a fetch that followed
+// one anyway. A Response built in memory has no url, so it has no origin to compare.
+const answeredFrom = (requested: string, response: Response): string | null => {
+  if (response.url === "") {
+    return response.redirected ? "" : null;
+  }
+  const origin = new URL(response.url).origin;
+  return !response.redirected && origin === new URL(requested).origin ? null : origin;
+};
+
 const send =
   (fetchFn: FetchFn) =>
   async (server: string, token: string | null, request: Request): Promise<Result<unknown, Failure | ApiError>> => {
@@ -101,13 +113,19 @@ const send =
       headers["Content-Type"] = "application/json";
     }
     try {
-      const response = await fetchFn(`${server}/api/v0${request.path}`, {
+      const url = `${server}/api/v0${request.path}`;
+      const response = await fetchFn(url, {
         method: request.method,
         headers,
         credentials: "omit",
         cache: "no-store",
+        redirect: "error",
         ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
       });
+      const elsewhere = answeredFrom(url, response);
+      if (elsewhere !== null) {
+        return err({ kind: "network", message: `the answer came from ${elsewhere || "a redirect"}, not ${new URL(url).origin}` });
+      }
       const payload = await readJson(response);
       return response.ok
         ? ok(payload)
