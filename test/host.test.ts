@@ -6,6 +6,7 @@ import {
   isSecurePage,
   matchEntries,
   mayFill,
+  mayHaveOtp,
   normalizeServer,
   primaryMatches,
   searchEntries,
@@ -122,6 +123,18 @@ describe("matchEntries", () => {
     it("still filters by host, whatever the entry's URL claims", () => {
       expect(matchEntries([entry(1, "A", "github.com")], "https://evil.io/", () => "https://evil.io/")).toEqual([]);
     });
+  });
+});
+
+describe("mayHaveOtp", () => {
+  const [match] = matchEntries([entry(1, "A", "github.com")], "https://github.com/");
+
+  it("offers a code unless the entry is known to have none", () => {
+    expect(match).toBeDefined();
+    if (match === undefined) return;
+    expect(mayHaveOtp(match)).toBe(true);
+    expect(mayHaveOtp({ ...match, hasTotp: true })).toBe(true);
+    expect(mayHaveOtp({ ...match, hasTotp: false })).toBe(false);
   });
 });
 

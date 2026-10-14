@@ -2,6 +2,8 @@ import { h, icon, icons } from "../shared/dom";
 import { stateText } from "../shared/errors";
 import { ask } from "../shared/messages";
 import { idleMinuteChoices, type BooleanSetting, type IdleMinutes, type Settings, type VaultState } from "../shared/types";
+import { currentBrowser } from "../shared/platform";
+import { fillShortcut, shortcutHelp } from "../shared/shortcut";
 import { othersSection } from "./others";
 
 const root = document.getElementById("app") as HTMLElement;
@@ -56,10 +58,15 @@ const lockingSection = (settings: Settings): HTMLElement =>
     idleMinutesSelect(settings),
   );
 
-const shortcutSection = (shortcut: string): HTMLElement =>
-  h(
+const openShortcuts = (url: string): void => {
+  void chrome.tabs.create({ url });
+};
+
+const shortcutSection = (shortcut: string): HTMLElement => {
+  const help = shortcutHelp(currentBrowser(), shortcut);
+  return h(
     "section",
-    { className: "card" },
+    { className: "card", id: "shortcut" },
     h("h2", {}, "Shortcut"),
     h(
       "div",
@@ -68,11 +75,15 @@ const shortcutSection = (shortcut: string): HTMLElement =>
         "div",
         { className: "grow" },
         h("div", {}, "Fill a login"),
-        h("div", { className: "muted small" }, "One match fills right away; several open the picker. Right-click a field for the same list. Change it at chrome://extensions/shortcuts."),
+        h("div", { className: "muted small" }, `One match fills right away; several open the picker. Right-click a field for the same list. ${help.steps}`),
       ),
-      h("span", { className: "mono" }, shortcut === "" ? "Not set" : shortcut),
+      h("span", { className: "mono" }, help.label),
+      help.url === null
+        ? null
+        : h("button", { className: "secondary", type: "button", onclick: (() => openShortcuts(help.url ?? "")) as EventListener }, help.bound ? "Change" : "Set a shortcut"),
     ),
   );
+};
 
 const neverSaveSection = (hosts: readonly string[]): HTMLElement =>
   h(
@@ -120,7 +131,7 @@ const render = async (): Promise<void> => {
     chrome.commands.getAll(),
     ask({ type: "neverSaveList" }),
   ]);
-  const shortcut = commands.find((command) => command.name === "fill-login")?.shortcut ?? "";
+  const shortcut = fillShortcut(commands);
   root.replaceChildren(
     h(
       "main",
@@ -147,6 +158,8 @@ const render = async (): Promise<void> => {
 void render().then(() => {
   if (location.hash === "#others") {
     others.scrollIntoView();
+  } else if (location.hash === "#shortcut") {
+    document.getElementById("shortcut")?.scrollIntoView();
   }
   void ask({ type: "settings" }).then((settings) =>
     settings.othersReviewed ? settings : ask({ type: "saveSettings", settings: { ...settings, othersReviewed: true } }),

@@ -4,6 +4,7 @@ import {
   hostOf,
   insecureServerWarning,
   isFallback,
+  mayHaveOtp,
   needsInsecureConfirmation,
   searchEntries,
   serverTransport,
@@ -12,7 +13,10 @@ import {
 import { ask } from "../shared/messages";
 import type { SaveAction, SaveOffer } from "../background/save";
 import { currentBrowser, siteOrigins } from "../shared/platform";
+import { unreachableHint } from "./address";
+import { showWelcome, welcomeSections } from "./welcome";
 import { saveBarCopy } from "../shared/saveCopy";
+import { fillShortcut, shortcutHelp } from "../shared/shortcut";
 import type { ApiError, EntrySummary, Result, VaultState } from "../shared/types";
 
 type Tab = Readonly<{ id: number | null; url: string }>;
@@ -31,6 +35,10 @@ type Model = Readonly<{
   shortcut: string;
   saveOffer: SaveOffer | null;
   needsSiteAccess: boolean;
+  // The connect form is open over an unreachable Quark, so the address can be fixed without signing out.
+  editingAddress: boolean;
+  // offered: the first-run banner shows on the connect form; reading: the welcome itself is open.
+  welcome: "hidden" | "offered" | "reading";
 }>;
 
 const root = document.getElementById("app") as HTMLElement;
@@ -49,6 +57,8 @@ let model: Model = {
   shortcut: "",
   saveOffer: null,
   needsSiteAccess: false,
+  editingAddress: false,
+  welcome: "hidden",
 };
 
 const update = (patch: Partial<Model>): void => {
@@ -105,7 +115,7 @@ const applyState = async (result: Result<VaultState>): Promise<void> => {
     update({ busy: false, error: errorText(result.error) });
     return;
   }
-  update({ busy: false, error: "", state: result.value });
+  update({ busy: false, error: "", state: result.value, editingAddress: false });
   if (result.value.kind === "unlocked") {
     await loadEntries();
   }
@@ -154,8 +164,16 @@ const connectView = (): HTMLElement => {
         "div",
         { className: "intro" },
         h("h1", {}, "Connect to your Quark"),
-        h("p", { className: "muted" }, "Sign in with an admin account. This browser shows up in Settings › Sessions, where you can revoke it any time."),
+        // The first-run banner takes the revoke line's room; the welcome says it instead.
+        h(
+          "p",
+          { className: "muted" },
+          model.welcome === "offered"
+            ? "Sign in with an admin account; only admins can open the vault."
+            : "Sign in with an admin account; only admins can open the vault. You can revoke this browser in Settings › Sessions.",
+        ),
       ),
+      welcomeBanner(),
       field("server", "Quark address", server),
       insecure,
       field("username", "Username", username),
@@ -164,9 +182,49 @@ const connectView = (): HTMLElement => {
       errorBox(),
       h("div", { className: "spacer" }),
       h("button", { className: "primary", type: "submit", disabled: model.busy }, model.busy ? "Connecting…" : "Connect"),
+      model.editingAddress
+        ? h("button", { className: "secondary", type: "button", onclick: (() => update({ editingAddress: false, error: "" })) as EventListener }, "Cancel")
+        : null,
     ),
   );
 };
+
+const finishWelcome = async (): Promise<void> => {
+  const settings = await ask({ type: "settings" });
+  await ask({ type: "saveSettings", settings: { ...settings, welcomeSeen: true } });
+  update({ welcome: "hidden" });
+};
+
+const welcomeBanner = (): HTMLElement | null =>
+  model.welcome === "offered"
+    ? h(
+        "div",
+        { className: "banner", role: "status" },
+        h("div", { className: "grow" }, "New here? What you need, and why."),
+        h("button", { className: "link", type: "button", onclick: (() => update({ welcome: "reading" })) as EventListener }, "Read"),
+        h("button", { className: "link muted", type: "button", onclick: (() => void finishWelcome()) as EventListener }, "Dismiss"),
+      )
+    : null;
+
+const welcomeView = (): HTMLElement =>
+  h(
+    "div",
+    { className: "screen" },
+    header(),
+    h(
+      "div",
+      { className: "scroll" },
+      h(
+        "div",
+        { className: "body" },
+        h("div", { className: "intro" }, h("h1", {}, "Welcome to Quark Vault"), h("p", { className: "muted" }, "It fills logins from the password vault on your Quark.")),
+        ...welcomeSections(currentBrowser()).map((section) =>
+          h("div", { className: "intro" }, h("div", { className: "section-label" }, section.title), ...section.lines.map((line) => h("p", { className: "muted" }, line))),
+        ),
+        h("button", { className: "primary", type: "button", onclick: (() => void finishWelcome()) as EventListener }, "Got it"),
+      ),
+    ),
+  );
 
 const unlockView = (): HTMLElement => {
   const master = h("input", { id: "master", type: "password", autocomplete: "current-password", required: true });
@@ -322,6 +380,19 @@ const othersBanner = (): HTMLElement | null =>
       )
     : null;
 
+// Chrome pages and Firefox's about:addons can't be linked from an extension page, so open them with tabs.create;
+// Firefox doesn't allow even that, so it gets the steps on the options page.
+const openShortcutSettings = (): void => {
+  const { url } = shortcutHelp(currentBrowser(), model.shortcut);
+  void chrome.tabs.create({ url: url ?? `${chrome.runtime.getURL("options.html")}#shortcut` });
+  window.close();
+};
+
+const shortcutBadge = (): HTMLElement =>
+  model.shortcut === ""
+    ? h("button", { className: "link small", type: "button", title: shortcutHelp(currentBrowser(), "").steps, onclick: openShortcutSettings as EventListener }, "Fill shortcut: Not set")
+    : h("span", { className: "mono", title: "Fill shortcut" }, model.shortcut);
+
 const initial = (name: string): string => (name.trim()[0] ?? "?").toUpperCase();
 
 // The first exact or same-site match is the one to fill; a fallback is never highlighted.
@@ -337,7 +408,7 @@ const matchCard = (entry: SiteMatch, index: number): HTMLElement => {
       h("div", { className: "name" }, entry.name),
       h("div", { className: "mono muted small" }, entry.note === "" ? entry.where : `${entry.where} · ${entry.note}`),
     ),
-    iconButton(`Copy one-time code for ${entry.name}`, icons.clock, () => void copyCode(entry)),
+    mayHaveOtp(entry) ? iconButton(`Copy one-time code for ${entry.name}`, icons.clock, () => void copyCode(entry)) : null,
     h("button", { className: first ? "fill primary" : "fill", type: "button", onclick: (() => void fillEntry(entry)) as EventListener }, "Fill"),
   );
 };
@@ -414,7 +485,7 @@ const entriesView = (state: VaultState): HTMLElement => {
       ...(model.query === "" ? matchSections() : []),
       list,
     ),
-    h("footer", { className: "status" }, h("span", { className: "dot" }), h("span", { className: "grow" }, autoLockText(state)), h("span", { className: "mono", title: model.shortcut === "" ? "" : "Fill shortcut" }, model.shortcut === "" ? hostOf(serverOf(state)) : model.shortcut)),
+    h("footer", { className: "status" }, h("span", { className: "dot" }), h("span", { className: "grow" }, autoLockText(state)), shortcutBadge()),
   );
 };
 
@@ -427,9 +498,17 @@ const messageView = (state: VaultState): HTMLElement =>
     h(
       "div",
       { className: "body" },
-      h("div", { className: "intro" }, h("h1", {}, stateText(state))),
+      h(
+        "div",
+        { className: "intro" },
+        h("h1", {}, stateText(state)),
+        state.kind === "unreachable" ? h("p", { className: "muted" }, unreachableHint(state.server)) : null,
+      ),
       h("div", { className: "spacer" }),
       h("button", { className: "primary", type: "button", onclick: (() => void refresh()) as EventListener }, "Try again"),
+      state.kind === "unreachable"
+        ? h("button", { className: "secondary", type: "button", onclick: (() => update({ editingAddress: true, error: "" })) as EventListener }, "Edit address")
+        : null,
       h("button", { className: "secondary", type: "button", onclick: (() => void ask({ type: "signOut" }).then(applyState)) as EventListener }, "Sign out"),
     ),
   );
@@ -443,16 +522,18 @@ const view = (): HTMLElement => {
   }
   switch (state.kind) {
     case "disconnected":
+      return model.welcome === "reading" ? welcomeView() : connectView();
     case "signedOut":
       return connectView();
     case "locked":
       return unlockView();
     case "unlocked":
       return entriesView(state);
+    case "unreachable":
+      return model.editingAddress ? connectView() : messageView(state);
     case "notAdmin":
     case "notInitialized":
     case "driveDisconnected":
-    case "unreachable":
       return messageView(state);
   }
 };
@@ -467,21 +548,18 @@ const currentTab = async (): Promise<Tab> => {
 };
 
 const refresh = async (): Promise<void> => {
-  const state = await ask({ type: "state" });
-  update({ state, error: "" });
+  const [state, settings] = await Promise.all([ask({ type: "state" }), ask({ type: "settings" })]);
+  update({ state, error: "", welcome: showWelcome(state, settings) ? "offered" : "hidden" });
   if (state.kind === "unlocked") {
     await loadEntries();
   }
 };
 
 render();
-const fillShortcut = async (): Promise<string> =>
-  (await chrome.commands.getAll()).find((command) => command.name === "fill-login")?.shortcut ?? "";
-
 const needsSiteAccess = async (): Promise<boolean> =>
   currentBrowser() === "firefox" && !(await chrome.permissions.contains({ origins: [...siteOrigins] }));
 
-void Promise.all([currentTab(), fillShortcut(), needsSiteAccess()]).then(([tab, shortcut, siteAccess]) => {
+void Promise.all([currentTab(), chrome.commands.getAll().then(fillShortcut), needsSiteAccess()]).then(([tab, shortcut, siteAccess]) => {
   model = { ...model, tab, shortcut, needsSiteAccess: siteAccess };
   return refresh();
 });
