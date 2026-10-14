@@ -1,6 +1,6 @@
-import { fakeI18n } from "./fakeChrome";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fakeI18n } from "./fakeChrome";
 import type { PageCommand, Request } from "../src/shared/messages";
 import type { EntrySummary } from "../src/shared/types";
 

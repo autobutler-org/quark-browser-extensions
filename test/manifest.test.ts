@@ -1,5 +1,6 @@
 // @vitest-environment node
 import config from "../wxt.config";
+import { enMessages } from "./fakeChrome";
 
 const manifestFor = async (browser: string) => {
   const { manifest } = config;
@@ -34,4 +35,30 @@ describe("manifest", () => {
     expect(chrome.browser_specific_settings).toBeUndefined();
     expect(chrome.minimum_chrome_version).toBe("116");
   });
+
+  it("reads its name, description and command from the English messages in every browser", async () => {
+    for (const browser of ["chrome", "firefox", "edge"]) {
+      const manifest = await manifestFor(browser);
+      expect(manifest.default_locale).toBe("en");
+      expect(manifest.name).toBe("__MSG_extName__");
+      expect(manifest.description).toBe("__MSG_extDescription__");
+      expect(manifest.action?.default_title).toBe("__MSG_extName__");
+      expect(manifest.commands?.["fill-login"]?.description).toBe("__MSG_commandFillLogin__");
+    }
+    expect(enMessages["extName"]?.message).toBe("Quark Vault");
+    expect(enMessages["extDescription"]?.message).toBe("Fill logins from the password vault on your Quark.");
+    expect(enMessages["commandFillLogin"]?.message).toBe("Fill a login from Quark Vault");
+  });
+
+  it("keeps the toolbar tooltip on the localized name after WXT copies in the popup's title", () => {
+    type Hook = (wxt: Readonly<{ config: Readonly<{ browser: string }> }>, manifest: chrome.runtime.ManifestV3) => void;
+    const hook = (config.hooks as Record<string, Hook | undefined> | undefined)?.["build:manifestGenerated"];
+    if (hook === undefined) throw new Error("expected a build:manifestGenerated hook");
+    for (const browser of ["chrome", "firefox"]) {
+      const manifest = { manifest_version: 3, action: { default_title: "Quark Vault" } } as chrome.runtime.ManifestV3;
+      hook({ config: { browser } }, manifest);
+      expect(manifest.action?.default_title).toBe("__MSG_extName__");
+    }
+  });
 });
+
