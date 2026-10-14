@@ -210,6 +210,18 @@ describe("connecting", () => {
     expect(alertText(app)).not.toBe("");
     expect(buttonNamed(app, "Connect")?.disabled).toBe(false);
   });
+
+  // Only the fields scroll, so the error and Connect stay in the popup however long the error is (#160).
+  it("keeps the error and Connect below the scrolling fields", async () => {
+    worker.connect = err({ kind: "network", message: "Failed to fetch" });
+    const app = await openPopup();
+    typeInto(app, "server", "https://quark.local");
+    await submitForm(app);
+    const actions = app.querySelector("form > .actions");
+    expect(app.querySelector("form > .body")?.contains(app.querySelector("#server"))).toBe(true);
+    expect(actions?.contains(buttonNamed(app, "Connect")!)).toBe(true);
+    expect(actions?.querySelector('.error-box[role="alert"]')?.textContent).toContain("Can't reach your Quark");
+  });
 });
 
 describe("the connect form", () => {

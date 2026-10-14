@@ -231,6 +231,15 @@ describe("popup.css", () => {
     }
   });
 
+  // The connect form's fields scroll while its error and buttons stay in the popup (#160).
+  it("scrolls the connect form's fields, not its error and buttons (#160)", () => {
+    expect(rule(".form")).toMatch(/min-height:\s*0/);
+    expect(rule(".form")).toMatch(/flex-direction:\s*column/);
+    expect(rule(".body")).toMatch(/overflow-y:\s*auto/);
+    expect(rule(".body")).toMatch(/min-height:\s*0/);
+    expect(rule(".actions")).toMatch(/flex-shrink:\s*0/);
+  });
+
   it("rings the search box when its field has focus", () => {
     expect(rule(".search:focus-within")).toMatch(/outline: 2px solid var\(--focus\)/);
   });
