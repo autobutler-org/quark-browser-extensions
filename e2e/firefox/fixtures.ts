@@ -72,11 +72,33 @@ export const test = base.extend<Fixtures>({
 export { expect };
 
 // Puppeteer never sees the load of a page in the extension process, so its
-// goto times out even though the page loads: wait for the page instead.
+// goto times out even though the page loads. Poll outside Puppeteer's
+// WaitTask: Firefox can replace the extension realm while it is evaluating a
+// waitForFunction, and BiDi reports a transient protocol error instead of
+// letting WaitTask retry in the new realm.
 export const openExtensionPage = async (page: Page, path: string) => {
   const url = `${origin}/${path}`;
   const navigation = page.goto(url, { timeout: 5_000 }).catch(() => undefined);
-  await page.waitForFunction((href) => location.href === href && document.readyState === "complete", { timeout: 15_000 }, url);
+  const deadline = Date.now() + 15_000;
+  let lastError: unknown;
+  let loaded = false;
+  while (Date.now() < deadline) {
+    try {
+      // page.url() stays at about:blank for extension-process navigation.
+      const state = await page.evaluate(() => `${location.href}\n${document.readyState}`);
+      if (state === `${url}\ncomplete`) {
+        loaded = true;
+        break;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (!loaded) {
+    const message = `Extension page did not finish loading: ${url}`;
+    throw lastError === undefined ? new Error(message) : new Error(message, { cause: lastError });
+  }
   await navigation;
 };
 
