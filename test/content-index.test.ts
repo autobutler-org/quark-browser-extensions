@@ -286,7 +286,7 @@ describe("a login modal that fades in (#150)", () => {
     observers.forEach((observer) => observer.takeRecords());
   };
 
-  it("gives no icon while the modal is transparent, then the icon once its transition ends", async () => {
+  it("gives no icon while the modal is transparent and translated, then the icon once its transitions end", async () => {
     await setup("login-modal-fade.html", worker);
     byTag("modal").classList.add("open");
     await rescan();

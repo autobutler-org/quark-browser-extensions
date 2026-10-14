@@ -384,7 +384,7 @@ describe("filling and capturing fixtures", () => {
     expect(tags(passwordFields(document).filter(isNewPasswordField))).toEqual(["pw", "confirm"]);
   });
 
-  it("finds and fills the fade-in modal's fields once the transition ends, and still not the transparent decoys (#150)", () => {
+  it("finds and fills the fade-and-slide modal's fields once its transitions end, and still not the transparent decoys (#150)", () => {
     const doc = load("login-modal-fade.html");
     field("modal").classList.add("open");
     expect(tags(passwordFields(doc))).toEqual([]);
