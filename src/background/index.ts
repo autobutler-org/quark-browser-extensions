@@ -518,10 +518,12 @@ const onIdleState = async (state: IdleState): Promise<void> => {
   }
 };
 
-const fillGenerated = async (tabId: number): Promise<void> => {
+// Only the frame the user right-clicked gets the password: a broadcast would reach the embedding page and
+// every other iframe in the tab.
+const fillGenerated = async (tabId: number, frameId: number): Promise<void> => {
   const password = await withConnection((conn) => api.generate(conn));
   if (password.ok) {
-    await chrome.tabs.sendMessage(tabId, { type: "fillGenerated", password: password.value }).catch(() => undefined);
+    await chrome.tabs.sendMessage(tabId, { type: "fillGenerated", password: password.value }, { frameId }).catch(() => undefined);
   }
 };
 
@@ -536,7 +538,7 @@ export const main = (): void => {
 
   chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (info.menuItemId === generateMenuId && tab?.id !== undefined) {
-      void fillGenerated(tab.id);
+      void fillGenerated(tab.id, info.frameId ?? 0);
       return;
     }
     const entryId = entryIdFromMenu(info.menuItemId);

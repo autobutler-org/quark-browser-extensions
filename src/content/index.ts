@@ -160,15 +160,26 @@ const handleFill = (command: FillCommand): PageReply | Promise<PageReply> | null
   }
 };
 
+// The focused element, looking inside open shadow roots.
+const focusedElement = (): Element | null => {
+  let active = document.activeElement;
+  while (active?.shadowRoot?.activeElement) {
+    active = active.shadowRoot.activeElement;
+  }
+  return active;
+};
+
+// Not moved out of the viewport, the trick that hides a field without display or visibility.
+const onScreen = (field: HTMLElement): boolean => {
+  const box = field.getBoundingClientRect();
+  return box.right >= 0 && box.bottom >= 0 && box.left <= window.innerWidth && box.top <= window.innerHeight;
+};
+
+// Only the password field the user is on, and only one they can see and reach. Never another field: the
+// page that embeds a sign-up iframe must not get the password through fields of its own.
 const fillGeneratedHere = (password: string): PageReply | null => {
-  const active = document.activeElement;
-  const target =
-    active instanceof HTMLInputElement && active.type === "password"
-      ? active
-      : isTop
-        ? passwordFields(document).find(isNewPasswordField) ?? null
-        : null;
-  if (target === null) {
+  const target = focusedElement();
+  if (!(target instanceof HTMLInputElement) || !passwordFields(document).includes(target) || !onScreen(target)) {
     return null;
   }
   if (isNewPasswordField(target)) {
