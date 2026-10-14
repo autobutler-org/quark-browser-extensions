@@ -82,6 +82,11 @@ describe("filling from the popup, shortcut or context menu", () => {
       if (message.type === "whereAmI") {
         return Promise.resolve(options?.frameId === 0 ? topUrl : undefined);
       }
+      // The top frame reports every subframe's <iframe> as shown (#141; worker-frames.test.ts covers the rest).
+      if (message.type === "announceFrame") {
+        void fake.send({ type: "frameReport", nonce: message.nonce, shown: true }, frame(topUrl, 0));
+        return Promise.resolve(undefined);
+      }
       return Promise.resolve(frameReply);
     }) as typeof fake.chrome.tabs.sendMessage;
     const fetchSpy = await startWorker((url) => Promise.resolve(url.endsWith("/vault/entries/1") ? json(200, entry) : json(200, {})));

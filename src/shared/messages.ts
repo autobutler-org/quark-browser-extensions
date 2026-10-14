@@ -12,6 +12,8 @@ export type Request =
   | Readonly<{ type: "entries" }>
   | Readonly<{ type: "matches"; pageUrl?: string }>
   | Readonly<{ type: "fillFromPage"; entryId: number }>
+  // A frame's answer to a probe: whether the <iframe> its child frame announced itself from is shown (#141).
+  | Readonly<{ type: "frameReport"; nonce: string; shown: boolean }>
   | Readonly<{ type: "fillInTab"; entryId: number; tabId: number }>
   // The user confirmed filling an entry saved for another site into the page on `pageHost` (host and port).
   | Readonly<{ type: "fillAnyway"; entryId: number; tabId: number; pageHost: string }>
@@ -46,6 +48,7 @@ export type Responses = {
   entries: Result<readonly EntrySummary[]>;
   matches: Result<readonly SiteMatch[]>;
   fillFromPage: Result<Credentials & Readonly<{ autoSubmit: boolean }>>;
+  frameReport: null;
   fillInTab: Result<null>;
   fillAnyway: Result<null>;
   reveal: Result<Credentials>;
@@ -81,6 +84,8 @@ export type PageCommand =
   | FillCommand
   | Readonly<{ type: "openPicker" }>
   | Readonly<{ type: "fillGenerated"; password: string }>
+  // Posts the nonce to the parent window, whose content script reports on the frame element it came from.
+  | Readonly<{ type: "announceFrame"; nonce: string }>
   | Readonly<{ type: "offerCheck" }>
   | Readonly<{ type: "whereAmI" }>;
 

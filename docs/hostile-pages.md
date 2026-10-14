@@ -8,13 +8,16 @@ To run them: `npm run test:e2e:mock -- hostile/`.
 
 ## Results
 
-An attack **succeeds** if the password reaches page script without the user knowingly filling a visible field on the login's own site, or reaches another origin. None of the attacks below succeeds. Three did when these tests were written; #129 and #130 fixed them. If an attack is found to succeed, its test is marked `test.fail` and points to the issue that tracks the fix. When the fix lands, the test starts to pass, Playwright reports it as unexpected, and the mark comes off.
+An attack **succeeds** if the password reaches page script without the user knowingly filling a visible field on the login's own site, or reaches another origin. None of the attacks below succeeds. Three did when these tests were written; #129 and #130 fixed them. The second security review found more ways around the #129 checks; #142 fixed those. If an attack is found to succeed, its test is marked `test.fail` and points to the issue that tracks the fix. When the fix lands, the test starts to pass, Playwright reports it as unexpected, and the mark comes off.
 
 | Attack | Result | Test |
 | --- | --- | --- |
 | Hidden decoy password fields, filled on load | Blocked | `decoy.spec.ts` › isn't filled on load |
 | Hidden decoy fields, inline picker on the real field | Blocked | `decoy.spec.ts` › doesn't catch a fill from the inline picker |
 | Hidden decoy fields, popup Fill or shortcut | Blocked since [#129](https://github.com/autobutler-org/quark-browser-extensions/issues/129) | `decoy.spec.ts` › doesn't catch a fill from the popup or the shortcut |
+| The same, hidden by `visibility:collapse`, `filter`, a transparent mask or a `clip-path` | Blocked since [#142](https://github.com/autobutler-org/quark-browser-extensions/issues/142) | `decoy.spec.ts` › a decoy password field, visibility:collapse (and the six styles after it) |
+| Decoy fields slotted into a shadow tree whose wrapper clips them, popup Fill | Blocked since [#139](https://github.com/autobutler-org/quark-browser-extensions/issues/139) | `shadow.spec.ts` › a decoy pair slotted into an open (or a closed) shadow tree … |
+| A same-site frame the user can't see, holding a password form, popup Fill | Blocked since [#141](https://github.com/autobutler-org/quark-browser-extensions/issues/141) | `frames.spec.ts` › a hidden same-site frame … |
 | Cross-origin parent framing the login form | Blocked | `cross-origin.spec.ts` › a cross-origin parent can't get a login filled |
 | Form whose action posts to another origin | Blocked by default | `cross-origin.spec.ts` › is filled but not submitted |
 | The same, with **Submit after filling** on | Blocked since [#130](https://github.com/autobutler-org/quark-browser-extensions/issues/130) | `cross-origin.spec.ts` › a form posting to another origin isn't submitted |
@@ -23,21 +26,42 @@ An attack **succeeds** if the password reaches page script without the user know
 | Listening for input and change events during a fill | Blocked | `events.spec.ts` |
 | Moving the field after the picker opens | Blocked since [#129](https://github.com/autobutler-org/quark-browser-extensions/issues/129) | `picker.spec.ts` › a password field moved … isn't filled |
 
-Legitimate fills still work beside each attack: the picker on the real field of the decoy page, the same login frame under a same-site parent, a form posting to its own origin with **Submit after filling** on, a trusted Enter in a picker the page has been bombarding with synthetic events, and the listener page's own two fields.
+Legitimate fills still work beside each attack: the picker on the real field of the decoy page, a sign-in card component that slots the page's own fields into an open or closed shadow root, a visible login frame from another origin on the same site, the same login frame under a same-site parent, a form posting to its own origin with **Submit after filling** on, a trusted Enter in a picker the page has been bombarding with synthetic events, and the listener page's own two fields.
 
 ## The attacks
 
 ### Decoy password fields
 
-**The page:** on the login's own site, a username and password pair styled to be invisible, ahead of the real sign-in form, with listeners that keep whatever lands in them. One page per style: moved off-screen (`position:absolute; left:-10000px`), `opacity:0`, and 1px by 1px. This is how third-party tracking scripts have collected passwords from password managers that fill on page load.
+**The page:** on the login's own site, a username and password pair styled to be invisible, ahead of the real sign-in form, with listeners that keep whatever lands in them. One page per style: moved off-screen (`position:absolute; left:-10000px`), `opacity:0`, 1px by 1px, and since #142 `visibility:collapse`, `filter:opacity(0)`, `mask-image:linear-gradient(transparent,transparent)`, and the clip-paths `polygon(0 0,0 0,0 0)`, `inset(100px)`, `inset(0 100% 0 0)` and `circle(1px)`. Chromium paints none of the #142 styles, yet `checkVisibility()` passes and the border box stays full. This is how third-party tracking scripts have collected passwords from password managers that fill on page load.
 
 **Result:**
 
 - Nothing is filled on load. The extension fills only when the user acts: the inline picker, the popup, the keyboard shortcut or the context menu.
 - The inline picker, opened on the real password field, fills that field and its username. The decoys stay empty.
-- The popup's Fill, the keyboard shortcut and the context menu fill the real form, and the decoys stay empty. Until #129 they filled the decoys: they have no target field, so `fillLogin` takes the page's first password field, and the visibility checks then caught `display:none`, `visibility:hidden`, `[hidden]`, `tabindex=-1` and `aria-hidden` but none of these three styles.
+- The popup's Fill, the keyboard shortcut and the context menu fill the real form, and the decoys stay empty. Until #129 they filled the decoys: they have no target field, so `fillLogin` takes the page's first password field, and the visibility checks then caught `display:none`, `visibility:hidden`, `[hidden]`, `tabindex=-1` and `aria-hidden` but none of these three styles. Until #142 the same went for the seven styles added then: the checks read `visibility: hidden` but not `collapse`, the `opacity` property but not `filter`, no masks, and only a leading percentage `inset()` or a zero-radius circle in `clip-path`.
 
-**Defense:** no fill without a user action, and only into fields the user can see: opaque, at least 4px by 4px, not clipped away, and on the page (`isLoginField` in `src/content/forms.ts`; [security.md](security.md#which-fields-get-a-login) has the rules). `test/forms-hidden.test.ts` and the `login-decoy-*` fixtures cover each style without a browser.
+**Defense:** no fill without a user action, and only into fields the user can see: opaque (filters included), at least 4px by 4px, not clipped or masked away, and on the page (`isLoginField` in `src/content/forms.ts`; [security.md](security.md#which-fields-get-a-login) has the rules). `test/forms-hidden.test.ts` and the `login-decoy-*` fixtures cover each style without a browser.
+
+### Decoy fields slotted into a clipping shadow tree
+
+**The page:** on the login's own site, a username and password pair in the light DOM of a `<login-box>` element, ahead of the real sign-in form. A declarative shadow root (open in one test, closed in the other, and no script either way) slots them into a wrapper that is 0×0 with `overflow:hidden`, `clip-path:polygon(0 0,0 0,0 0)` or `opacity:0`. The fields' own boxes stay full, `checkVisibility()` passes and the fields have no style of their own. Only the slot's wrapper hides them.
+
+**Result:** the popup's Fill fills the real form, and the slotted pair stays empty. Until #139 the visibility checks walked from a field to its light-DOM parent, the host, and never visited the wrapper, so the pair took the login. A sign-in card that slots the page's own form into a plainly drawn wrapper, in an open or a closed root, still fills.
+
+**Defense:** the checks walk the flat tree, the tree the browser draws: from a slotted element to its slot, through the slot's ancestors in the shadow tree, then out to the host (`parentOf` in `src/content/forms.ts`). `assignedSlot` is null for a closed root, so the content script opens closed roots with `chrome.dom.openOrClosedShadowRoot` in Chrome and `Element.openOrClosedShadowRoot()` in Firefox, which only extensions have, and finds the slot there. Where neither can open a root, the popup, shortcut and context menu fill only a field a hit test finds ([security.md](security.md#which-fields-get-a-login)). `test/forms-shadow.test.ts` and the `shadow-dom-slotted` fixture cover it without a browser.
+
+### A hidden frame on the login's own site
+
+**The page:** on the login's own site, beside the real sign-in form, an iframe the user can't see: `opacity:0` and moved off-screen at 800×600, 0×0, 1×1, or 400×200 under `clip-path:inset(100%)`. The frame is `http://evil.localhost:<port>`, another origin on the same site. The login matches it the way an entry for `example.com` matches `evil.example.com`. It holds an ordinary password form, and its own script keeps what lands there. Neither the login page nor the frame has a field the rules would catch: the frame's fields are normal inside the frame. One more test puts the hidden frame on the login's own origin, and another uses a page with no form of its own, so the frame is the only candidate.
+
+**Result:** the popup's Fill fills the real form, and the frame's fields stay empty. On a page with no form of its own the Fill is refused with "This login form is in a frame you can't see on this page". A visible login frame from the same site still fills. Until #141 every frame decided from its own document, so the hidden frame took the login too.
+
+**Defense:** a frame is held to the field rules for its own `<iframe>` element, and for every frame element above it.
+
+- **Same origin:** the frame reads `frameElement` and checks it (`documentShown` in `src/content/forms.ts`).
+- **Another origin:** `frameElement` is null, and a frame's word about its own size can't be trusted. So before the worker hands a subframe a login, it gives that frame a random nonce. The frame's content script posts it to `window.parent`. The parent's content script finds the `<iframe>` whose `contentWindow` is the message's `source`, checks that element, and reports to the worker. The browser, not the page, tells the worker which frame sent the report, so the worker repeats the check from that frame up to the top. A parent that doesn't answer within a second counts as hiding the frame (`src/background/frames.ts`).
+
+A refused subframe holds its answer for half a second, so on a page with a visible form the frame that filled answers the popup first. [security.md](security.md#frames-the-user-cant-see) has what this doesn't cover.
 
 ### A cross-origin parent framing the login form
 

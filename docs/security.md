@@ -63,20 +63,43 @@ Each frame decides what to do with the message using `fillDecision` in `src/cont
 
 The worker answers `fillFromPage` only after it checks the requesting frame. It uses the frame URL and frame id that the browser reports, not anything the page says. For a subframe it also checks the top frame's URL, which it gets by asking frame 0. These are the same checks the inline picker and one-time codes use. A frame that lies in its own check still gets refused by the worker.
 
+### Frames the user can't see
+
+A frame can be hidden as a whole: an `<iframe>` at 0×0, transparent, clipped or moved off-screen, whose document looks normal from inside (issue #141). A login field in a frame must also be in a frame the user can see. Each `<iframe>` (or `<frame>` or `<object>`) from the field's frame up to the top is held to the field rules below, except the honeypot marks. Those rules are the box size, opacity, clipping and position in the parent's page.
+
+- **Same origin:** the frame reads its own `frameElement` and checks it, with each same-origin frame element above it (`documentShown` in `src/content/forms.ts`).
+- **Another origin:** `frameElement` is null, and nothing a frame says about itself counts. When a subframe asks for a login with `fillFromPage`, the worker (`src/background/frames.ts`):
+  1. sends that frame a random nonce (`announceFrame`);
+  2. the frame's content script posts the nonce to `window.parent`;
+  3. the parent's content script finds the frame element whose `contentWindow` is the message's `source`, which the page can't forge, checks it and sends `frameReport`;
+  4. the worker takes the first report for that nonce, from that tab, with the frame id the browser gives it, and repeats from that frame until it reaches the top.
+
+  A hidden frame anywhere on the way, no report within a second, or a chain that loops is refused with "This login form is in a frame you can't see on this page". This covers the popup's Fill, the shortcut, the context menu and the inline picker, since they all ask through `fillFromPage`.
+
+Limits:
+
+- The nonce passes through the parent page as a `message` event. A parent page running hostile script can stop that event before the content script sees it, which only refuses the fill. It can also repost the nonce from a visible frame it controls, so that the visible frame is reported in place of the hidden one. That takes script on a page the login matches, and such a page can already draw a barely visible form of its own.
+- One-time codes (`otpFromPage`) and the generated password still go to subframes without this check.
+- The extension asks for no `webNavigation` permission, so the worker learns a frame's parent only from that parent's report.
+
 ## Which fields get a login
 
 A page on the login's own site can still run hostile script: a third-party tag, an XSS. It can lay out decoy fields the user never sees, ahead of the real form, to catch a fill that has no target field, or hide the real field once the inline picker is open (issue #129). So a username or password field is filled only when the user can see it (`isLoginField` in `src/content/forms.ts`). It must be:
 
-- Shown: not `display:none`, `visibility:hidden`, `[hidden]` or disabled, itself or through an ancestor.
+- Shown: not `display:none`, `visibility:hidden` or `visibility:collapse`, `[hidden]` or disabled, itself or through an ancestor.
 - Reachable: not `tabindex=-1`, and not under `aria-hidden="true"`, the marks spam honeypots carry.
-- Opaque: its opacity times every ancestor's is at least 0.1.
-- Not clipped away: no `clip: rect(…)` narrower than 4px, `clip-path: inset(50%)` or a zero circle on it or an ancestor.
-- Rendered and big enough: the browser's `checkVisibility()` passes (a closed `<details>` fails it), and its box is at least 4px by 4px after any ancestor with `overflow: hidden` or `clip` cuts it.
+- Opaque: its opacity times every ancestor's, each multiplied by the `opacity()` functions in its `filter`, is at least 0.1.
+- Not clipped or masked away: no `clip: rect(…)` narrower than 4px, and no `mask-image` made only of gradients whose every colour is transparent, on it or an ancestor.
+- Rendered and big enough: the browser's `checkVisibility()` passes (a closed `<details>` fails it), and its box is at least 4px by 4px after every ancestor's `clip-path` and any ancestor with `overflow: hidden` or `clip` cut it. A clip-path is read as the browser computes it: `inset()` in pixels, percentages or a `calc()` of the two (which is also how Chromium reports `rect()` and `xywh()`), `rect()` and `xywh()`, `polygon()`, which counts only if its part inside the element covers 4px by 4px and 16 square pixels, and `circle()` or `ellipse()` by their bounds. A polygon's or circle's bounds stand for its shape. A clip-path clips positioned descendants too, so it counts whatever the containing block.
 - On the page: not moved left of or above the page, nor past the right edge of a page that can't scroll sideways. A fixed field must sit in the viewport. Below the fold still counts, and so does a field scrolled out of view inside a scrolling panel: the user can scroll to either.
+
+These rules follow the flat tree, as the page is drawn (#139). A light-DOM field slotted into a web component's shadow root is checked through its slot and the slot's wrappers, then out through the host. That is how a component's own `overflow: hidden`, `clip-path` or `opacity` clips or fades what it slots. A closed shadow root hides its slots from the page (`assignedSlot` is null), but not from an extension: the content script opens it with `chrome.dom.openOrClosedShadowRoot` in Chrome and `Element.openOrClosedShadowRoot()` in Firefox, and the rules apply the same way.
+
+**The closed-shadow policy.** If a browser offers neither call, or refuses one, the content script can't see what a closed root does with a slotted field: a clip and ordinary styling look the same from outside. Refusing every field in a closed component would break real sign-in cards, and ignoring the question leaves the hole open. So a fill with no target the user chose (the popup's **Fill**, the shortcut and the context menu) takes such a field only if it is provably shown: a hit test at the centre of its box finds the field itself. A field that fails is skipped, so the fill moves on to the next one; with none left it fills nothing. A field outside the viewport, or covered by another element, fails the hit test too, so in such a browser those fields fill only from the picker. The inline picker is unaffected, because the user picked the field it sits on. Chrome 116 and Firefox 128, the oldest versions the extension supports, both have the call, so the policy is a fallback and not the normal path. The code is `shadowRootOf`, `slotting` and `provablyShown` in `src/content/forms.ts`.
 
 The popup's **Fill**, the shortcut and the context menu skip fields that fail, so they fill the real form behind any decoys. The inline picker checks its field again when the user picks, before it asks the worker for the login, and `fillLogin` checks once more when the login arrives. A field hidden in between gets nothing, and the picker says it couldn't find the login fields. Real forms with floating labels, screen-reader-only labels, or a two-step page's visually hidden username field still fill; their fixtures are in `test/fixtures/forms/`. One-time code fields keep the looser checks: some code inputs are transparent boxes drawn over digit cells.
 
-Not covered: a field covered by another element, or drawn in the page's background color. Those need hit testing, which pages can fool as easily.
+Not covered: a field covered by another element, or drawn in the page's background color. Those need hit testing, which pages can fool as easily. Also not covered (#142): a mask from an image (`url()`), a mask sized or placed off the element, a `clip-path` of `path()`, `shape()` or `url()`, an SVG `filter`, and a clip-path value this can't read (an `em` length, a four-value position). Each counts as showing the field.
 
 ## Submit after filling
 

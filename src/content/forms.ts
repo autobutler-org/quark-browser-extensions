@@ -3,9 +3,55 @@ import type { Credentials } from "../shared/types";
 
 const usernameTypes = new Set(["text", "email", "tel", ""]);
 
-// The parent in the composed tree, so checks walk out of an open shadow root into its host.
-const parentOf = (element: Element): Element | null =>
-  element.parentElement ?? (element.getRootNode() as Partial<ShadowRoot>).host ?? null;
+// A host's shadow root, open or closed. Content scripts may read closed ones: Chrome through chrome.dom, Firefox
+// through Element.openOrClosedShadowRoot. Undefined when neither is there to ask, or the browser refuses.
+const shadowRootOf = (host: Element): ShadowRoot | null | undefined => {
+  if (host.shadowRoot !== null) {
+    return host.shadowRoot;
+  }
+  try {
+    const firefox = (host as Partial<{ openOrClosedShadowRoot: () => ShadowRoot | null }>).openOrClosedShadowRoot;
+    if (typeof firefox === "function") {
+      return firefox.call(host);
+    }
+    const dom = (globalThis as Partial<{ chrome: Partial<typeof chrome> }>).chrome?.dom;
+    if (typeof dom?.openOrClosedShadowRoot === "function") {
+      return host instanceof HTMLElement ? dom.openOrClosedShadowRoot(host) : null;
+    }
+  } catch {
+    // Treated as unreadable.
+  }
+  return undefined;
+};
+
+// The slot a light-DOM element is drawn in (#139), and whether that could be told: assignedSlot is null for a
+// closed root, so its slots are searched instead.
+type Slotting = Readonly<{ slot: HTMLSlotElement | null; known: boolean }>;
+
+const slotting = (element: Element, host: Element | null): Slotting => {
+  if (element.assignedSlot !== null || host === null || host.shadowRoot !== null) {
+    return { slot: element.assignedSlot, known: true };
+  }
+  const cached = pass?.slots.get(element);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const root = shadowRootOf(host);
+  const slot = root?.querySelectorAll("slot") ?? [];
+  const found: Slotting = {
+    slot: [...slot].find((candidate) => candidate.assignedElements().includes(element)) ?? null,
+    known: root !== undefined,
+  };
+  pass?.slots.set(element, found);
+  return found;
+};
+
+// The parent in the flat tree, as the page is drawn: a slotted element's slot, else its parent, else the host of
+// the shadow root it is in. So checks walk through the slot's wrappers and out of shadow roots.
+const parentOf = (element: Element): Element | null => {
+  const parent = element.parentElement;
+  return slotting(element, parent).slot ?? parent ?? (element.getRootNode() as Partial<ShadowRoot>).host ?? null;
+};
 
 const ancestors = (element: Element): readonly Element[] => {
   const found: Element[] = [];
@@ -23,6 +69,8 @@ type Pass = Readonly<{
   shown: Map<Element, boolean>;
   unclipped: Map<Element, boolean>;
   exposed: Map<Element, boolean>;
+  slots: Map<Element, Slotting>;
+  frames: Map<Document, boolean>;
   checks: Map<object, Map<HTMLInputElement, boolean>>;
 }>;
 let pass: Pass | null = null;
@@ -32,7 +80,7 @@ export const onePass = <T>(detect: () => T): T => {
   if (pass !== null) {
     return detect();
   }
-  pass = { inputs: new Map(), styles: new Map(), opacity: new Map(), shown: new Map(), unclipped: new Map(), exposed: new Map(), checks: new Map() };
+  pass = { inputs: new Map(), styles: new Map(), opacity: new Map(), shown: new Map(), unclipped: new Map(), exposed: new Map(), slots: new Map(), frames: new Map(), checks: new Map() };
   try {
     return detect();
   } finally {
@@ -66,7 +114,10 @@ const styleOf = (node: Element): CSSStyleDeclaration | undefined => {
 
 const isShown = (node: Element): boolean => {
   const style = styleOf(node);
-  return !node.hasAttribute("hidden") && (style === undefined || (style.display !== "none" && style.visibility !== "hidden"));
+  return (
+    !node.hasAttribute("hidden") &&
+    (style === undefined || (style.display !== "none" && style.visibility !== "hidden" && style.visibility !== "collapse"))
+  );
 };
 
 // Whether `test` holds for `element` and every ancestor; in a pass, each ancestor's answer is kept for its other
@@ -100,7 +151,17 @@ export const isVisible = (element: HTMLElement): boolean =>
 const minOpacity = 0.1;
 const minSize = 4;
 
-// The opacity the element is drawn with: its own times every ancestor's.
+// How much a filter fades what it draws: the product of its opacity() functions (#142).
+const filterOpacity = (filter: string): number =>
+  [...filter.matchAll(/(?:^|[\s)])opacity\(\s*([^)]*)\)/g)]
+    .map(([, amount = ""]) => {
+      const value = Number.parseFloat(amount);
+      const fraction = amount.trim() === "" ? 1 : amount.trim().endsWith("%") ? value / 100 : value;
+      return Number.isNaN(fraction) ? 1 : Math.min(1, Math.max(0, fraction));
+    })
+    .reduce((product, factor) => product * factor, 1);
+
+// The opacity the element is drawn with: its own times every ancestor's, filters included.
 const opacityOf = (element: Element): number => {
   const known = pass?.opacity;
   const unknown: Element[] = [];
@@ -114,33 +175,264 @@ const opacityOf = (element: Element): number => {
     unknown.push(node);
   }
   for (const node of unknown.reverse()) {
-    const own = Number.parseFloat(styleOf(node)?.opacity ?? "");
-    product *= Number.isNaN(own) ? 1 : own;
+    const style = styleOf(node);
+    const own = Number.parseFloat(style?.opacity ?? "");
+    product *= (Number.isNaN(own) ? 1 : own) * filterOpacity(style?.filter ?? "");
     known?.set(node, product);
   }
   return product;
 };
 
-// clip or clip-path that leaves nothing of the element to see: the screen-reader-only rect(0 0 0 0), inset(50%),
-// a circle of radius 0.
-const clipsAway = (style: CSSStyleDeclaration): boolean => {
+type Box = { left: number; top: number; right: number; bottom: number };
+
+const cut = (box: Box, by: Box): Box => ({
+  left: Math.max(box.left, by.left),
+  top: Math.max(box.top, by.top),
+  right: Math.min(box.right, by.right),
+  bottom: Math.min(box.bottom, by.bottom),
+});
+
+const fits = (box: Box): boolean => box.right - box.left >= minSize && box.bottom - box.top >= minSize;
+
+// Splits a CSS value at `separator` outside parentheses.
+const splitTop = (text: string, separator: string): readonly string[] => {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  [...text].forEach((char, index) => {
+    depth += char === "(" ? 1 : char === ")" ? -1 : 0;
+    if (depth === 0 && (separator === " " ? /\s/.test(char) : char === separator)) {
+      parts.push(text.slice(start, index));
+      start = index + 1;
+    }
+  });
+  parts.push(text.slice(start));
+  return parts.map((part) => part.trim()).filter((part) => part !== "");
+};
+
+// A length as pixels plus a percentage of some size: "12px", "50%", "0", or a calc() that adds and subtracts them.
+type Length = Readonly<{ px: number; pct: number }>;
+
+const lengthOf = (token: string): Length | null => {
+  const sum = /^calc\((.*)\)$/.exec(token)?.[1];
+  if (sum !== undefined) {
+    const terms = sum.replace(/\s+-\s+/g, " + -").split(/\s+\+\s+/).map((term) => lengthOf(term.trim()));
+    return terms.some((term) => term === null)
+      ? null
+      : terms.reduce<Length>((total, term) => ({ px: total.px + (term?.px ?? 0), pct: total.pct + (term?.pct ?? 0) }), { px: 0, pct: 0 });
+  }
+  const [, number = "", unit] = /^(-?[\d.]+(?:e-?\d+)?)(px|%)?$/.exec(token) ?? [];
+  const value = Number.parseFloat(number);
+  if (Number.isNaN(value) || (unit === undefined && value !== 0)) {
+    return null;
+  }
+  return unit === "%" ? { px: 0, pct: value } : { px: value, pct: 0 };
+};
+
+const zero: Length = { px: 0, pct: 0 };
+
+const resolve = (length: Length, size: number): number => length.px + (length.pct / 100) * size;
+
+type Point = readonly [number, number];
+
+// What is left of a polygon inside the box from (0, 0) to (width, height): Sutherland–Hodgman, one edge at a time.
+const clipToBox = (polygon: readonly Point[], width: number, height: number): readonly Point[] => {
+  const edges: readonly ((point: Point) => number)[] = [([x]) => x, ([x]) => width - x, ([, y]) => y, ([, y]) => height - y];
+  return edges.reduce<readonly Point[]>((points, inside) => {
+    return points.flatMap((point, index) => {
+      const previous = points[(index + points.length - 1) % points.length] ?? point;
+      const [now, before] = [inside(point), inside(previous)];
+      const crossing = (): Point => {
+        const t = before / (before - now);
+        return [previous[0] + t * (point[0] - previous[0]), previous[1] + t * (point[1] - previous[1])];
+      };
+      if (now >= 0) {
+        return before < 0 ? [crossing(), point] : [point];
+      }
+      return before >= 0 ? [crossing()] : [];
+    });
+  }, polygon);
+};
+
+// What a polygon leaves of the box from (0, 0) to (width, height): its bounds once cut to the box, or nothing
+// when it covers less than minSize² there.
+const polygonBounds = (polygon: readonly Point[], width: number, height: number): Box => {
+  const left = clipToBox(polygon, width, height);
+  const twiceArea = left.reduce((sum, [x, y], index) => {
+    const [nextX, nextY] = left[(index + 1) % left.length] ?? [x, y];
+    return sum + x * nextY - nextX * y;
+  }, 0);
+  if (left.length < 3 || Math.abs(twiceArea) / 2 < minSize * minSize) {
+    return nothing;
+  }
+  const xs = left.map(([x]) => x);
+  const ys = left.map(([, y]) => y);
+  return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
+};
+
+const nothing: Box = { left: 0, top: 0, right: 0, bottom: 0 };
+
+const positionKeywords: Readonly<Record<string, Length>> = {
+  left: { px: 0, pct: 0 },
+  top: { px: 0, pct: 0 },
+  center: { px: 0, pct: 50 },
+  right: { px: 0, pct: 100 },
+  bottom: { px: 0, pct: 100 },
+};
+
+// The centre of a circle() or ellipse(): "at X Y" with lengths or single keywords, else the middle of the box.
+const centreOf = (position: string | undefined, width: number, height: number): Point | null => {
+  const [x = "center", y = "center"] = position === undefined ? [] : splitTop(position, " ");
+  const [atX, atY] = [positionKeywords[x] ?? lengthOf(x), positionKeywords[y] ?? lengthOf(y)];
+  return atX === null || atY === null || splitTop(position ?? "", " ").length > 2 ? null : [resolve(atX, width), resolve(atY, height)];
+};
+
+// A circle() or ellipse() radius along one axis: a length, or the distance to the nearest or farthest side.
+const radiusOf = (token: string, centre: number, size: number, reference: number): number | null => {
+  if (token === "closest-side") {
+    return Math.min(Math.abs(centre), Math.abs(size - centre));
+  }
+  if (token === "farthest-side") {
+    return Math.max(Math.abs(centre), Math.abs(size - centre));
+  }
+  const length = lengthOf(token);
+  return length === null ? null : resolve(length, reference);
+};
+
+// The bounds of a clip-path's basic shape in the element's own box, which may reach past it. Null for no shape,
+// an unknown one (path(), url()) or values this can't read: those count as clipping nothing.
+const shapeBounds = (clipPath: string, width: number, height: number): Box | null => {
+  const [, shape, args = ""] = /\b(inset|rect|xywh|polygon|circle|ellipse)\((.*)\)/.exec(clipPath) ?? [];
+  if (shape === "inset") {
+    const lengths = splitTop(args.split(/\sround\s/)[0] ?? "", " ").map(lengthOf);
+    if (lengths.length === 0 || lengths.length > 4 || lengths.some((length) => length === null)) {
+      return null;
+    }
+    const [top = zero, right = top, bottom = top, left = right] = lengths as Length[];
+    return { left: resolve(left, width), top: resolve(top, height), right: width - resolve(right, width), bottom: height - resolve(bottom, height) };
+  }
+  if (shape === "rect" || shape === "xywh") {
+    const tokens = splitTop(args.split(/\sround\s/)[0] ?? "", " ");
+    const edges = tokens.map((token, index) =>
+      token === "auto" && shape === "rect" ? { px: 0, pct: index === 0 || index === 3 ? 0 : 100 } : lengthOf(token),
+    );
+    if (tokens.length !== 4 || edges.some((edge) => edge === null)) {
+      return null;
+    }
+    // rect(top right bottom left); xywh(x y width height).
+    const vertical = shape === "rect" ? [true, false, true, false] : [false, true, false, true];
+    const [a = 0, b = 0, c = 0, d = 0] = (edges as Length[]).map((edge, index) => resolve(edge, vertical[index] === true ? height : width));
+    return shape === "rect" ? { left: d, top: a, right: b, bottom: c } : { left: a, top: b, right: a + c, bottom: b + d };
+  }
+  if (shape === "polygon") {
+    const parts = splitTop(args, ",");
+    const points = parts
+      .filter((part, index) => !(index === 0 && /^(nonzero|evenodd)$/.test(part)))
+      .map((part) => splitTop(part, " ").map(lengthOf));
+    if (points.some((point) => point.length !== 2 || point.some((length) => length === null))) {
+      return null;
+    }
+    return polygonBounds(points.map(([x, y]) => [resolve(x as Length, width), resolve(y as Length, height)]), width, height);
+  }
+  if (shape === "circle" || shape === "ellipse") {
+    const [radii = "", position] = args.split(/(?:^|\s)at\s/).map((part) => part.trim());
+    const centre = centreOf(position, width, height);
+    const tokens = splitTop(radii, " ");
+    if (centre === null) {
+      return null;
+    }
+    const [cx, cy] = centre;
+    const [rx, ry] =
+      shape === "circle"
+        ? (() => {
+            const token = tokens[0] ?? "closest-side";
+            const r =
+              token === "closest-side" || token === "farthest-side"
+                ? (token === "closest-side" ? Math.min : Math.max)(radiusOf(token, cx, width, 0) ?? 0, radiusOf(token, cy, height, 0) ?? 0)
+                : radiusOf(token, 0, 0, Math.hypot(width, height) / Math.SQRT2);
+            return [r, r];
+          })()
+        : [radiusOf(tokens[0] ?? "closest-side", cx, width, width), radiusOf(tokens[1] ?? "closest-side", cy, height, height)];
+    return rx === null || ry === null ? null : { left: cx - rx, top: cy - ry, right: cx + rx, bottom: cy + ry };
+  }
+  return null;
+};
+
+// The clip-path's bounds on the page, or null when it doesn't clip.
+const clipPathBox = (node: Element, style: CSSStyleDeclaration): Box | null => {
+  if (style.clipPath === "" || style.clipPath === "none") {
+    return null;
+  }
+  const edge = node.getBoundingClientRect();
+  const bounds = shapeBounds(style.clipPath, edge.width, edge.height);
+  return bounds === null
+    ? null
+    : { left: edge.left + bounds.left, top: edge.top + bounds.top, right: edge.left + bounds.right, bottom: edge.top + bounds.bottom };
+};
+
+const transparentColor = (token: string): boolean => {
+  if (token === "transparent") {
+    return true;
+  }
+  const hex = /^#([0-9a-f]{4}|[0-9a-f]{8})$/i.exec(token)?.[1];
+  if (hex !== undefined) {
+    return /^0+$/.test(hex.slice(hex.length === 4 ? 3 : 6));
+  }
+  const inner = /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\((.*)\)$/.exec(token)?.[1];
+  if (inner === undefined) {
+    return false;
+  }
+  const alpha = inner.includes("/") ? inner.split("/")[1] : splitTop(inner, ",")[3];
+  return alpha !== undefined && Number.parseFloat(alpha) === 0;
+};
+
+const gradientWords =
+  /^(to|at|from|in|left|right|top|bottom|center|circle|ellipse|closest-side|closest-corner|farthest-side|farthest-corner|srgb|srgb-linear|display-p3|a98-rgb|prophoto-rgb|rec2020|lab|oklab|xyz|xyz-d50|xyz-d65|hsl|hwb|lch|oklch|shorter|longer|increasing|decreasing|hue)$/;
+
+// A gradient whose every colour is transparent: as a mask, it hides everything under it.
+const transparentGradient = (layer: string): boolean => {
+  const inner = /^(?:repeating-)?(?:linear|radial|conic)-gradient\((.*)\)$/.exec(layer)?.[1];
+  if (inner === undefined) {
+    return false;
+  }
+  const colours = splitTop(inner, ",")
+    .flatMap((part) => splitTop(part, " "))
+    .filter((token) => lengthOf(token) === null && !gradientWords.test(token) && !/^-?[\d.]+(deg|rad|grad|turn)$/.test(token));
+  return colours.length > 0 && colours.every(transparentColor);
+};
+
+// A mask made only of transparent gradients (#142). Masks from images can't be read here and count as showing.
+const masksAway = (style: CSSStyleDeclaration): boolean => {
+  const layers = splitTop(style.maskImage || style.getPropertyValue("-webkit-mask-image"), ",").filter((layer) => layer !== "none");
+  return layers.length > 0 && layers.every(transparentGradient);
+};
+
+// clip or mask that leaves nothing of the element to see: the screen-reader-only rect(0 0 0 0), a transparent
+// mask (#142). Without layout (jsdom) a clip-path is also judged here, against a nominal box: with layout,
+// outOfSight cuts the field's box by every clip-path above it instead.
+const clipsAway = (node: Element, style: CSSStyleDeclaration): boolean => {
   const rect = /^rect\((.*)\)$/.exec(style.clip)?.[1]?.split(/[\s,]+/).map(Number.parseFloat) ?? [];
   const [top = NaN, right = NaN, bottom = NaN, left = NaN] = rect;
   if (rect.length === 4 && !rect.some(Number.isNaN) && (right - left < minSize || bottom - top < minSize)) {
     return true;
   }
-  const inset = Number.parseFloat(/^inset\(\s*([\d.]+)%/.exec(style.clipPath)?.[1] ?? "");
-  return inset >= 50 || /^(circle|ellipse)\(\s*0(px|%)?[\s)]/.test(style.clipPath);
+  if (masksAway(style)) {
+    return true;
+  }
+  if ("checkVisibility" in node || style.clipPath === "" || style.clipPath === "none") {
+    return false;
+  }
+  const nominal = 1000;
+  const bounds = shapeBounds(style.clipPath, nominal, nominal);
+  return bounds !== null && !fits(cut({ left: 0, top: 0, right: nominal, bottom: nominal }, bounds));
 };
 
 const isUnclipped = (node: Element): boolean => {
   const style = styleOf(node);
-  return style === undefined || !clipsAway(style);
+  return style === undefined || !clipsAway(node, style);
 };
 
 const clips = (overflow: string): boolean => overflow === "hidden" || overflow === "clip";
-
-type Box = { left: number; top: number; right: number; bottom: number };
 
 // Whether layout puts the element where the user can't see it: not rendered, shrunk to a few pixels, cut off by
 // an ancestor's overflow, or moved out of the page's scrollable area. Below the fold, or scrolled out of view in a
@@ -156,7 +448,7 @@ const outOfSight = (element: Element): boolean => {
   const doc = element.ownerDocument;
   const view = doc.defaultView;
   const { left, top, right, bottom } = element.getBoundingClientRect();
-  const box: Box = { left, top, right, bottom };
+  let box: Box = { left, top, right, bottom };
   // What clips an element is its containing block's chain: an absolute one skips static ancestors, a fixed one
   // all of them. <html> and <body> hand their overflow to the viewport, which scrolls.
   let skip: "none" | "static" | "all" = "none";
@@ -166,25 +458,28 @@ const outOfSight = (element: Element): boolean => {
     if (style === undefined) {
       continue;
     }
+    // A clip-path clips every descendant, positioned or not (#142).
+    const shape = clipPathBox(node, style);
+    if (shape !== null) {
+      box = cut(box, shape);
+    }
     if (skip === "all" || (skip === "static" && style.position === "static")) {
       continue;
     }
     const [clipsX, clipsY] = [clips(style.overflowX), clips(style.overflowY)];
     if (node !== element && node !== doc.documentElement && node !== doc.body && (clipsX || clipsY)) {
       const edge = node.getBoundingClientRect();
-      if (clipsX) {
-        box.left = Math.max(box.left, edge.left);
-        box.right = Math.min(box.right, edge.right);
-      }
-      if (clipsY) {
-        box.top = Math.max(box.top, edge.top);
-        box.bottom = Math.min(box.bottom, edge.bottom);
-      }
+      box = cut(box, {
+        left: clipsX ? edge.left : -Infinity,
+        right: clipsX ? edge.right : Infinity,
+        top: clipsY ? edge.top : -Infinity,
+        bottom: clipsY ? edge.bottom : Infinity,
+      });
     }
     fixed ||= style.position === "fixed";
     skip = style.position === "fixed" ? "all" : style.position === "absolute" ? "static" : "none";
   }
-  if (box.right - box.left < minSize || box.bottom - box.top < minSize) {
+  if (!fits(box)) {
     return true;
   }
   if (view === null) {
@@ -270,13 +565,54 @@ const isNewsletter = (input: HTMLInputElement): boolean =>
     [input.name, input.id, input.placeholder, input.form?.id, input.form?.className, input.form?.getAttribute("action")].join(" "),
   );
 
-// A field login fill may put a username or password in: shown, reachable, in sight, and still on the page.
+// Whether a frame element is shown in its page: the field rules, less the honeypot marks (#141).
+export const frameShown = (frame: Element): boolean =>
+  isVisible(frame as HTMLElement) && inSight(frame) && documentShown(frame.ownerDocument);
+
+// Whether a document is drawn where the user can see it: the top page, or a frame whose <iframe> is shown, up
+// through every same-origin parent. A cross-origin parent hides frameElement; the worker asks that parent
+// instead before it hands a subframe a login (src/background/frames.ts).
+const documentShown = (doc: Document): boolean => {
+  const known = pass?.frames.get(doc);
+  if (known !== undefined) {
+    return known;
+  }
+  let frame: Element | null = null;
+  try {
+    frame = doc.defaultView?.frameElement ?? null;
+  } catch {
+    // Cross-origin: the worker's probe covers it.
+  }
+  const shown = frame === null || frameShown(frame);
+  pass?.frames.set(doc, shown);
+  return shown;
+};
+
+// A field login fill may put a username or password in: shown, reachable, in sight, still on the page, and in a
+// frame that is itself shown.
 export const isLoginField = (input: HTMLInputElement): boolean =>
-  input.isConnected && isVisible(input) && !isDecoy(input) && inSight(input);
+  input.isConnected && isVisible(input) && !isDecoy(input) && inSight(input) && documentShown(input.ownerDocument);
 
 const isPassword = (input: HTMLInputElement): boolean => input.type === "password" && isLoginField(input);
 
 export const passwordFields = (doc: Document): readonly HTMLInputElement[] => inputs(doc).filter(isPassword);
+
+// Whether every step from the field to the page could be read: false when the field is light DOM under a host
+// whose closed shadow root the browser won't let this script open, so its slot's wrappers are unknown.
+const flatTreeKnown = (field: Element): boolean =>
+  ancestors(field).every((node) => slotting(node, node.parentElement).known);
+
+// The closed-shadow policy (#139): a fill with no target the user chose (the popup's Fill, the shortcut, the
+// context menu) takes a field whose flat tree can't be read only if a hit test at its centre finds it. Without
+// layout (jsdom) there is nothing to test against.
+const provablyShown = (field: HTMLInputElement): boolean => {
+  if (flatTreeKnown(field) || !("checkVisibility" in field)) {
+    return true;
+  }
+  const { left, top, width, height } = field.getBoundingClientRect();
+  const root = field.getRootNode() as Partial<DocumentOrShadowRoot>;
+  return root.elementFromPoint?.(left + width / 2, top + height / 2) === field;
+};
 
 const isUsernameCandidate = perPass(
   (input) =>
@@ -399,17 +735,17 @@ export const fillLogin = (
     setValue(target, credentials.username);
     return { filled: true, form: target.form };
   }
-  const password = paired ?? passwordFields(doc)[0] ?? null;
+  const password = paired ?? passwordFields(doc).find(provablyShown) ?? null;
   if (password === null) {
     const username = standaloneUsernameField(doc);
-    if (username === null || credentials.username === "") {
+    if (username === null || credentials.username === "" || !provablyShown(username)) {
       return { filled: false, form: null };
     }
     setValue(username, credentials.username);
     return { filled: true, form: username.form };
   }
   const username = usernameFieldFor(password);
-  if (username !== null && !username.readOnly && credentials.username !== "") {
+  if (username !== null && !username.readOnly && credentials.username !== "" && (target !== null || provablyShown(username))) {
     setValue(username, credentials.username);
   }
   setValue(password, credentials.password);

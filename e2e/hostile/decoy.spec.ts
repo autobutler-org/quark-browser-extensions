@@ -11,6 +11,14 @@ const decoys = {
   "off-screen": "position:absolute;left:-10000px;top:0",
   "opacity:0": "opacity:0",
   "1px": "width:1px;height:1px;padding:0;border:0",
+  // #142: styles checkVisibility() and the border box don't see.
+  "visibility:collapse": "visibility:collapse",
+  "filter:opacity(0)": "filter:opacity(0)",
+  "transparent mask": "mask-image:linear-gradient(transparent,transparent)",
+  "clip-path:polygon(0 0,0 0,0 0)": "clip-path:polygon(0 0,0 0,0 0)",
+  "clip-path:inset(100px)": "clip-path:inset(100px)",
+  "clip-path:inset(0 100% 0 0)": "clip-path:inset(0 100% 0 0)",
+  "clip-path:circle(1px)": "clip-path:circle(1px)",
 } as const;
 
 const decoyPage = (style: string) =>

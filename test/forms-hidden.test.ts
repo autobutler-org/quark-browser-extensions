@@ -13,6 +13,8 @@ const field: Box = { left: 20, top: 100, width: 240, height: 32 };
 
 beforeEach(() => {
   boxes.clear();
+  // As in Chrome and Firefox, the content script can read closed shadow roots (none here).
+  vi.stubGlobal("chrome", { ...chrome, dom: { openOrClosedShadowRoot: (host: HTMLElement) => host.shadowRoot } });
   Object.defineProperty(Element.prototype, "checkVisibility", { value: () => true, configurable: true, writable: true });
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
     const box = boxes.get(this.id) ?? (this.localName === "input" ? field : page);
@@ -179,5 +181,103 @@ describe("fillLogin", () => {
     const pw = input("pw");
     pw.remove();
     expect(fillLogin(doc, credentials, pw).filled).toBe(false);
+  });
+});
+
+// Styles Chromium paints invisibly, or doesn't hit-test, while checkVisibility() stays true and the border box stays
+// full (#142). jsdom keeps the declared value; Chromium's computed form is given where it differs.
+describe("password fields hidden by collapse, filters, masks and clip-paths", () => {
+  it.each([
+    ["visibility: collapse", '<input id="pw" type="password" style="visibility: collapse">'],
+    ["under a visibility: collapse wrapper", '<div style="visibility: collapse"><input id="pw" type="password"></div>'],
+    ["filter: opacity(0)", '<input id="pw" type="password" style="filter: opacity(0)">'],
+    ["filter: opacity(0%)", '<input id="pw" type="password" style="filter: opacity(0%)">'],
+    ["filter: opacity just above 0 after another function", '<input id="pw" type="password" style="filter: blur(1px) opacity(0.05)">'],
+    ["under a filter: opacity(0) wrapper", '<div style="filter: opacity(0)"><input id="pw" type="password"></div>'],
+    ["opacity and filter that multiply to nearly 0", '<div style="opacity: 0.3"><input id="pw" type="password" style="filter: opacity(0.3)"></div>'],
+    ["a transparent mask-image", '<input id="pw" type="password" style="mask-image: linear-gradient(transparent, transparent)">'],
+    ["a transparent mask-image as Chromium computes it", '<input id="pw" type="password" style="mask-image: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0))">'],
+    ["a transparent mask in eight-digit hex", '<input id="pw" type="password" style="mask-image: conic-gradient(from 90deg, #12345600, rgb(0 0 0 / 0))">'],
+    ["a transparent radial mask with stops", '<input id="pw" type="password" style="mask-image: radial-gradient(circle at center, #0000 0%, hsla(0, 0%, 0%, 0) 100%)">'],
+    ["under a transparent mask wrapper", '<div style="mask-image: linear-gradient(to right, transparent, transparent)"><input id="pw" type="password"></div>'],
+    ["clip-path: polygon(0 0, 0 0, 0 0)", '<input id="pw" type="password" style="clip-path: polygon(0px 0px, 0px 0px, 0px 0px)">'],
+    ["clip-path: a polygon off the box", '<input id="pw" type="password" style="clip-path: polygon(-50px -50px, -10px -50px, -10px -10px)">'],
+    ["clip-path: a polygon one pixel tall", '<input id="pw" type="password" style="clip-path: polygon(0% 0%, 100% 0%, 100% 1px, 0% 1px)">'],
+    ["clip-path: inset(100px)", '<input id="pw" type="password" style="clip-path: inset(100px)">'],
+    ["clip-path: inset(0 100% 0 0)", '<input id="pw" type="password" style="clip-path: inset(0px 100% 0px 0px)">'],
+    ["clip-path: inset(0 0 100% 0)", '<input id="pw" type="password" style="clip-path: inset(0px 0px 100% 0px)">'],
+    ["clip-path: inset with calc()", '<input id="pw" type="password" style="clip-path: inset(0px calc(50% + 120px) 0px 0px)">'],
+    ["clip-path: rect(0 0 0 0), which Chromium rewrites to inset()", '<input id="pw" type="password" style="clip-path: inset(0px 100% 100% 0px)">'],
+    ["clip-path: rect(0px 0px 0px 0px) as declared", '<input id="pw" type="password" style="clip-path: rect(0px 0px 0px 0px)">'],
+    ["clip-path: xywh() 1px wide", '<input id="pw" type="password" style="clip-path: xywh(0px 0px 1px 100%)">'],
+    ["clip-path: circle(1px)", '<input id="pw" type="password" style="clip-path: circle(1px at 50% 50%)">'],
+    ["clip-path: a circle away from the box", '<input id="pw" type="password" style="clip-path: circle(10px at -500px -500px)">'],
+    ["clip-path: ellipse(50px 0px)", '<input id="pw" type="password" style="clip-path: ellipse(50px 0px at 50% 50%)">'],
+  ])("skips one with %s", (_, html) => {
+    expect(ids(passwordFields(mount(html)))).toEqual([]);
+  });
+
+  it.each([
+    ["filter: opacity(0.8)", '<input id="pw" type="password" style="filter: opacity(0.8)">'],
+    ["filter: drop-shadow and blur", '<input id="pw" type="password" style="filter: drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.2)) blur(0px)">'],
+    ["a mask that fades one edge", '<input id="pw" type="password" style="mask-image: linear-gradient(to right, black 90%, transparent)">'],
+    ["a mask image from a file", '<input id="pw" type="password" style="mask-image: url(mask.svg)">'],
+    ["clip-path: inset(2px round 4px)", '<input id="pw" type="password" style="clip-path: inset(2px round 4px)">'],
+    ["clip-path: inset(0px 10% 0px 10%)", '<input id="pw" type="password" style="clip-path: inset(0px 10% 0px 10%)">'],
+    ["clip-path: a polygon covering the box", '<input id="pw" type="password" style="clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%)">'],
+    ["clip-path: circle(50%)", '<input id="pw" type="password" style="clip-path: circle(50% at 50% 50%)">'],
+    ["clip-path: circle() with a keyword radius", '<input id="pw" type="password" style="clip-path: circle(closest-side at 50% 50%)">'],
+    ["clip-path: ellipse(50% 50%)", '<input id="pw" type="password" style="clip-path: ellipse(50% 50% at 50% 50%)">'],
+    ["clip-path: a box only", '<input id="pw" type="password" style="clip-path: border-box">'],
+    ["clip-path: a polygon reaching past the box", '<input id="pw" type="password" style="clip-path: polygon(evenodd, -50% -50%, 150% -50%, 150% 150%, -50% 150%)">'],
+    ["clip-path: a triangle cut by the box", '<input id="pw" type="password" style="clip-path: polygon(50% -100%, 200% 200%, -100% 200%)">'],
+    ["clip-path: circle(farthest-side)", '<input id="pw" type="password" style="clip-path: circle(farthest-side at 0px 0px)">'],
+    ["clip-path: ellipse() with keyword radii", '<input id="pw" type="password" style="clip-path: ellipse(closest-side farthest-side)">'],
+    ["clip-path: rect() with auto edges", '<input id="pw" type="password" style="clip-path: rect(auto auto auto auto)">'],
+    ["clip-path: an inset it can't read", '<input id="pw" type="password" style="clip-path: inset(1em)">'],
+    ["clip-path: a rect() it can't read", '<input id="pw" type="password" style="clip-path: rect(0px 0px 0px)">'],
+    ["clip-path: a polygon it can't read", '<input id="pw" type="password" style="clip-path: polygon(0px 0px 0px, 1em 0px, 0px 0px)">'],
+    ["clip-path: a circle placed by four values", '<input id="pw" type="password" style="clip-path: circle(1px at right 10px bottom 10px)">'],
+    ["clip-path: a circle with a radius it can't read", '<input id="pw" type="password" style="clip-path: circle(1em)">'],
+    ["clip-path: a calc() it can't read", '<input id="pw" type="password" style="clip-path: inset(calc(100% * 2))">'],
+    ["a mask of an opaque hex colour", '<input id="pw" type="password" style="mask-image: linear-gradient(#000000ff, #0000)">'],
+    ["a mask of a colour without alpha", '<input id="pw" type="password" style="mask-image: linear-gradient(45deg, rgb(0, 0, 0), transparent)">'],
+    ["a mask of a named colour", '<input id="pw" type="password" style="mask-image: linear-gradient(in oklab, black, transparent)">'],
+    ["clip-path: a path()", '<input id="pw" type="password" style="clip-path: path(&quot;M 0 0 L 10 0 L 10 10 Z&quot;)">'],
+  ])("keeps one with %s", (_, html) => {
+    expect(ids(passwordFields(mount(html)))).toEqual(["pw"]);
+  });
+
+  it("skips one under a wrapper whose clip-path: inset(100px) leaves none of the field", () => {
+    boxes.set("wrap", { left: 20, top: 100, width: 240, height: 32 });
+    expect(ids(passwordFields(mount('<div id="wrap" style="clip-path: inset(100px)"><input id="pw" type="password"></div>')))).toEqual([]);
+  });
+
+  it("skips one positioned out of its wrapper's clip-path, which clips positioned descendants too", () => {
+    boxes.set("wrap", { left: 600, top: 100, width: 240, height: 32 });
+    mount('<div id="wrap" style="clip-path: inset(0px)"><input id="pw" type="password" style="position: fixed"></div>');
+    expect(ids(passwordFields(document))).toEqual([]);
+  });
+
+  it("keeps one a wrapper's clip-path only trims", () => {
+    expect(ids(passwordFields(mount('<div style="clip-path: inset(100px)"><input id="pw" type="password"></div>')))).toEqual(["pw"]);
+  });
+
+  it.each([
+    ["clip-path: inset(0 100% 0 0)", "inset(0 100% 0 0)", false],
+    ["clip-path: polygon(0 0, 0 0, 0 0)", "polygon(0 0, 0 0, 0 0)", false],
+    ["clip-path: inset(10px)", "inset(10px)", true],
+  ])("without layout, judges %s against a nominal box", (_, clipPath, kept) => {
+    delete (Element.prototype as Partial<Element>).checkVisibility;
+    expect(ids(passwordFields(mount(`<input id="pw" type="password" style="clip-path: ${clipPath}">`)))).toEqual(kept ? ["pw"] : []);
+  });
+
+  it("fills the real form, not a filter: opacity(0) pair ahead of it", () => {
+    const doc = mount(`
+      <form><input id="bait-user" autocomplete="username" style="filter: opacity(0)"><input id="bait-pw" type="password" style="filter: opacity(0)"></form>
+      <form><input id="user" autocomplete="username"><input id="pw" type="password"></form>
+    `);
+    expect(fillLogin(doc, credentials).filled).toBe(true);
+    expect([input("bait-user").value, input("bait-pw").value, input("user").value, input("pw").value]).toEqual(["", "", "alice", "hunter2!"]);
   });
 });
