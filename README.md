@@ -18,7 +18,8 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 - **One-time codes**: fields like "Enter verification code" (or a row of six digit boxes) get the same button when
   the entry has a TOTP secret. The secret stays in the service worker; only the code reaches the page.
 - **Sign-up forms**: new-password fields get **Suggest strong password**, which fills the field and its
-  confirmation, sized to the field's `maxlength`. Right-click › **Generate password** does the same anywhere.
+  confirmation, sized to the field's `maxlength`. Right-click › **Generate password** fills only the password
+  field you are on, and only in the frame you clicked. A new-password field also gets its confirmation.
 - **Save and update**: after you sign in somewhere, a bar offers to save the login, or to update the password when
   it changed. The captured password is held in memory for two minutes at most and never written anywhere else.
   **Never for this site** can be undone on the options page.
@@ -30,14 +31,15 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 
 | Concern                  | How it is handled                                                                              |
 | ------------------------ | ---------------------------------------------------------------------------------------------- |
-| Account password         | Never sent: sign-in sends an auth key derived from it (Argon2id + HKDF, as the Quark app does) with the salt from `GET /api/v0/auth/salt`. An account the Quark marks `legacy` gets the password beside the key once, to move it to keys. Needs Quark v0.47.0+ |
+| Account password         | Never sent: sign-in sends an auth key derived from it (Argon2id + HKDF, as the Quark app does) with the salt from `GET /api/v0/auth/salt`. An account the Quark marks `legacy` gets the password beside the key once, after you confirm, and never over non-loopback http. See [docs/legacy-upgrade.md](docs/legacy-upgrade.md). Needs Quark v0.47.0+ |
 | Vault password           | Sent once to `POST /api/v0/vault/unlock`, never stored                                          |
 | Session token            | `chrome.storage.session` (memory, gone when the browser quits). With "stay signed in" it is also encrypted at rest under a non-extractable key in IndexedDB, never stored in plaintext. See [docs/security.md](docs/security.md) |
 | Decrypted entries        | Fetched one at a time on a click, passed straight to the page, never stored or cached          |
 | Captured sign-ins        | Held in service-worker memory per tab for at most two minutes, then dropped                    |
 | Which site gets a login  | Page host must equal the entry's host (ignoring `www.`) or be a subdomain of it within the same registrable domain. A public suffix (`co.uk`, `github.io`) is never a parent, and an IP address matches only itself. Checked in the worker and again in the page. A login inside an iframe fills only when the top page is that site too |
+| Generated password       | Right-click **Generate password** sends it only to the frame you clicked, into the password field you are on, and its confirmation when that field is a new password. It is never broadcast to the other frames |
 | Other sites              | The popup's **Fill anyway** needs a confirmation naming both hosts, then fills the top frame only, once, within ten seconds, and never auto-submits. The shortcut, context menu and inline picker have no such path |
-| Plain `http://` pages    | Refused, unless the entry itself was saved with an `http://` URL (a router admin page, say). `localhost` and loopback addresses count as secure |
+| Plain `http://` pages    | Refused, unless the entry itself was saved with an `http://` URL (a router admin page, say). `localhost`, `127.0.0.1` and `[::1]` count as secure |
 | Plain `http://` Quark    | Fine on loopback. Any other `http://` address needs an explicit "I understand" tick when connecting |
 | Page scripts             | Can't message the extension; the picker lives in a closed shadow root                          |
 | Permissions              | See [Permissions](#permissions) |
@@ -51,7 +53,7 @@ From the built manifests (`.output/*/manifest.json`):
 
 | Permission | Why |
 | --- | --- |
-| `storage` | Settings, the server address, the session token (`storage.session`) and the encrypted "stay signed in" copy |
+| `storage` | Settings, the session token (`storage.session`) and the encrypted "stay signed in" copy. The Quark address is kept in IndexedDB, not here |
 | `activeTab` | Reading the active tab's URL when you fill from the popup, shortcut or menu |
 | `idle` | Locking the vault when the computer is idle (if you turn that on) or the screen locks |
 | `contextMenus` | The right-click **Quark Vault** menu on editable fields |
@@ -146,7 +148,7 @@ an HTML report in `e2e/playwright-report/`, and the Quark's log in `e2e/.quark/s
 #### Firefox
 
 Playwright's Firefox can't load add-ons, so `e2e/firefox/` drives a stock Firefox with
-[Puppeteer](https://pptr.dev/guides/firefox-support) over WebDriver BiDi instead: each test launches Firefox with a
+[Puppeteer](https://pptr.dev/webdriver-bidi) over WebDriver BiDi instead: each test launches Firefox with a
 fresh profile, installs `.output/firefox-mv3` as a temporary add-on (BiDi's `webExtension.install`), and opens the
 popup as a tab. Playwright Test still runs the tests, with the same `e2e/global-setup.ts`, so they get the same Quark
 (real or mock), proxy, seed and test site. Two Firefox settings make it work: `--remote-allow-system-access` lets BiDi
@@ -181,7 +183,7 @@ e2e/              Playwright tests; support/ starts the Quark (real or mock), th
                   firefox/ holds the Firefox smoke test
 scripts/          build-quark.sh (builds the Quark server the e2e tests run against) and release.js (CI helpers)
 test/             vitest unit tests (jsdom)
-docs/             security.md
+docs/             security.md, legacy-upgrade.md
 .github/          CI (check.yml), the release workflow and RELEASING.md
 ```
 

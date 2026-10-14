@@ -6,7 +6,7 @@ The only evidence that an account is legacy is what the server says. A malicious
 
 ## The rules
 
-`login` in `src/shared/api.ts` applies these checks to a `legacy: true` answer, in order, before it derives the key or sends anything:
+`login` in `src/shared/api.ts` applies these checks to a `legacy: true` answer, in order, before it derives the key or sends the password:
 
 1. **Never over plain http.** If the address is a non-loopback `http://` one (`serverTransport(server) === "insecure"`), it refuses even when the user has accepted the unencrypted connection. A network attacker there could inject `legacy: true`. Loopback `http://` is allowed because it never leaves the machine. To upgrade such an account, sign in once over https or in the Quark app.
 2. **Never twice for one account.** The extension records every account that has signed in successfully on a server, by key alone or through the upgrade. If that server later answers `legacy: true` for the same account, it refuses with "*host* asked for your password again…" and sends nothing. A Quark asks only once, because the upgrade clears the account's password hash.
