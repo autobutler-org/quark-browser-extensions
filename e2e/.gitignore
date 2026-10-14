@@ -1,0 +1,4 @@
+# scripts/build-quark.sh's binary and quark serve's log
+.quark/
+test-results/
+playwright-report/

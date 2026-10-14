@@ -65,7 +65,7 @@ Add-on** and pick `.output/firefox-mv3/manifest.json`. Differences from Chrome:
   against the URL the service worker got from the top frame itself, instead of asking the browser. Chrome keeps
   using `ancestorOrigins`.
 
-CI lints the Firefox build with `web-ext lint`; the end-to-end test runs in Chromium only. Before a Firefox release,
+CI lints the Firefox build with `web-ext lint`; the end-to-end tests run in Chromium only. Before a Firefox release,
 check by hand: connect, unlock, fill from the popup and the in-field button, a one-time code, save a new login, and
 the shortcut.
 
@@ -77,12 +77,41 @@ npm run dev            # WXT dev mode: builds .output/chrome-mv3-dev, opens Chro
 npm run dev:firefox    # the same in Firefox
 npm run build          # production builds in .output/chrome-mv3 and .output/firefox-mv3
 npm run check          # typecheck + unit tests
-CHROME_PATH=/path/to/chromium npm run test:e2e   # loads .output/chrome-mv3 into Chromium against a mock Quark
+QUARK_SRC=~/src/quark npm run test:e2e:quark   # builds that Quark checkout, then runs the e2e tests against it
 ```
 
-The build is [WXT](https://wxt.dev) (`wxt.config.ts`); `wxt build -b edge` also works. `test:e2e` builds
-`.output/chrome-mv3` and needs Chromium or Chrome for Testing: branded Chrome ignores `--load-extension`. Set `E2E_SCREENSHOTS` to
-a folder to save screenshots of each screen, and `E2E_API_PORT` / `E2E_SITE_PORT` to move the mock off 18080 / 18081.
+The build is [WXT](https://wxt.dev) (`wxt.config.ts`); `wxt build -b edge` also works.
+
+### End-to-end tests
+
+The e2e tests in `e2e/` use [Playwright](https://playwright.dev/docs/chrome-extensions): each test launches Chromium
+with `.output/chrome-mv3` loaded in a fresh profile and drives the popup, the options page and test web pages. They
+run against a real Quark: `e2e/global-setup.ts` starts `quark serve --insecure` in a throwaway `HOME`, creates the
+owner and the vault through the API the way the Quark app does, and seeds a folder, two entries and a legacy account
+(one from before auth keys). The tests cover sign-in with the auth key (salt, then key, never the password), the
+legacy account's one-time upgrade, unlocking, the entry list, filling (popup, inline picker, shortcut, frames,
+one-time codes, sign-up forms), saving and updating, locking and signing out. A proxy in front of the Quark records
+what the extension sent, so a test can check what went over the wire.
+
+```sh
+npx playwright install chromium                    # once: the Chromium the tests drive
+QUARK_SRC=~/src/quark npm run test:e2e:quark       # build the Go server from a quark checkout, then run the tests
+npm run test:e2e                                   # run again with the Quark already built in e2e/.quark/quark
+QUARK_BIN=/path/to/quark npm run test:e2e          # or with a quark binary from somewhere else
+npm run test:e2e:mock                              # offline, against the mock Quark in e2e/support/mock-quark.ts
+```
+
+`scripts/build-quark.sh` needs Go (the version the checkout's `go.mod` names; `GOTOOLCHAIN=auto` fetches it) and no
+Flutter: the server is built without its web app. The mock is a fallback for working offline. It follows the real
+server where the extension depends on it, refusing a password-only sign-in with 426 among other things, and CI runs
+the same tests against both so it stays honest. `CHROME_PATH` points the tests at another Chromium or Chrome for
+Testing (branded Chrome ignores `--load-extension`). Failures leave a trace and screenshots in `e2e/test-results/`,
+an HTML report in `e2e/playwright-report/`, and the Quark's log in `e2e/.quark/serve.log`; open a trace with
+`npx playwright show-trace`. The servers take free ports; `E2E_QUARK_PORT`, `E2E_API_PORT` (the proxy) and
+`E2E_SITE_PORT` pin them.
+
+CI builds Quark from autobutler-org/quark at the commit `QUARK_REF` names in `.github/workflows/check.yml`; set the
+repository variable `QUARK_REF` to test another commit, branch or tag.
 
 ```text
 src/background/   service worker: holds the token, calls the Quark, answers the popup and pages
@@ -92,6 +121,8 @@ src/options/      settings and the other-password-managers check
 src/shared/       API client, host matching, message types, error copy
 entrypoints/      WXT entrypoints: background, content script, popup and options pages
 static/           CSS and icons, copied as-is (the manifest is in wxt.config.ts)
+e2e/              Playwright tests; support/ starts the Quark (real or mock), the proxy and the test site
+scripts/          build-quark.sh, which builds the Quark server the e2e tests run against
 ```
 
 ## Not yet
