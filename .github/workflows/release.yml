@@ -55,6 +55,8 @@ jobs:
           npx wxt zip -b edge
       - name: Check the version against package.json and the tag
         run: node scripts/release.js version
+      - name: Check the zips are fit to submit, and that the sources rebuild the Firefox zip
+        run: node scripts/verify-zip.js --rebuild-sources
       - uses: actions/upload-artifact@v7
         with:
           name: quark-vault-release
