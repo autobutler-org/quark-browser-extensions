@@ -1,0 +1,12 @@
+<!-- First step of a two-step login: identifier only. A newsletter sign-up sits in the header,
+     and a decoy password field (aria-hidden, tabindex -1) catches autofill bots. -->
+<header>
+  <form class="newsletter" action="https://example.us1.list-manage.com/subscribe/post">
+    <input type="email" name="EMAIL" placeholder="Get our newsletter" data-fx="newsletter">
+  </form>
+</header>
+<form action="/signin/identifier" method="post">
+  <input type="email" name="identifier" autocomplete="username webauthn" aria-label="Email or phone" data-fx="user">
+  <input type="password" name="hiddenPassword" tabindex="-1" aria-hidden="true" data-fx="decoy">
+  <button type="button">Next</button>
+</form>

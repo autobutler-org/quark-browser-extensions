@@ -1,0 +1,12 @@
+<!-- Login guarded by spam honeypots: one moved off-screen (aria-hidden, tabindex -1), one hidden by a class. -->
+<style>.hp-field { display: none; }</style>
+<form action="/login" method="post">
+  <label>Account <input type="text" name="acct" data-fx="user"></label>
+  <div style="position: absolute; left: -5000px;" aria-hidden="true">
+    <input type="text" name="b_website" tabindex="-1" value="" data-fx="honeypot">
+  </div>
+  <div class="hp-field"><input type="email" name="email_confirm" data-fx="honeypot-css"></div>
+  <label>Password <input type="password" name="pwd" data-fx="pw"></label>
+  <input type="password" name="pwd_trap" tabindex="-1" aria-hidden="true" autocomplete="off" data-fx="pw-trap">
+  <button>Log in</button>
+</form>

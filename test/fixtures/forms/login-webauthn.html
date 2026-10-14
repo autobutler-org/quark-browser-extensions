@@ -1,0 +1,9 @@
+<!-- Login that also offers passkeys: the username field carries the "webauthn" autocomplete token. -->
+<form action="/session" method="post">
+  <label for="login_field">Username or email address</label>
+  <input type="text" name="login" id="login_field" autocomplete="username webauthn" autocapitalize="off" data-fx="user">
+  <label for="password">Password</label>
+  <input type="password" name="password" id="password" autocomplete="current-password" data-fx="pw">
+  <input type="submit" name="commit" value="Sign in">
+</form>
+<button type="button">Sign in with a passkey</button>

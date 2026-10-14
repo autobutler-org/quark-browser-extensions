@@ -1,0 +1,10 @@
+<!-- A web component that renders its whole login form inside an open shadow root. -->
+<login-card>
+  <template shadowrootmode="open">
+    <form action="/login" method="post">
+      <input type="text" name="user" autocomplete="username" data-fx="user">
+      <input type="password" name="pass" autocomplete="current-password" data-fx="pw">
+      <button type="submit">Sign in</button>
+    </form>
+  </template>
+</login-card>

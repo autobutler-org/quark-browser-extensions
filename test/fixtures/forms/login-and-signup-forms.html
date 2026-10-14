@@ -1,0 +1,16 @@
+<!-- Shop account page: "Returning customer" and "New customer" forms side by side. The sign-up
+     confirmation field has no autocomplete, only the first new password does. -->
+<form id="login" action="/account/login" method="post">
+  <h2>Returning customer</h2>
+  <input type="email" name="email" autocomplete="email" data-fx="login-email">
+  <input type="password" name="password" autocomplete="current-password" data-fx="login-pw">
+  <button type="submit">Sign in</button>
+</form>
+<form id="register" action="/account/register" method="post">
+  <h2>New customer</h2>
+  <input type="text" name="first_name" autocomplete="given-name" data-fx="first">
+  <input type="email" name="email" autocomplete="email" data-fx="signup-email">
+  <input type="password" name="password" autocomplete="new-password" data-fx="signup-pw">
+  <input type="password" name="password_confirmation" data-fx="signup-confirm">
+  <button type="submit">Create account</button>
+</form>

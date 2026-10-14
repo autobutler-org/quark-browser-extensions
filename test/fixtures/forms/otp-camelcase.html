@@ -1,0 +1,6 @@
+<!-- Two-factor page with an unmarked, camelCase-named code field. -->
+<form action="/challenge/totp" method="post">
+  <input type="tel" name="totpPin" id="totpPin" data-fx="code">
+  <label><input type="checkbox" name="trustDevice"> Don't ask again on this device</label>
+  <button type="submit">Next</button>
+</form>
