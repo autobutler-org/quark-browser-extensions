@@ -841,12 +841,13 @@ let queued = 0;
 // rest are dropped. filling() says when they are done.
 export const setValue = (input: HTMLInputElement, value: string): void => {
   const view = input.ownerDocument.defaultView;
-  if (queued === 0 && (view === null || !drawnByCanvas(input))) {
-    write(input, value);
-    return;
-  }
   if (queued === 0) {
+    // Nothing is waiting: whatever the last fill came to, this one starts afresh.
     writes = Promise.resolve(true);
+    if (view === null || !drawnByCanvas(input)) {
+      write(input, value);
+      return;
+    }
   }
   queued += 1;
   writes = writes

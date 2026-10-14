@@ -182,6 +182,14 @@ describe("the fill into Flutter's fields", () => {
     const reply = await command({ type: "fill", entryId: 7, entryUrl: location.href, entryHost: location.host });
     expect(reply).toMatchObject({ ok: false, error: { kind: "refused" } });
     expect([byTag("user").value, byTag("pw").value]).toEqual(["", ""]);
+
+    // The refused fill is over: an ordinary form after it fills at once, and says so.
+    const { filling, setValue } = await import("../src/content/forms");
+    document.body.innerHTML = '<input id="plain">';
+    const plain = document.getElementById("plain") as HTMLInputElement;
+    setValue(plain, "alice");
+    expect(plain.value).toBe("alice");
+    await expect(filling()).resolves.toBe(true);
   });
 });
 
