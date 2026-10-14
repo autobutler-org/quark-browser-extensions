@@ -1,0 +1,101 @@
+name: release
+
+# Builds the Chrome, Firefox and Edge zips and submits them to the Chrome Web
+# Store, Firefox Add-ons and Edge Add-ons with `wxt submit`. Pushing a vX.Y.Z
+# tag publishes for real; pull requests that touch the release and a manual run
+# (dry run on by default) only build and check each store's credentials. A
+# store takes part only when all of its secrets and variables are set, so one
+# that isn't set up yet is skipped rather than failing the others. The secrets,
+# the first submission to each store and the version bump are in
+# .github/RELEASING.md.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/amo-metadata.json
+      - scripts/release.js
+      - package.json
+      - package-lock.json
+      - wxt.config.ts
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Check credentials without uploading anything (a real publish has to run from a tag)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # "true" everywhere but a tag push and a manual run with dry run turned off.
+  DRY_RUN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.dry_run)) && 'true' || 'false' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the Chrome, Firefox (with the AMO sources zip) and Edge zips
+        run: |
+          npx wxt zip -b chrome
+          npx wxt zip -b firefox
+          npx wxt zip -b edge
+      - name: Check the version against package.json and the tag
+        run: node scripts/release.js version
+      - uses: actions/upload-artifact@v7
+        with:
+          name: quark-vault-release
+          if-no-files-found: error
+          path: |
+            .output/quark-vault-chrome.zip
+            .output/quark-vault-firefox.zip
+            .output/quark-vault-sources.zip
+            .output/quark-vault-edge.zip
+
+  submit:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      CHROME_EXTENSION_ID: ${{ vars.CHROME_EXTENSION_ID }}
+      CHROME_PUBLISHER_ID: ${{ vars.CHROME_PUBLISHER_ID }}
+      CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+      CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CHROME_SERVICE_ACCOUNT_PRIVATE_KEY }}
+      FIREFOX_EXTENSION_ID: ${{ vars.FIREFOX_EXTENSION_ID || 'vault@autobutler.org' }}
+      FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+      FIREFOX_JWT_SECRET: ${{ secrets.FIREFOX_JWT_SECRET }}
+      EDGE_PRODUCT_ID: ${{ vars.EDGE_PRODUCT_ID }}
+      EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+      EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          name: quark-vault-release
+          path: .output
+      - name: Pick the stores whose credentials are set
+        id: stores
+        run: node scripts/release.js stores
+      - name: Submit to ${{ steps.stores.outputs.stores }}${{ env.DRY_RUN == 'true' && ' (dry run)' || '' }}
+        if: steps.stores.outputs.stores != ''
+        env:
+          FIREFOX_CHANNEL: ${{ vars.FIREFOX_CHANNEL || 'listed' }}
+          FIREFOX_AMO_METADATA_FILE: .github/amo-metadata.json
+        run: npx wxt submit
