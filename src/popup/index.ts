@@ -13,6 +13,7 @@ import {
 import { ask } from "../shared/messages";
 import type { SaveAction, SaveOffer } from "../background/save";
 import { currentBrowser, siteOrigins } from "../shared/platform";
+import { unreachableHint } from "./address";
 import { saveBarCopy } from "../shared/saveCopy";
 import { fillShortcut, shortcutHelp } from "../shared/shortcut";
 import type { ApiError, EntrySummary, Result, VaultState } from "../shared/types";
@@ -33,6 +34,8 @@ type Model = Readonly<{
   shortcut: string;
   saveOffer: SaveOffer | null;
   needsSiteAccess: boolean;
+  // The connect form is open over an unreachable Quark, so the address can be fixed without signing out.
+  editingAddress: boolean;
 }>;
 
 const root = document.getElementById("app") as HTMLElement;
@@ -51,6 +54,7 @@ let model: Model = {
   shortcut: "",
   saveOffer: null,
   needsSiteAccess: false,
+  editingAddress: false,
 };
 
 const update = (patch: Partial<Model>): void => {
@@ -107,7 +111,7 @@ const applyState = async (result: Result<VaultState>): Promise<void> => {
     update({ busy: false, error: errorText(result.error) });
     return;
   }
-  update({ busy: false, error: "", state: result.value });
+  update({ busy: false, error: "", state: result.value, editingAddress: false });
   if (result.value.kind === "unlocked") {
     await loadEntries();
   }
@@ -166,6 +170,9 @@ const connectView = (): HTMLElement => {
       errorBox(),
       h("div", { className: "spacer" }),
       h("button", { className: "primary", type: "submit", disabled: model.busy }, model.busy ? "Connecting…" : "Connect"),
+      model.editingAddress
+        ? h("button", { className: "secondary", type: "button", onclick: (() => update({ editingAddress: false, error: "" })) as EventListener }, "Cancel")
+        : null,
     ),
   );
 };
@@ -442,9 +449,17 @@ const messageView = (state: VaultState): HTMLElement =>
     h(
       "div",
       { className: "body" },
-      h("div", { className: "intro" }, h("h1", {}, stateText(state))),
+      h(
+        "div",
+        { className: "intro" },
+        h("h1", {}, stateText(state)),
+        state.kind === "unreachable" ? h("p", { className: "muted" }, unreachableHint(state.server)) : null,
+      ),
       h("div", { className: "spacer" }),
       h("button", { className: "primary", type: "button", onclick: (() => void refresh()) as EventListener }, "Try again"),
+      state.kind === "unreachable"
+        ? h("button", { className: "secondary", type: "button", onclick: (() => update({ editingAddress: true, error: "" })) as EventListener }, "Edit address")
+        : null,
       h("button", { className: "secondary", type: "button", onclick: (() => void ask({ type: "signOut" }).then(applyState)) as EventListener }, "Sign out"),
     ),
   );
@@ -464,10 +479,11 @@ const view = (): HTMLElement => {
       return unlockView();
     case "unlocked":
       return entriesView(state);
+    case "unreachable":
+      return model.editingAddress ? connectView() : messageView(state);
     case "notAdmin":
     case "notInitialized":
     case "driveDisconnected":
-    case "unreachable":
       return messageView(state);
   }
 };
