@@ -1,4 +1,4 @@
-import { accountId, consentTtlMs, createUpgradeLedger, fromBase64 } from "../src/shared/authKey";
+import { accountId, consentTtlMs, createUpgradeLedger, fromBase64, type KeyedAccounts } from "../src/shared/authKey";
 import { deriveAuthKey } from "../src/shared/deriveAuthKey";
 import { fakeChrome } from "./fakeChrome";
 
@@ -21,19 +21,34 @@ describe("fromBase64", () => {
 });
 
 describe("the upgrade ledger", () => {
-  const ledger = (now: () => number = () => 0) => {
+  const ledger = (now: () => number = () => 0, load?: () => Promise<readonly string[]>) => {
     const { storage } = fakeChrome().chrome;
-    return { storage, ledger: createUpgradeLedger(() => storage.local, () => storage.session, now) };
+    const keyed: { ids: readonly string[] } & KeyedAccounts = {
+      ids: [],
+      load: load ?? (() => Promise.resolve(keyed.ids)),
+      save: (ids) => Promise.resolve(void (keyed.ids = ids)),
+    };
+    return { storage, keyed, ledger: createUpgradeLedger(keyed, () => storage.session, now) };
   };
 
   it("keeps a hash of the server and account, never the names", async () => {
-    const { storage, ledger: record } = ledger();
+    const { keyed, ledger: record } = ledger();
     await record.markKeyed("https://quark.local", "brandon");
     await record.markKeyed("https://quark.local", "Brandon");
-    expect(storage.local.items.get("keyedAccounts")).toEqual([accountId("https://quark.local", "brandon")]);
-    expect(JSON.stringify([...storage.local.items])).not.toContain("brandon");
+    expect(keyed.ids).toEqual([accountId("https://quark.local", "brandon")]);
     expect(await record.hasKey("https://quark.local", "BRANDON")).toBe(true);
     expect(await record.hasKey("https://quark.lan", "brandon")).toBe(false);
+  });
+
+  it("loses no account when two are marked at once", async () => {
+    const { keyed, ledger: record } = ledger();
+    await Promise.all([record.markKeyed("https://quark.local", "brandon"), record.markKeyed("https://quark.local", "sam")]);
+    expect(keyed.ids).toHaveLength(2);
+  });
+
+  it("says an account has a key when the record can't be read, so the password stays home", async () => {
+    const { ledger: record } = ledger(undefined, () => Promise.reject(new Error("IndexedDB is gone")));
+    expect(await record.hasKey("https://quark.local", "brandon")).toBe(true);
   });
 
   it("hands out a consent once, for its own server and account only", async () => {
@@ -43,6 +58,13 @@ describe("the upgrade ledger", () => {
     await record.giveConsent("https://quark.local", "brandon");
     expect(await record.takeConsent("https://quark.local", "brandon")).toBe(true);
     expect(await record.takeConsent("https://quark.local", "brandon")).toBe(false);
+  });
+
+  it("hands out a consent once to callers that ask at the same time (#140)", async () => {
+    const { ledger: record } = ledger();
+    await record.giveConsent("https://quark.local", "brandon");
+    const taken = await Promise.all([1, 2, 3].map(() => record.takeConsent("https://quark.local", "brandon")));
+    expect(taken.filter(Boolean)).toHaveLength(1);
   });
 
   it("lets a consent lapse", async () => {

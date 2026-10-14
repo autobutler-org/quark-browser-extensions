@@ -8,6 +8,9 @@ const keyName = "seal";
 // The last Quark address signed in to, kept here rather than in storage.local because content scripts can
 // write storage.local, and a planted address would be offered as the user's Quark (issue #75).
 const serverName = "server";
+// Hashes of the accounts that have signed in with an auth key, which a legacy answer must never get the password
+// for again (docs/legacy-upgrade.md). Kept here because content scripts can delete storage.local's copy (#143).
+const keyedAccountsName = "keyedAccounts";
 
 const opened = (): Promise<IDBDatabase> =>
   new Promise((resolve, reject) => {
@@ -52,4 +55,14 @@ export const loadLastServer = async (): Promise<string> => {
 
 export const saveLastServer = async (server: string): Promise<void> => {
   await inStore("readwrite", (store) => store.put(server, serverName));
+};
+
+// Null when there is no record yet, as opposed to an empty one.
+export const loadKeyedAccounts = async (): Promise<readonly string[] | null> => {
+  const found: unknown = await inStore("readonly", (store) => store.get(keyedAccountsName));
+  return Array.isArray(found) ? found.filter((id): id is string => typeof id === "string") : null;
+};
+
+export const saveKeyedAccounts = async (ids: readonly string[]): Promise<void> => {
+  await inStore("readwrite", (store) => store.put([...ids], keyedAccountsName));
 };

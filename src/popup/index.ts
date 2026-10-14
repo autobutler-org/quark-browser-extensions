@@ -12,7 +12,7 @@ import {
   type SiteMatch,
 } from "../shared/host";
 import { formatDuration, formatNumber, t } from "../shared/i18n";
-import { upgradeLedger } from "../shared/authKey";
+import { giveConsent } from "../shared/authKey";
 import { ask } from "../shared/messages";
 import type { SaveAction, SaveOffer } from "../background/save";
 import { currentBrowser, siteOrigins } from "../shared/platform";
@@ -250,9 +250,13 @@ const connectView = (): HTMLElement => {
   syncUpgrade();
   const submit = async (event: Event): Promise<void> => {
     event.preventDefault();
+    // A second submit could record a second legacy-upgrade consent while the first connect is still out (#140).
+    if (model.busy) {
+      return;
+    }
     update({ busy: true, error: "", draft: { server: server.value, username: username.value, password: password.value, persist: persist.checked } });
     if (legacy !== null && upgrade?.hidden === false && allowUpgrade.checked) {
-      await upgradeLedger.giveConsent(legacy.server, legacy.username);
+      await giveConsent(legacy.server, legacy.username);
     }
     await applyState(
       await ask({

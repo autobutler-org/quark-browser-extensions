@@ -1,4 +1,4 @@
-import { fromBase64, upgradeLedger, type DeriveAuthKey, type UpgradeLedger } from "./authKey";
+import { fromBase64, type DeriveAuthKey, type UpgradeLedger } from "./authKey";
 import { deriveAuthKey } from "./deriveAuthKey";
 import { extensionTooOld, legacyAgain, legacyInsecure, legacyUpgradeNeeded, quarkTooOld } from "./errors";
 import { serverTransport } from "./host";
@@ -90,6 +90,18 @@ export const toApiError = ({ status, message }: Failure): ApiError => {
   }
 };
 
+// The answer has to come from the origin that was asked. A redirect is never followed, even to the same origin:
+// fetch would resend the method and body (a 307 or 308 keeps both) to wherever Location points, so a password
+// could reach another server before any check here ran (#144). The origin check catches a fetch that followed
+// one anyway. A Response built in memory has no url, so it has no origin to compare.
+const answeredFrom = (requested: string, response: Response): string | null => {
+  if (response.url === "") {
+    return response.redirected ? "" : null;
+  }
+  const origin = new URL(response.url).origin;
+  return !response.redirected && origin === new URL(requested).origin ? null : origin;
+};
+
 const send =
   (fetchFn: FetchFn) =>
   async (server: string, token: string | null, request: Request): Promise<Result<unknown, Failure | ApiError>> => {
@@ -101,13 +113,19 @@ const send =
       headers["Content-Type"] = "application/json";
     }
     try {
-      const response = await fetchFn(`${server}/api/v0${request.path}`, {
+      const url = `${server}/api/v0${request.path}`;
+      const response = await fetchFn(url, {
         method: request.method,
         headers,
         credentials: "omit",
         cache: "no-store",
+        redirect: "error",
         ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
       });
+      const elsewhere = answeredFrom(url, response);
+      if (elsewhere !== null) {
+        return err({ kind: "network", message: `the answer came from ${elsewhere || "a redirect"}, not ${new URL(url).origin}` });
+      }
       const payload = await readJson(response);
       return response.ok
         ? ok(payload)
@@ -162,9 +180,54 @@ const asAuthSalt = (payload: unknown): AuthSalt | null => {
   return bytes === null ? null : { salt: bytes, legacy: field(payload, "legacy") === true };
 };
 
-export const createApi = (fetchFn: FetchFn, deriveKey: DeriveAuthKey = deriveAuthKey, ledger: UpgradeLedger = upgradeLedger) => {
+// The worker passes the ledger in src/background/keyedAccounts.ts.
+export const createApi = (fetchFn: FetchFn, ledger: UpgradeLedger, deriveKey: DeriveAuthKey = deriveAuthKey) => {
   const request = send(fetchFn);
   const authed = (connection: Connection, req: Request) => request(connection.server, connection.token, req);
+
+  // One legacy sign-in at a time, from the record check to recording the key. Otherwise a second sign-in, with a
+  // consent of its own from a second submit, passes the check before the first records the account, and the
+  // password goes out twice (#140).
+  let upgrading: Promise<unknown> = Promise.resolve();
+  const oneUpgrade = <T>(run: () => Promise<T>): Promise<T> => {
+    const next = upgrading.then(run);
+    upgrading = next.catch(() => undefined);
+    return next;
+  };
+
+  const signIn = async (server: string, username: string, password: string, salt: AuthSalt): Promise<Result<string>> => {
+    const authKey = await deriveKey(password, salt.salt);
+    const result = await request(server, null, {
+      method: "POST",
+      path: "/auth/login",
+      body: salt.legacy ? { username, password, authKey } : { username, authKey },
+    });
+    if (result.ok) {
+      const token = stringField(result.value, "token");
+      if (token === "") {
+        return err({ kind: "server", status: 200, message: "no token in response" });
+      }
+      await ledger.markKeyed(server, username);
+      return ok(token);
+    }
+    if (isFailure(result.error) && result.error.status === 401) {
+      return err({ kind: "badCredentials" });
+    }
+    if (isFailure(result.error) && result.error.status === 403) {
+      return err({ kind: "accountRefused", status: result.error.state });
+    }
+    return err(normalizeError(result.error));
+  };
+
+  const upgrade = async (server: string, username: string, password: string, salt: AuthSalt): Promise<Result<string>> => {
+    if (await ledger.hasKey(server, username)) {
+      return err({ kind: "refused", reason: legacyAgain(server) });
+    }
+    if (!(await ledger.takeConsent(server, username))) {
+      return err({ kind: "refused", reason: legacyUpgradeNeeded(server), legacyUpgrade: { server, username } });
+    }
+    return signIn(server, username, password, salt);
+  };
 
   return {
     // Quark v0.47.0+ takes an auth key derived from the password, never the
@@ -186,38 +249,13 @@ export const createApi = (fetchFn: FetchFn, deriveKey: DeriveAuthKey = deriveAut
       if (salt === null) {
         return err({ kind: "refused", reason: quarkTooOld() });
       }
-      if (salt.legacy) {
-        if (serverTransport(server) === "insecure") {
-          return err({ kind: "refused", reason: legacyInsecure(server) });
-        }
-        if (await ledger.hasKey(server, username)) {
-          return err({ kind: "refused", reason: legacyAgain(server) });
-        }
-        if (!(await ledger.takeConsent(server, username))) {
-          return err({ kind: "refused", reason: legacyUpgradeNeeded(server), legacyUpgrade: { server, username } });
-        }
+      if (!salt.legacy) {
+        return signIn(server, username, password, salt);
       }
-      const authKey = await deriveKey(password, salt.salt);
-      const result = await request(server, null, {
-        method: "POST",
-        path: "/auth/login",
-        body: salt.legacy ? { username, password, authKey } : { username, authKey },
-      });
-      if (result.ok) {
-        const token = stringField(result.value, "token");
-        if (token === "") {
-          return err({ kind: "server", status: 200, message: "no token in response" });
-        }
-        await ledger.markKeyed(server, username);
-        return ok(token);
+      if (serverTransport(server) === "insecure") {
+        return err({ kind: "refused", reason: legacyInsecure(server) });
       }
-      if (isFailure(result.error) && result.error.status === 401) {
-        return err({ kind: "badCredentials" });
-      }
-      if (isFailure(result.error) && result.error.status === 403) {
-        return err({ kind: "accountRefused", status: result.error.state });
-      }
-      return err(normalizeError(result.error));
+      return oneUpgrade(() => upgrade(server, username, password, salt));
     },
 
     logout: async (connection: Connection): Promise<Result<null>> =>

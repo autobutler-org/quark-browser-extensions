@@ -20,11 +20,19 @@ export const fromBase64 = (text: string): Uint8Array | null => {
 // the one upgrade goes out only on a consent the connect form records for that server and account just before it
 // asks the worker to connect. Both are keyed by a hash of the server and username, not the names themselves.
 export type UpgradeLedger = Readonly<{
+  // True when the record can't be read, so a broken record never lets the password out.
   hasKey: (server: string, username: string) => Promise<boolean>;
   markKeyed: (server: string, username: string) => Promise<void>;
   // Uses up the consent: true once, and only within consentTtlMs of giveConsent.
   takeConsent: (server: string, username: string) => Promise<boolean>;
   giveConsent: (server: string, username: string) => Promise<void>;
+}>;
+
+// Where the upgraded accounts' hashes are kept. The worker's is in the extension's IndexedDB, which content scripts
+// can't open (src/background/keyedAccounts.ts).
+export type KeyedAccounts = Readonly<{
+  load: () => Promise<readonly string[]>;
+  save: (ids: readonly string[]) => Promise<void>;
 }>;
 
 type Area = Readonly<{
@@ -35,7 +43,6 @@ type Area = Readonly<{
 
 export const consentTtlMs = 5 * 60_000;
 
-const keyedKey = "keyedAccounts";
 const consentKey = "legacyUpgradeConsent";
 
 // Usernames are matched without regard to case or surrounding space, so a second request can't slip past the record
@@ -45,33 +52,42 @@ export const accountId = (server: string, username: string): string =>
     byte.toString(16).padStart(2, "0"),
   ).join("");
 
-export const createUpgradeLedger = (local: () => Area, session: () => Area, now: () => number = Date.now): UpgradeLedger => {
-  const keyed = async (): Promise<readonly string[]> => {
-    const stored = (await local().get(keyedKey))[keyedKey];
-    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : [];
+// chrome.storage.session is open only to extension pages and the worker (src/background/storage.ts), so a page's
+// content script can't forge the consent. The connect form records it here before it asks the worker to connect.
+export const giveConsent = (
+  server: string,
+  username: string,
+  session: Area = chrome.storage.session,
+  now: () => number = Date.now,
+): Promise<void> => session.set({ [consentKey]: { id: accountId(server, username), at: now() } });
+
+export const createUpgradeLedger = (keyed: KeyedAccounts, session: () => Area, now: () => number = Date.now): UpgradeLedger => {
+  // chrome.storage and IndexedDB reads and writes here are separate steps with no transaction around them. One at a
+  // time, so two callers can't both read a consent before either removes it, or lose each other's markKeyed (#140).
+  let queue: Promise<unknown> = Promise.resolve();
+  const serial = <T>(run: () => Promise<T>): Promise<T> => {
+    const next = queue.then(run);
+    queue = next.catch(() => undefined);
+    return next;
   };
   return {
-    hasKey: async (server, username) => (await keyed()).includes(accountId(server, username)),
-    markKeyed: async (server, username) => {
-      const ids = await keyed();
-      const id = accountId(server, username);
-      if (!ids.includes(id)) {
-        await local().set({ [keyedKey]: [...ids, id] });
-      }
-    },
-    takeConsent: async (server, username) => {
-      const stored = (await session().get(consentKey))[consentKey] as { id?: unknown; at?: unknown } | undefined;
-      await session().remove(consentKey);
-      const age = typeof stored?.at === "number" ? now() - stored.at : Infinity;
-      return stored?.id === accountId(server, username) && age >= 0 && age <= consentTtlMs;
-    },
-    giveConsent: (server, username) => session().set({ [consentKey]: { id: accountId(server, username), at: now() } }),
+    hasKey: (server, username) =>
+      serial(async () => (await keyed.load().catch(() => null))?.includes(accountId(server, username)) ?? true),
+    markKeyed: (server, username) =>
+      serial(async () => {
+        const ids = await keyed.load();
+        const id = accountId(server, username);
+        if (!ids.includes(id)) {
+          await keyed.save([...ids, id]);
+        }
+      }),
+    takeConsent: (server, username) =>
+      serial(async () => {
+        const stored = (await session().get(consentKey))[consentKey] as { id?: unknown; at?: unknown } | undefined;
+        await session().remove(consentKey);
+        const age = typeof stored?.at === "number" ? now() - stored.at : Infinity;
+        return stored?.id === accountId(server, username) && age >= 0 && age <= consentTtlMs;
+      }),
+    giveConsent: (server, username) => giveConsent(server, username, session(), now),
   };
 };
-
-// chrome.storage.session is open only to extension pages and the worker (src/background/storage.ts), so a page's
-// content script can't forge the consent.
-export const upgradeLedger: UpgradeLedger = createUpgradeLedger(
-  () => chrome.storage.local,
-  () => chrome.storage.session,
-);

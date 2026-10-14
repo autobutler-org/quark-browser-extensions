@@ -16,12 +16,25 @@ The password goes beside the key only when all three checks pass. A successful s
 
 ## Storage
 
-Both records live in `src/shared/authKey.ts` (`createUpgradeLedger`), keyed by `sha256(server + "\n" + lowercased, trimmed username)`, so neither the server nor the username is stored. Usernames match regardless of case or surrounding space, so a server can't get past the record by spelling the name differently.
+Both records are kept through `createUpgradeLedger` in `src/shared/authKey.ts`, keyed by `sha256(server + "\n" + lowercased, trimmed username)`, so neither the server nor the username is stored. Usernames match regardless of case or surrounding space, so a server can't get past the record by spelling the name differently.
 
-- **Upgraded accounts** are a list of those hashes in `chrome.storage.local` under `keyedAccounts`. The list survives restarts and sign-outs. Reinstalling the extension clears it.
+- **Upgraded accounts** are a list of those hashes in the extension origin's IndexedDB, next to the seal key (`src/background/keyedAccounts.ts`, `src/background/sealKey.ts`). Content scripts can't open that database, so a page can't erase the record and get the password sent again (#143). Only the worker reads or writes it. The list survives restarts and sign-outs. Reinstalling the extension, or clearing its site data, clears it.
 - **The consent** is a single `{ id, at }` in `chrome.storage.session` under `legacyUpgradeConsent`. Only extension pages and the worker can use that area, not content scripts (`src/background/storage.ts`). `login` removes the consent when it reads it, so it counts once whether or not the upgrade works. It expires after five minutes (`consentTtlMs`). A failed upgrade, such as a wrong password, records nothing, and the user must confirm again.
 
-The connect form writes the consent itself, so the `connect` message between the popup and the worker is unchanged.
+The connect form writes the consent itself (`giveConsent`), so the `connect` message between the popup and the worker is unchanged.
+
+### One upgrade at a time
+
+`chrome.storage` and IndexedDB have no transaction across a read and a write, so the worker serializes them (#140). The ledger hands out a consent to one caller only, even when several ask at once. `login` also runs one legacy sign-in at a time, from the upgraded-accounts check through recording the key. A second sign-in that started meanwhile, even with a consent of its own from a second submit, then finds the account recorded and is refused with rule 2. The connect form also ignores a submit while one is already connecting.
+
+### A missing or unreadable record
+
+- **No IndexedDB record yet** means this build hasn't looked before. Builds before #143 kept the list in `chrome.storage.local` under `keyedAccounts`. The worker copies that list into IndexedDB once, then deletes it from `storage.local` and never reads that key again. A content script could have planted hashes there before the copy. Those can only refuse an upgrade, never allow one. It could also have deleted the list before the copy, which no build can detect. With no list in either place, as on a fresh install, the record starts empty. That is the safe default available: refusing every legacy answer from a fresh install would make the upgrade impossible, and a content script can't remove the IndexedDB record to get back to this state.
+- **A record that can't be read**, because IndexedDB fails, counts as "this account has a key". `login` refuses with rule 2 and sends nothing. Signing in through the Quark app moves the account to a key.
+
+## Redirects
+
+Every API request, including the upgrade sign-in, `unlock` and entry writes, is sent with `redirect: "error"` (`send` in `src/shared/api.ts`). A 307 or 308 keeps the method and body, so following one would deliver the password to the `Location` origin before any check ran (#144). A redirect is refused even to the same origin, since Quark's API answers without one. An answer whose URL has another origin than the request is refused too.
 
 ## How this differs from the Quark app
 
