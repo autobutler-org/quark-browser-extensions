@@ -62,8 +62,14 @@ Build it with `npx wxt zip -b chrome`, `npx wxt zip -b firefox` and
 All three listings need a privacy policy URL. The extension handles
 credentials, so say plainly that data goes only to the user's own Quark,
 nothing goes to us, and decrypted passwords are never stored. The listing text,
-screenshots (the e2e tests save 1280×800 ones with `E2E_SCREENSHOTS`) and
-permission justifications are tracked in #4.
+privacy policy, permission justifications and AMO reviewer notes are in
+`docs/store/`. For the 1280×800 screenshots, run
+
+```sh
+npm run build:chrome && npx playwright test -c scripts/screenshots.config.js
+```
+
+and take the PNGs from `.output/store-screenshots/`.
 
 ### Chrome Web Store
 
