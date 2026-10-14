@@ -17,7 +17,7 @@
     "package": "wxt zip -b chrome && wxt zip -b firefox",
     "build:chrome": "wxt build -b chrome",
     "build:firefox": "wxt build -b firefox",
-    "lint:firefox": "npm run build:firefox && npx --yes web-ext@8 lint --source-dir .output/firefox-mv3 --self-hosted",
+    "lint:firefox": "npm run build:firefox && web-ext lint --source-dir .output/firefox-mv3 --self-hosted",
     "coverage": "vitest run --coverage",
     "test:e2e:quark": "scripts/build-quark.sh && npm run test:e2e",
     "test:e2e:mock": "npm run build:chrome && E2E_TARGET=mock playwright test -c e2e",
@@ -40,6 +40,7 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.71.2",
     "vitest": "^5.0.2",
+    "web-ext": "^10.7.0",
     "wxt": "^0.21.4"
   },
   "dependencies": {

@@ -12,8 +12,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -23,7 +23,7 @@ jobs:
       - run: npm run lint:firefox
       - name: Build the Chrome and Firefox zips
         run: npm run package
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: quark-vault-extension
           if-no-files-found: error
@@ -40,17 +40,17 @@ jobs:
     env:
       QUARK_REF: ${{ vars.QUARK_REF || '7a2e6688a62c891ea79caafabdd683503d202754' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: autobutler-org/quark
           ref: ${{ env.QUARK_REF }}
           path: quark-src
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: quark-src/go.mod
           cache-dependency-path: quark-src/go.sum
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -60,7 +60,7 @@ jobs:
         run: QUARK_SRC="$GITHUB_WORKSPACE/quark-src" scripts/build-quark.sh
       - name: End-to-end tests against Quark
         run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: e2e-quark-results
@@ -75,8 +75,8 @@ jobs:
   e2e-mock:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -84,7 +84,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: End-to-end tests against the mock Quark
         run: npm run test:e2e:mock
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: e2e-mock-results
@@ -100,17 +100,17 @@ jobs:
     env:
       QUARK_REF: ${{ vars.QUARK_REF || '7a2e6688a62c891ea79caafabdd683503d202754' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: autobutler-org/quark
           ref: ${{ env.QUARK_REF }}
           path: quark-src
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: quark-src/go.mod
           cache-dependency-path: quark-src/go.sum
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -121,7 +121,7 @@ jobs:
         run: QUARK_SRC="$GITHUB_WORKSPACE/quark-src" scripts/build-quark.sh
       - name: Firefox smoke tests against Quark
         run: npm run test:e2e:firefox
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: firefox-e2e-results
