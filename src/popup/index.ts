@@ -273,33 +273,41 @@ const connectView = (): HTMLElement => {
     "div",
     { className: "screen" },
     header(),
+    // The fields scroll; the error and the buttons stay put below them, so neither scrolls out of the popup (#160).
     h(
       "form",
-      { className: "body", onsubmit: ((event: Event) => void submit(event)) as EventListener },
+      { className: "form", onsubmit: ((event: Event) => void submit(event)) as EventListener },
       h(
         "div",
-        { className: "intro" },
-        h("h1", {}, t("popupConnectTitle")),
-        // The first-run banner takes the revoke line's room; the welcome says it instead.
+        { className: "body" },
         h(
-          "p",
-          { className: "muted" },
-          model.welcome === "offered" ? t("popupConnectIntro") : t("popupConnectIntroRevoke"),
+          "div",
+          { className: "intro" },
+          h("h1", {}, t("popupConnectTitle")),
+          // The first-run banner takes the revoke line's room; the welcome says it instead.
+          h(
+            "p",
+            { className: "muted" },
+            model.welcome === "offered" ? t("popupConnectIntro") : t("popupConnectIntroRevoke"),
+          ),
         ),
+        welcomeBanner(),
+        field("server", t("popupServer"), server),
+        insecure,
+        field("username", t("popupUsername"), username),
+        field("password", t("popupPassword"), password),
+        upgrade,
+        h("label", { className: "check" }, persist, t("popupPersist")),
       ),
-      welcomeBanner(),
-      field("server", t("popupServer"), server),
-      insecure,
-      field("username", t("popupUsername"), username),
-      field("password", t("popupPassword"), password),
-      upgrade,
-      h("label", { className: "check" }, persist, t("popupPersist")),
-      errorBox(),
-      h("div", { className: "spacer" }),
-      h("button", { className: "primary", type: "submit", disabled: model.busy }, model.busy ? t("popupConnecting") : t("popupConnect")),
-      model.editingAddress
-        ? h("button", { className: "secondary", type: "button", onclick: (() => update({ editingAddress: false, error: "", draft: null })) as EventListener }, t("cancel"))
-        : null,
+      h(
+        "div",
+        { className: "actions" },
+        errorBox(),
+        h("button", { className: "primary", type: "submit", disabled: model.busy }, model.busy ? t("popupConnecting") : t("popupConnect")),
+        model.editingAddress
+          ? h("button", { className: "secondary", type: "button", onclick: (() => update({ editingAddress: false, error: "", draft: null })) as EventListener }, t("cancel"))
+          : null,
+      ),
     ),
   );
 };
