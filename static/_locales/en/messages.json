@@ -542,14 +542,20 @@
   "optionsLocking": {
     "message": "Locking"
   },
+  "optionsLockingIntroChrome": {
+    "message": "Locking from this browser locks the vault on your Quark for every device. The vault locks when your screen locks. Turn on idle locking to also lock it after a set time."
+  },
   "optionsLockingIntroFirefox": {
-    "message": "Locking from this browser locks the vault on your Quark for every device. The vault locks when your computer is inactive. On Firefox, after the idle time; otherwise, when the screen locks."
+    "message": "Locking from this browser locks the vault on your Quark for every device. Firefox can't tell when your screen locks, so the vault locks after the idle time below."
   },
   "optionsLockOnIdle": {
     "message": "Lock the vault when this computer is idle"
   },
   "optionsLockOnIdleHint": {
     "message": "Off by default, so someone else mid-task isn't locked out"
+  },
+  "optionsLockOnIdleHintFirefox": {
+    "message": "Always on in Firefox, which can't tell when your screen locks"
   },
   "optionsIdleTime": {
     "message": "Idle time before locking"

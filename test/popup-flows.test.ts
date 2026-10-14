@@ -102,6 +102,7 @@ beforeEach(() => {
     tabs: {
       query: () => Promise.resolve([{ id: 7, url: "https://example.com/login" }]),
       create: ({ url }: { url: string }) => Promise.resolve(void browser.tabsOpened.push(url)),
+      getCurrent: () => Promise.resolve(undefined),
     },
     commands: { getAll: () => Promise.resolve([{ name: "fill-login", shortcut: browser.shortcut }]) },
     permissions: {
