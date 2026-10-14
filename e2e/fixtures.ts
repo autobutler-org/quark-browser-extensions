@@ -1,28 +1,10 @@
 import { test as base, chromium, expect, type BrowserContext, type Page, type Worker } from "@playwright/test";
 import { fileURLToPath } from "node:url";
-import { client, type Client } from "./support/client.ts";
-import { logPath, type Logged } from "./support/proxy.ts";
-import type { Seeded } from "./support/seed.ts";
+import { env, quarkFromEnv, type Quark } from "./support/env.ts";
 
 const extension = fileURLToPath(new URL("../.output/chrome-mv3", import.meta.url));
 
-const env = (name: string): string => {
-  const value = process.env[name];
-  if (value === undefined) throw new Error(`${name} is unset: run the tests through playwright.config.ts`);
-  return value;
-};
-
-export type Quark = Readonly<{
-  // Where the extension connects: the recording proxy in front of the Quark.
-  server: string;
-  // The Quark itself, for checking what the extension changed.
-  api: Client;
-  seed: Seeded;
-  // Every API request the extension made since the last clear.
-  wire: () => Promise<Logged[]>;
-  clearWire: () => Promise<void>;
-  target: "quark" | "mock";
-}>;
+export type { Quark };
 
 type Fixtures = {
   context: BrowserContext;
@@ -53,16 +35,7 @@ export const test = base.extend<Fixtures>({
     await use(new URL(worker.url()).host);
   },
   quark: async ({}, use) => {
-    const server = env("E2E_QUARK");
-    const wire = async (method = "GET") => (await (await fetch(`${server}${logPath}`, { method })).json()) as Logged[];
-    await use({
-      server,
-      api: client(env("E2E_QUARK_DIRECT")),
-      seed: JSON.parse(env("E2E_SEED")) as Seeded,
-      wire: () => wire(),
-      clearWire: async () => void (await wire("DELETE")),
-      target: env("E2E_TARGET") as "quark" | "mock",
-    });
+    await use(quarkFromEnv());
   },
   site: async ({}, use) => {
     await use(env("E2E_SITE"));

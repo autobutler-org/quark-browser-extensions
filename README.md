@@ -67,9 +67,10 @@ Add-on** and pick `.output/firefox-mv3/manifest.json`. Differences from Chrome:
   against the URL the service worker got from the top frame itself, instead of asking the browser. Chrome keeps
   using `ancestorOrigins`.
 
-CI lints the Firefox build with `web-ext lint`; the end-to-end tests run in Chromium only. Before a Firefox release,
-check by hand: connect, unlock, fill from the popup and the in-field button, a one-time code, save a new login, and
-the shortcut.
+CI lints the Firefox build with `web-ext lint` and runs a Firefox smoke test against a real Quark (see
+[End-to-end tests](#end-to-end-tests)): connect with the auth key, unlock, match the test site, fill from the popup and
+the in-field button, and fill a same-site iframe while refusing a cross-site one. Before a Firefox release, check the
+rest by hand: a one-time code, saving a new login, and the shortcut.
 
 ## Develop
 
@@ -116,6 +117,29 @@ an HTML report in `e2e/playwright-report/`, and the Quark's log in `e2e/.quark/s
 `npx playwright show-trace`. The servers take free ports; `E2E_QUARK_PORT`, `E2E_API_PORT` (the proxy) and
 `E2E_SITE_PORT` pin them.
 
+#### Firefox
+
+Playwright's Firefox can't load add-ons, so `e2e/firefox/` drives a stock Firefox with
+[Puppeteer](https://pptr.dev/guides/firefox-support) over WebDriver BiDi instead: each test launches Firefox with a
+fresh profile, installs `.output/firefox-mv3` as a temporary add-on (BiDi's `webExtension.install`), and opens the
+popup as a tab. Playwright Test still runs the tests, with the same `e2e/global-setup.ts`, so they get the same Quark
+(real or mock), proxy, seed and test site. Two Firefox settings make it work: `--remote-allow-system-access` lets BiDi
+open `moz-extension://` pages, and the `extensions.webextensions.uuids` pref pins the add-on's random
+`moz-extension://` host. The smoke test covers sign-in with the auth key, unlocking, the site's match and badge,
+filling from the popup and the inline picker (and refusing another site's login), and a same-site iframe fill, which
+in Firefox depends on the top page's URL from the background, since it lacks `location.ancestorOrigins`; a
+cross-site frame is refused.
+
+```sh
+npm run firefox:install                            # once: Firefox stable into e2e/.firefox
+npm run test:e2e:firefox                           # against the Quark in e2e/.quark/quark (QUARK_BIN works too)
+npm run test:e2e:firefox:mock                      # offline, against the mock Quark
+FIREFOX_PATH=/usr/bin/firefox npm run test:e2e:firefox   # or a Firefox of your own (a recent one; CI uses stable)
+```
+
+`HEADED=1` shows the browser. Failures leave the report in `e2e/playwright-report/firefox/`. CI's `firefox-e2e` job
+runs it against the real Quark; it isn't a required check yet.
+
 CI builds Quark from autobutler-org/quark at the commit `QUARK_REF` names in `.github/workflows/check.yml`; set the
 repository variable `QUARK_REF` to test another commit, branch or tag.
 
@@ -127,7 +151,8 @@ src/options/      settings and the other-password-managers check
 src/shared/       API client, host matching, message types, error copy
 entrypoints/      WXT entrypoints: background, content script, popup and options pages
 static/           CSS and icons, copied as-is (the manifest is in wxt.config.ts)
-e2e/              Playwright tests; support/ starts the Quark (real or mock), the proxy and the test site
+e2e/              Playwright tests; support/ starts the Quark (real or mock), the proxy and the test site;
+                  firefox/ holds the Firefox smoke test
 scripts/          build-quark.sh, which builds the Quark server the e2e tests run against
 ```
 
