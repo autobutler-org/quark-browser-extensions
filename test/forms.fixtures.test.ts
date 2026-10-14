@@ -5,6 +5,7 @@ import {
   fillLogin,
   fillNewPassword,
   fillOtp,
+  identifierField,
   isNewPasswordField,
   otpFields,
   passwordFields,
@@ -85,6 +86,8 @@ const corpus: Readonly<Record<string, Expected>> = {
   "shadow-dom-inputs.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "two-step-identifier.html": { passwords: [], usernames: {}, standalone: "user", otp: [], newPasswords: [] },
   "two-step-identifier-unmarked.html": { passwords: [], usernames: {}, standalone: "user", otp: [], newPasswords: [] },
+  "two-step-identifier-formless.html": { passwords: [], usernames: {}, standalone: "user", otp: [], newPasswords: [] },
+  "two-step-identifier-hidden-password.html": { passwords: [], usernames: {}, standalone: "user", otp: [], newPasswords: [] },
   "two-step-password-hidden-username.html": { passwords: ["pw"], usernames: { pw: null }, standalone: null, otp: [], newPasswords: [] },
   "two-step-password-readonly.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "two-step-password-formless.html": { passwords: ["pw"], usernames: { pw: null }, standalone: null, otp: [], newPasswords: [] },
@@ -147,6 +150,15 @@ const corpus: Readonly<Record<string, Expected>> = {
   },
 };
 
+// identifierField, the field that gets the inline button on the first step of a two-step login. Every other
+// fixture has a password or code field (or nothing to sign in with), so it must find none there.
+const identifierSteps: Readonly<Record<string, string>> = {
+  "two-step-identifier.html": "user",
+  "two-step-identifier-unmarked.html": "user",
+  "two-step-identifier-formless.html": "user",
+  "two-step-identifier-hidden-password.html": "user",
+};
+
 describe("login form fixture corpus", () => {
   it("has an expectation for every fixture", () => {
     const files = readdirSync(fixtures).filter((name) => name.endsWith(".html"));
@@ -167,6 +179,10 @@ describe("login form fixture corpus", () => {
 
     it("finds the username field a two-step login would fill", () => {
       expect(tag(standaloneUsernameField(document))).toBe(expected.standalone);
+    });
+
+    it("finds the identifier step of a two-step login, and only that", () => {
+      expect(tag(identifierField(document))).toBe(identifierSteps[name] ?? null);
     });
 
     it("finds one-time code fields", () => {
@@ -192,6 +208,25 @@ describe("filling and capturing fixtures", () => {
     const doc = load("two-step-identifier-unmarked.html");
     fillLogin(doc, credentials);
     expect([field("user").value, field("newsletter").value]).toEqual(["alice@example.com", ""]);
+  });
+
+  it("fills only the username when the picker on the identifier step is used", () => {
+    const doc = load("two-step-identifier-hidden-password.html");
+    expect(fillLogin(doc, credentials, field("user"))).toEqual({ filled: true, form: field("user").form });
+    expect([field("user").value, field("pw").value]).toEqual(["alice@example.com", ""]);
+  });
+
+  it("fills nothing on the identifier step for an entry without a username", () => {
+    load("two-step-identifier-formless.html");
+    expect(fillLogin(document, { username: "", password: "pw" }, field("user")).filled).toBe(false);
+    expect(field("user").value).toBe("");
+  });
+
+  it("fills the password too once the step reveals it next to the identifier", () => {
+    load("two-step-identifier-hidden-password.html");
+    (field("pw").parentElement as HTMLElement).style.display = "";
+    fillLogin(document, credentials, field("user"));
+    expect([field("user").value, field("pw").value]).toEqual(["alice@example.com", "hunter2!"]);
   });
 
   it("leaves honeypots and the read-only identifier alone", () => {

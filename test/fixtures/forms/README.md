@@ -7,6 +7,7 @@ The test runs every `.html` file here and checks:
 - which password fields `passwordFields` finds
 - which username field `usernameFieldFor` pairs with each password field
 - which field `standaloneUsernameField` picks for the identifier step of a two-step login
+- which field `identifierField` gives the inline button: the identifier step only, never a page with a password or code field
 - which fields `otpFields` reports
 - which password fields `isNewPasswordField` accepts
 
