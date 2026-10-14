@@ -28,6 +28,7 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 
 | Concern                  | How it is handled                                                                              |
 | ------------------------ | ---------------------------------------------------------------------------------------------- |
+| Account password         | Never sent: sign-in sends an auth key derived from it (Argon2id + HKDF, as the Quark app does) with the salt from `GET /api/v0/auth/salt`. An account the Quark marks `legacy` gets the password beside the key once, to move it to keys. Needs Quark v0.47.0+ |
 | Vault password           | Sent once to `POST /api/v0/vault/unlock`, never stored                                          |
 | Session token            | `chrome.storage.session` (memory, gone when Chrome quits); `local` only if "stay signed in"    |
 | Decrypted entries        | Fetched one at a time on a click, passed straight to the page, never stored or cached          |
@@ -76,7 +77,7 @@ CHROME_PATH=/path/to/chromium npm run test:e2e   # loads dist/ into Chromium aga
 ```
 
 `test:e2e` builds `dist/chrome` and needs Chromium or Chrome for Testing: branded Chrome ignores `--load-extension`. Set `E2E_SCREENSHOTS` to
-a folder to save screenshots of each screen.
+a folder to save screenshots of each screen, and `E2E_API_PORT` / `E2E_SITE_PORT` to move the mock off 18080 / 18081.
 
 ```text
 src/background/   service worker: holds the token, calls the Quark, answers the popup and pages

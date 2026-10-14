@@ -1,4 +1,7 @@
 import { chromium } from "playwright-core";
+import { argon2id } from "@noble/hashes/argon2.js";
+import { hkdf } from "@noble/hashes/hkdf.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import http from "node:http";
 
 import { fileURLToPath } from "node:url";
@@ -10,11 +13,23 @@ if (!executablePath) {
   console.error("Set CHROME_PATH to a Chromium or Chrome for Testing binary.");
   process.exit(2);
 }
-const API = 18080;
-const SITE = 18081;
+const API = Number(process.env.E2E_API_PORT ?? 18080);
+const SITE = Number(process.env.E2E_SITE_PORT ?? 18081);
 let locked = true;
 const log = [];
 const writes = [];
+const logins = [];
+
+// Quark v0.47.0+ (quark#2430): every account gets this salt, and the login
+// takes the auth key derived from it, computed here independently of the
+// extension's code.
+const salt = Uint8Array.from({ length: 16 }, (_, i) => i);
+const encoder = new TextEncoder();
+const authKey = (password) =>
+  Buffer.from(
+    hkdf(sha256, argon2id(encoder.encode(password), salt, { t: 3, m: 64 * 1024, p: 1, dkLen: 32 }), undefined, encoder.encode("auth"), 32),
+  ).toString("base64");
+const adminKey = authKey("pw");
 
 const json = (res, status, body) => {
   res.writeHead(status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
@@ -39,8 +54,13 @@ const api = http.createServer(async (req, res) => {
   }
   const body = await readBody(req);
   const url = req.url.replace("/api/v0", "");
+  if (url.startsWith("/auth/salt?")) {
+    return json(res, 200, { salt: Buffer.from(salt).toString("base64"), legacy: false, legacyRecovery: false });
+  }
   if (url === "/auth/login") {
-    return body.username === "admin" && body.password === "pw"
+    logins.push(body);
+    if (typeof body.authKey !== "string") return json(res, 426, { error: "update the app to sign in" });
+    return body.username === "admin" && body.authKey === adminKey
       ? json(res, 200, { token: "tok" })
       : json(res, 401, { error: "invalid credentials" });
   }
@@ -147,15 +167,20 @@ try {
   await popup.fill("#username", "admin");
   await popup.fill("#password", "wrong");
   await popup.click("button[type=submit]");
-  await popup.getByText("Invalid username or password.").waitFor({ timeout: 5000 });
+  await popup.getByText("Invalid username or password.").waitFor({ timeout: 20000 });
   check("wrong account password shows an error", true);
 
   await popup.fill("#server", `http://127.0.0.1:${API}`);
   await popup.fill("#username", "admin");
   await popup.fill("#password", "pw");
   await popup.click("button[type=submit]");
-  await popup.getByRole("heading", { name: "Vault is locked" }).waitFor({ timeout: 5000 });
+  await popup.getByRole("heading", { name: "Vault is locked" }).waitFor({ timeout: 20000 });
   check("sign-in moves to the unlock screen", true);
+  check(
+    "sign-in asks for the salt and sends the auth key, never the password",
+    log.includes("GET /api/v0/auth/salt?username=admin") && logins.length === 2 && logins.every((b) => b.authKey !== undefined && b.password === undefined),
+    JSON.stringify(logins.map(Object.keys)),
+  );
   if (shots) await popup.screenshot({ path: `${shots}/popup-unlock.png` });
 
   await popup.fill("#master", "nope");

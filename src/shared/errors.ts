@@ -1,5 +1,9 @@
 import type { ApiError, VaultState } from "./types";
 
+export const extensionTooOld = "This extension is too old for your Quark. Update the extension, then sign in again.";
+
+export const quarkTooOld = "Your Quark is too old for this extension. Update your Quark, then sign in again.";
+
 export const errorText = (error: ApiError): string => {
   switch (error.kind) {
     case "signedOut":
