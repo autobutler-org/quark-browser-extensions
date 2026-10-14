@@ -111,13 +111,55 @@ describe("storage", () => {
     expect(await loadConnection()).toBeNull();
   });
 
-  it("moves a plaintext token an older build left in storage.local under a seal", async () => {
+  // Issue #75: content scripts can write storage.local, so a plaintext connection there may be an attacker's.
+  const evil = { server: "https://evil.example", token: "x" };
+  const plant = () => fake.chrome.storage.local.set({ connection: evil, server: evil.server });
+
+  it("never adopts a plaintext connection planted in storage.local over a sealed one", async () => {
+    const { saveConnection } = await storage();
+    await saveConnection(connection, true);
+    const original = sealed();
+    await plant();
+    const restarted = await restart();
+    expect(await restarted.loadConnection()).toEqual(connection);
+    expect(await restarted.loadServer()).toBe(connection.server);
+    expect(sealed()).toEqual(original);
+    expect(sealKey()).toBeInstanceOf(CryptoKey);
+    expect(stored()).toEqual({ local: undefined, session: connection });
+  });
+
+  it("never adopts a plaintext connection when nothing is sealed, and deletes it", async () => {
+    await plant();
+    const { loadConnection, loadServer } = await storage();
+    expect(await loadConnection()).toBeNull();
+    expect(await loadServer()).toBe("");
+    expect(stored()).toEqual({ local: undefined, session: undefined });
+    expect(sealed()).toBeUndefined();
+  });
+
+  it("drops the plaintext token an older build left, so the user signs in again", async () => {
     await fake.chrome.storage.local.set({ server: connection.server, connection });
     const { loadConnection } = await storage();
-    expect(await loadConnection()).toEqual(connection);
-    expect(stored()).toEqual({ local: undefined, session: connection });
+    expect(await loadConnection()).toBeNull();
     expect(readableByContentScripts()).not.toContain(connection.token);
-    expect(await (await restart()).loadConnection()).toEqual(connection);
+    expect(await (await restart()).loadConnection()).toBeNull();
+  });
+
+  it("takes the server from the live connection, not from storage.local", async () => {
+    const { saveConnection, loadServer } = await storage();
+    await saveConnection(connection, false);
+    await plant();
+    expect(await loadServer()).toBe(connection.server);
+  });
+
+  it("remembers the last server where content scripts can't change it", async () => {
+    const { saveConnection, clearConnection } = await storage();
+    await saveConnection(connection, false);
+    await clearConnection();
+    await plant();
+    const restarted = await restart();
+    expect(await restarted.loadConnection()).toBeNull();
+    expect(await restarted.loadServer()).toBe(connection.server);
   });
 
   it("still signs in for the browser session when the token can't be sealed", async () => {
@@ -148,6 +190,16 @@ describe("storage", () => {
     await saveConnection(connection, true);
     await clearConnection();
     expect(await loadServer()).toBe(connection.server);
+  });
+
+  it("remembers the server of a restored sealed session after signing out", async () => {
+    const { saveConnection } = await storage();
+    await saveConnection(connection, true);
+    fake.idb.stores.get("keys")?.delete("server");
+    const restarted = await restart();
+    expect(await restarted.loadConnection()).toEqual(connection);
+    await restarted.clearConnection();
+    expect(await restarted.loadServer()).toBe(connection.server);
   });
 
   it("ignores a malformed stored connection", async () => {

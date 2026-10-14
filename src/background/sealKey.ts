@@ -5,6 +5,9 @@
 const dbName = "quark-vault";
 const storeName = "keys";
 const keyName = "seal";
+// The last Quark address signed in to, kept here rather than in storage.local because content scripts can
+// write storage.local, and a planted address would be offered as the user's Quark (issue #75).
+const serverName = "server";
 
 const opened = (): Promise<IDBDatabase> =>
   new Promise((resolve, reject) => {
@@ -40,4 +43,13 @@ export const createSealKey = async (): Promise<CryptoKey> => {
 
 export const deleteSealKey = async (): Promise<void> => {
   await inStore("readwrite", (store) => store.delete(keyName));
+};
+
+export const loadLastServer = async (): Promise<string> => {
+  const found: unknown = await inStore("readonly", (store) => store.get(serverName));
+  return typeof found === "string" ? found : "";
+};
+
+export const saveLastServer = async (server: string): Promise<void> => {
+  await inStore("readwrite", (store) => store.put(server, serverName));
 };

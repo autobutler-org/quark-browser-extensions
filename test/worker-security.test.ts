@@ -153,3 +153,33 @@ describe("filling from the popup, shortcut or context menu", () => {
     });
   });
 });
+
+// Issue #75: a compromised renderer's content script can write storage.local but must not pick the Quark.
+describe("a connection planted in storage.local", () => {
+  const evil = "https://evil.example";
+
+  const plantAndRestart = async () => {
+    await fake.chrome.storage.local.set({ connection: { server: evil, token: "x" }, server: evil });
+    fake.chrome.storage.session.items.clear();
+    vi.resetModules();
+  };
+
+  it("never receives the master password after a restart", async () => {
+    const { saveConnection } = await import("../src/background/storage");
+    await saveConnection(connection, true);
+    await plantAndRestart();
+    const fetchSpy = await startWorker(() => Promise.resolve(json(200, {})));
+    await fake.send({ type: "unlock", masterPassword: "master-secret" }, popup);
+    const urls = fetchSpy.mock.calls.map(([url]) => url);
+    expect(urls).toContain(`${connection.server}/api/v0/vault/unlock`);
+    expect(urls.filter((url) => url.startsWith(evil))).toEqual([]);
+    expect(fake.chrome.storage.local.items.get("sealedConnection")).toBeDefined();
+  });
+
+  it("isn't shown as the server when signed out", async () => {
+    await plantAndRestart();
+    const fetchSpy = await startWorker(() => Promise.resolve(json(200, {})));
+    expect(await fake.send({ type: "state" }, popup)).toEqual({ kind: "disconnected" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
