@@ -257,8 +257,9 @@ describe("a generated password from the context menu", () => {
     expect(byTag("pw").value).toBe("Gen3rated!pw");
   });
 
-  it("fills both new-password fields of a sign-up in the top frame", async () => {
+  it("fills both new-password fields of a focused sign-up in the top frame", async () => {
     await setup("signup-marked.html", () => null);
+    byTag("pw").focus();
     await expect(command({ type: "fillGenerated", password: "Gen3rated!pw" })).resolves.toEqual({ ok: true, value: null });
     expect([byTag("pw").value, byTag("confirm").value]).toEqual(["Gen3rated!pw", "Gen3rated!pw"]);
   });
