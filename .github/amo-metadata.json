@@ -1,0 +1,5 @@
+{
+  "version": {
+    "approval_notes": "The attached sources zip is this repository at the release tag (https://github.com/autobutler-org/quark-browser-extensions). The add-on is TypeScript bundled by WXT (Vite); it loads no remote code. To rebuild it: Node.js 22 with npm, then `npm ci` and `npx wxt zip -b firefox`. The package is written to .output/quark-vault-firefox.zip and the unpacked build to .output/firefox-mv3/. The add-on talks only to the Quark server the user enters in its options."
+  }
+}
