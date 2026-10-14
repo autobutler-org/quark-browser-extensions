@@ -509,6 +509,16 @@ describe("a generated password (#111)", () => {
     expect(app.querySelector("#search")).not.toBeNull();
     expect(panel(app)).toBeNull();
   });
+
+  it("is gone when the popup is closed and opened again", async () => {
+    const first = await openPopup();
+    await click(first, "Generate password");
+    expect(panel(first)).not.toBeNull();
+    const again = await openPopup();
+    expect(again.querySelector("#search")).not.toBeNull();
+    expect(panel(again)).toBeNull();
+    expect(again.textContent).not.toContain("generated-pw");
+  });
 });
 
 describe("when the vault locks behind the popup's back", () => {
