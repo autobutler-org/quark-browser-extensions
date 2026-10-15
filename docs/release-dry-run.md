@@ -5,9 +5,8 @@ A dry run of the packaging in `.github/workflows/release.yml` on 2026-10-14, at
 stores accept the zips? Nothing was uploaded.
 
 **Result: all four zips could be submitted.** Nothing failed. The recorded run
-gave two Firefox-minimum-version warnings; the current Firefox 140 minimum fixed
-the desktop warning, leaving only the intentional Firefox-for-Android warning
-described below.
+gave two Firefox-minimum-version warnings; the current Firefox 140 desktop and
+Firefox for Android 142 minima clear both (see below).
 
 ## What was run
 
@@ -57,7 +56,7 @@ exits 1 if there are any.
 | Every `src`/`href` in the packaged HTML pages exists (the Vite chunks and stylesheets) | ✔ | ✔ | ✔ |
 | `default_locale` "en" has `_locales/en/messages.json`, every locale file parses, and every `__MSG_x__` in the manifest has a message | ✔ | ✔ | ✔ |
 | Zip under 5 MB (our own flag; the Chrome Web Store allows 2 GB and AMO 200 MB) | ✔ | ✔ | ✔ |
-| `browser_specific_settings.gecko.id` (`vault@autobutler.org`) and `strict_min_version` (140.0 or later) | – | ✔ | – |
+| `browser_specific_settings.gecko.id` (`vault@autobutler.org`) and `strict_min_version` (140.0 or later), plus `gecko_android.strict_min_version` (142.0 or later) | – | ✔ | – |
 
 The sources zip has its own checks. It has to hold `package.json`,
 `package-lock.json`, `wxt.config.ts` and `docs/store/amo-notes.md`, and it
@@ -105,10 +104,10 @@ found two warnings:
   Android, which reads it from 142.
 
 [#153](https://github.com/autobutler-org/quark-browser-extensions/issues/153)
-raised `strict_min_version` to 140.0 (and the Vite target to `firefox140`), so
-the first warning is gone and `verify-zip.js` now refuses a Firefox zip below
-140. The Android warning remains on purpose: the add-on is desktop-only and
-declares no `gecko_android` block (see [store/permissions.md](store/permissions.md)).
+raised `strict_min_version` to 140.0 (and the Vite target to `firefox140`) and
+declared `gecko_android.strict_min_version` 142.0, so both warnings are gone and
+`verify-zip.js` now refuses a Firefox zip below those floors (see
+[store/permissions.md](store/permissions.md)).
 
 ## Changes made and follow-up
 
@@ -116,8 +115,9 @@ declares no `gecko_android` block (see [store/permissions.md](store/permissions.
 - Added a step to the build job in `.github/workflows/release.yml`, after the
   version check: `node scripts/verify-zip.js --rebuild-sources`.
 - The original dry run did not change `wxt.config.ts`. The later fix for #153
-  set `strict_min_version` to 140.0 and the Vite target to `firefox140`; the
-  verifier now rejects an older Firefox minimum.
+  set `strict_min_version` to 140.0 and the Vite target to `firefox140`, then
+  declared `gecko_android.strict_min_version` 142.0; the verifier now rejects an
+  older Firefox or Firefox for Android minimum.
 
 ## Not checked here
 

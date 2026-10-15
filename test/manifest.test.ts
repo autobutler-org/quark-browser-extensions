@@ -34,6 +34,9 @@ describe("manifest", () => {
       strict_min_version: "140.0",
       data_collection_permissions: { required: ["none"] },
     });
+    expect(firefox.browser_specific_settings?.gecko_android).toEqual({
+      strict_min_version: "142.0",
+    });
     expect(firefox.minimum_chrome_version).toBeUndefined();
 
     const chrome = await manifestFor("chrome");

@@ -7,8 +7,9 @@
 //     sourcemaps or test files, no localhost host permissions or CSP sources,
 //     every icon at its declared size, every file the manifest and its HTML
 //     pages name, and the default locale's messages for every __MSG_x__; a
-//     Firefox zip also needs the gecko id and a strict_min_version of 140 or
-//     later. The sources zip has to hold what docs/store/amo-notes.md builds
+//     Firefox zip also needs the gecko id, a gecko strict_min_version of 140 or
+//     later, and gecko_android.strict_min_version of 142 or later. The sources
+//     zip has to hold what docs/store/amo-notes.md builds
 //     from. Anything over 5 MB is flagged.
 //
 //   node scripts/verify-zip.js --rebuild-sources
@@ -29,6 +30,8 @@ import { inflateRawSync } from "node:zlib";
 export const MAX_ZIP_BYTES = 5 * 1024 * 1024;
 // The first Firefox that reads browser_specific_settings.gecko.data_collection_permissions (#153).
 const MIN_FIREFOX = 140;
+// The first Firefox for Android that reads the same key (#153).
+const MIN_FIREFOX_ANDROID = 142;
 
 // Reads every file in a zip into a Map of path → contents. Stored and deflated
 // entries only, no zip64: all `wxt zip` writes.
@@ -217,6 +220,14 @@ export function checkExtension(files, { version, browser, zipBytes }) {
     else if (parseInt(gecko.strict_min_version, 10) < MIN_FIREFOX) {
       problems.push(
         `has browser_specific_settings.gecko.strict_min_version ${gecko.strict_min_version}; Firefox before ${MIN_FIREFOX} ignores data_collection_permissions`,
+      );
+    }
+    const android = manifest.browser_specific_settings?.gecko_android;
+    if (!android?.strict_min_version) {
+      problems.push("has no browser_specific_settings.gecko_android.strict_min_version");
+    } else if (parseInt(android.strict_min_version, 10) < MIN_FIREFOX_ANDROID) {
+      problems.push(
+        `has browser_specific_settings.gecko_android.strict_min_version ${android.strict_min_version}; Firefox for Android before ${MIN_FIREFOX_ANDROID} ignores data_collection_permissions`,
       );
     }
   }

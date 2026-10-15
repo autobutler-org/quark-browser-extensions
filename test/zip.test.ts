@@ -32,7 +32,10 @@ type Manifest = {
   content_scripts: { matches: string[]; js: string[]; css?: string[] }[];
   web_accessible_resources: { resources: string[]; matches: string[] }[];
   content_security_policy: { extension_pages: string };
-  browser_specific_settings?: { gecko: { id?: string; strict_min_version?: string } };
+  browser_specific_settings?: {
+    gecko: { id?: string; strict_min_version?: string };
+    gecko_android?: { strict_min_version?: string };
+  };
 };
 
 // A small extension shaped like the one `wxt zip` makes, before `change` edits its manifest.
@@ -51,7 +54,10 @@ const extension = (change: (manifest: Manifest) => void = () => {}): Map<string,
     content_scripts: [{ matches: ["https://*/*"], js: ["content-scripts/content.js"] }],
     web_accessible_resources: [{ resources: ["assets/*.css"], matches: ["https://*/*"] }],
     content_security_policy: { extension_pages: "script-src 'self'" },
-    browser_specific_settings: { gecko: { id: "vault@example.org", strict_min_version: "140.0" } },
+    browser_specific_settings: {
+      gecko: { id: "vault@example.org", strict_min_version: "140.0" },
+      gecko_android: { strict_min_version: "142.0" },
+    },
   };
   change(manifest);
   return new Map([
@@ -223,19 +229,45 @@ describe("verify-zip", () => {
     expect(check(noGecko, "firefox")).toEqual([
       "has no browser_specific_settings.gecko.id",
       "has no browser_specific_settings.gecko.strict_min_version",
+      "has no browser_specific_settings.gecko_android.strict_min_version",
     ]);
     expect(check(noGecko, "chrome")).toEqual([]);
   });
 
   it("wants Firefox 140 or later, the first that reads data_collection_permissions", () => {
     const at = (version: string) =>
-      extension((m) => (m.browser_specific_settings = { gecko: { id: "vault@example.org", strict_min_version: version } }));
+      extension((m) => {
+        m.browser_specific_settings = {
+          gecko: { id: "vault@example.org", strict_min_version: version },
+          gecko_android: { strict_min_version: "142.0" },
+        };
+      });
     expect(check(at("128.0"), "firefox")).toEqual([
       "has browser_specific_settings.gecko.strict_min_version 128.0; Firefox before 140 ignores data_collection_permissions",
     ]);
     expect(check(at("139.0a1"), "firefox")).toHaveLength(1);
     expect(check(at("140.0"), "firefox")).toEqual([]);
     expect(check(at("141"), "firefox")).toEqual([]);
+  });
+
+  it("wants Firefox for Android 142 or later, the first that reads data_collection_permissions", () => {
+    const at = (version: string | undefined) =>
+      extension((m) => {
+        m.browser_specific_settings = {
+          gecko: { id: "vault@example.org", strict_min_version: "140.0" },
+          ...(version === undefined
+            ? {}
+            : { gecko_android: { strict_min_version: version } }),
+        };
+      });
+    expect(check(at(undefined), "firefox")).toEqual([
+      "has no browser_specific_settings.gecko_android.strict_min_version",
+    ]);
+    expect(check(at("141.0"), "firefox")).toEqual([
+      "has browser_specific_settings.gecko_android.strict_min_version 141.0; Firefox for Android before 142 ignores data_collection_permissions",
+    ]);
+    expect(check(at("142.0"), "firefox")).toEqual([]);
+    expect(check(at("143"), "firefox")).toEqual([]);
   });
 
   it("wants the sources zip to hold what the AMO build needs and no build output", () => {

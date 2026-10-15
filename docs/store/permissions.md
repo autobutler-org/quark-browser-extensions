@@ -121,12 +121,9 @@ The Firefox manifest declares
 `browser_specific_settings.gecko.data_collection_permissions: { required: ["none"] }`,
 so the install prompt says the developer says it doesn't require data collection.
 Firefox reads that key from version 140 (Firefox for Android from 142), so
-`strict_min_version` is 140.0; an older Firefox would install the add-on without
-the consent prompt. The add-on is desktop-only: the manifest has no
-`gecko_android` block and the AMO listing doesn't tick Firefox for Android.
-`web-ext lint` therefore still prints `KEY_FIREFOX_ANDROID_UNSUPPORTED_BY_MIN_VERSION`;
-it goes away if Android support is added with `gecko_android.strict_min_version`
-142.0.
+gecko `strict_min_version` is 140.0 and `gecko_android.strict_min_version` is
+142.0; an older Firefox would install the add-on without the consent prompt.
+Tick Firefox for Android on the AMO listing so the store offers it there.
 
 **Owner decision before the first AMO submission.** Mozilla's
 [definition](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/)
