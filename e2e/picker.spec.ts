@@ -42,6 +42,32 @@ test("reaches the inline button with Tab and opens the picker from the keyboard"
   await expect(page.locator("#pw")).toHaveValue("s3cret");
 });
 
+// The button was also a stop in the page's own Tab order at the end of <body>: on a page whose form is last, Tab
+// went password, button, link, button, link... and never left the page (#171).
+test("lets Tab leave a page whose form is last, past the inline button", async ({ context, site, worker }) => {
+  const url = `${site}/last`;
+  await context.route(url, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><body style="font-family:sans-serif;padding:40px"><form style="width:320px;display:flex;flex-direction:column;gap:8px">
+<input id="user" autocomplete="username" style="height:32px"><input id="pw" type="password" style="height:32px"></form>
+<a id="next" href="#forgot">Forgot password?</a></body>`,
+    }),
+  );
+  const { page } = await openLoginPage(context, worker, url);
+  await expect.poll(() => page.locator("body > div").count(), { message: "the inline button" }).toBeGreaterThan(0);
+
+  await page.locator("#pw").focus();
+  await page.keyboard.press("Tab");
+  expect(await onButton(page), "Tab from the password goes to its button").toBe(true);
+  await page.keyboard.press("Tab");
+  await expect(page.locator("#next")).toBeFocused();
+  await page.keyboard.press("Tab");
+  expect(await onButton(page), "Tab from the last link doesn't come back to the button").toBe(false);
+  await expect(page.locator("#next")).not.toBeFocused();
+  await expect(page.locator("#pw")).not.toBeFocused();
+});
+
 // Quark's own login page draws a show-password toggle over the right end of the field, and the button sat on it
 // (#119).
 test("keeps the inline button off the field's own show-password toggle", async ({ context, site, worker }) => {
