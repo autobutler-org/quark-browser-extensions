@@ -1,0 +1,68 @@
+name: Bug Report
+description: File a bug report.
+title: "[Bug] "
+labels: ["bug"]
+projects: ["autobutler-org/2"]
+type: Bug
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: What component(s) are affected by this?
+      multiple: true
+      options:
+        - N/A
+        - Popup
+        - In-page fill (content script)
+        - Save / update logins
+        - Background (service worker)
+        - Options page
+        - Firefox build
+        - Build / release
+      default: 0
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Also, what did you expect to happen?
+      placeholder: What is going on? 🔫
+    validations:
+      required: true
+  - type: dropdown
+    id: browsers
+    attributes:
+      label: What browsers are you seeing the problem on?
+      multiple: true
+      options:
+        - Firefox
+        - Chrome
+        - Safari
+        - Microsoft Edge
+        - Other
+  - type: input
+    id: url
+    attributes:
+      label: URL of problem
+      description: Provide a URL (local or remote) that demonstrates the problem
+  - type: input
+    id: version
+    attributes:
+      label: Extension version
+      description: Extension version (chrome://extensions or about:addons), and your Quark version if relevant
+      placeholder: "e.g. 0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Please copy and paste any relevant log output. This will be automatically formatted into code, so no need for backticks.
+      render: shell

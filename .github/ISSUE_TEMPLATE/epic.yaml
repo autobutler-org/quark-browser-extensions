@@ -1,0 +1,38 @@
+name: EPIC
+description: File a new EPIC.
+title: "[EPIC] "
+labels: ["epic"]
+projects: ["autobutler-org/2"]
+type: EPIC
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this epic, you wannabe PM you...
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: What component(s) are affected by this?
+      multiple: true
+      options:
+        - N/A
+        - Popup
+        - In-page fill (content script)
+        - Save / update logins
+        - Background (service worker)
+        - Options page
+        - Firefox build
+        - Build / release
+      default: 0
+    validations:
+      required: true
+  - type: textarea
+    id: epic-description
+    attributes:
+      label: What do you want to see in the extension?
+      description: "..."
+      placeholder: "Come on now..."
+    validations:
+      required: true
