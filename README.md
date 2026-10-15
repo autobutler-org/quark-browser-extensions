@@ -135,6 +135,7 @@ npx playwright install chromium                    # once: the Chromium the test
 QUARK_SRC=~/src/quark npm run test:e2e:quark       # build the Go server from a quark checkout, then run the tests
 npm run test:e2e                                   # run again with the Quark already built in e2e/.quark/quark
 QUARK_BIN=/path/to/quark npm run test:e2e          # or with a quark binary from somewhere else
+QUARK_SRC=~/src/quark QUARK_WEB=1 npm run test:e2e:quark  # with Quark's Flutter web app too, so e2e/quark-login.spec.ts fills its /login
 npm run test:e2e:mock                              # offline, against the mock Quark in e2e/support/mock-quark.ts
 ```
 

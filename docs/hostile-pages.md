@@ -41,6 +41,8 @@ Legitimate fills still work beside each attack: the picker on the real field of 
 - The inline picker, opened on the real password field, fills that field and its username. The decoys stay empty.
 - The popup's Fill, the keyboard shortcut and the context menu fill the real form, and the decoys stay empty. Until #129 they filled the decoys: they have no target field, so `fillLogin` takes the page's first password field, and the visibility checks then caught `display:none`, `visibility:hidden`, `[hidden]`, `tabindex=-1` and `aria-hidden` but none of these three styles. Until #142 the same went for the seven styles added then: the checks read `visibility: hidden` but not `collapse`, the `opacity` property but not `filter`, no masks, and only a leading percentage `inset()` or a zero-radius circle in `clip-path`.
 
+A transparent pair over a canvas that draws them is the one exception. That is how Flutter web draws its fields, Quark's own login included (#159), and the user types into those fields through what the canvas paints. A decoy over the page's own background has no canvas under it, so every page here is still refused. [security.md](security.md#which-fields-get-a-login) has the rule and its tradeoff.
+
 **Defense:** no fill without a user action, and only into fields the user can see: opaque (filters included), at least 4px by 4px, not clipped or masked away, and on the page (`isLoginField` in `src/content/forms.ts`; [security.md](security.md#which-fields-get-a-login) has the rules). `test/forms-hidden.test.ts` and the `login-decoy-*` fixtures cover each style without a browser.
 
 ### A login form under an opaque overlay

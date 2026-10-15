@@ -8,6 +8,7 @@ import { showSaveBar } from "./savebar";
 import {
   capturedLogin,
   fillLogin,
+  filling,
   fillNewPassword,
   fillOtp,
   frameShown,
@@ -68,12 +69,15 @@ const forgetDetached = (): void => {
   });
 };
 
-const fill = (credentials: Credentials, autoSubmit: boolean, target: HTMLInputElement | null): boolean => {
+// Settles once the fields hold the login, which a canvas-drawn page takes a frame or two to accept (#159), and
+// only then submits.
+const fill = async (credentials: Credentials, autoSubmit: boolean, target: HTMLInputElement | null): Promise<boolean> => {
   const outcome = fillLogin(document, credentials, target);
-  if (outcome.filled && autoSubmit) {
+  const filled = outcome.filled && (await filling());
+  if (filled && autoSubmit) {
     submit(outcome.form);
   }
-  return outcome.filled;
+  return filled;
 };
 
 // The picker stays open while the user chooses, so the page may hide the field meanwhile (#129): check it before
@@ -88,7 +92,7 @@ const pick =
     if (!result.ok) {
       return failureText(result.error);
     }
-    return fill(result.value, result.value.autoSubmit, field) ? null : t("refuseNoFields");
+    return (await fill(result.value, result.value.autoSubmit, field)) ? null : t("refuseNoFields");
   };
 
 const failureText = (error: ApiError): string =>
@@ -203,7 +207,7 @@ const fillFromWorker = async (entryId: number): Promise<PageReply> => {
     }
     return result;
   }
-  return fill(result.value, result.value.autoSubmit, null)
+  return (await fill(result.value, result.value.autoSubmit, null))
     ? ok(null)
     : err({ kind: "refused", reason: t("refuseNoFields") });
 };

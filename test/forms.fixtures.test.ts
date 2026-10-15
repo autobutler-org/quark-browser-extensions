@@ -5,6 +5,7 @@ import {
   fillLogin,
   fillNewPassword,
   fillOtp,
+  filling,
   identifierField,
   isNewPasswordField,
   otpFields,
@@ -33,8 +34,9 @@ const attachShadowRoots = (scope: ParentNode): void =>
   });
 
 // jsdom has no layout, so give it a rough one from inline styles: every element starts at the page's top left,
-// is moved by its own and its positioned ancestors' left and top, and takes its own width and height, else
-// 200×30 for an input and 800×600 for anything else. Enough to tell a field moved off-screen or shrunk to 1px.
+// is moved by its own and its positioned ancestors' left and top and by any translating matrix() transform on
+// them (Flutter places its semantics nodes that way), and takes its own width and height, else 200×30 for an
+// input and 800×600 for anything else. Enough to tell a field moved off-screen or shrunk to 1px.
 const px = (value: string): number | null => (/^-?[\d.]+px$/.test(value) ? Number.parseFloat(value) : null);
 
 const parentOf = (element: Element): Element | null =>
@@ -49,6 +51,9 @@ const roughBox = (element: Element): DOMRect => {
       left += px(x ?? "") ?? 0;
       top += px(y ?? "") ?? 0;
     }
+    const [, dx = "0", dy = "0"] = /^matrix\(1, 0, 0, 1, (-?[\d.]+), (-?[\d.]+)\)$/.exec((node as HTMLElement).style?.transform ?? "") ?? [];
+    left += Number.parseFloat(dx);
+    top += Number.parseFloat(dy);
   }
   const style = (element as HTMLElement).style as CSSStyleDeclaration | undefined;
   const input = element.localName === "input";
@@ -57,13 +62,26 @@ const roughBox = (element: Element): DOMRect => {
   return DOMRect.fromRect({ x: left, y: top, width, height });
 };
 
-// And a rough hit test from the same boxes: the last box drawn opaque on top (positioned, with an inline
-// background) that holds the point, else null, which tells the hit test nothing.
+// pointer-events as the nearest inline style sets it, as it inherits.
+const pointerEvents = (element: Element): string => {
+  for (let node: Element | null = element; node !== null; node = parentOf(node)) {
+    const value = (node as HTMLElement).style?.pointerEvents ?? "";
+    if (value !== "") {
+      return value;
+    }
+  }
+  return "";
+};
+
+// And a rough hit test from the same boxes: the last box that holds the point and is drawn opaque on top
+// (positioned, with an inline background) or takes clicks by an inline pointer-events: all (Flutter's semantics
+// nodes and their inputs), else null, which tells the hit test nothing.
 const roughHit = (x: number, y: number): Element | null =>
   allElements(document).findLast((element) => {
     const { position, background } = (element as HTMLElement).style ?? {};
     const box = roughBox(element);
-    return (position === "absolute" || position === "fixed") && background !== "" && x >= box.left && x < box.right && y >= box.top && y < box.bottom;
+    const hittable = ((position === "absolute" || position === "fixed") && background !== "") || pointerEvents(element) === "all";
+    return hittable && x >= box.left && x < box.right && y >= box.top && y < box.bottom;
   }) ?? null;
 
 beforeEach(() => {
@@ -138,6 +156,7 @@ const corpus: Readonly<Record<string, Expected>> = {
   "login-signup-tabs.html": { passwords: ["login-pw"], usernames: { "login-pw": "login-email" }, standalone: "login-email", otp: [], newPasswords: [] },
   "login-signup-toggle.html": { passwords: ["pw"], usernames: { pw: "email" }, standalone: "email", otp: [], newPasswords: [] },
   "login-modal-fade.html": { passwords: [], usernames: {}, standalone: null, otp: [], newPasswords: [] },
+  "login-flutter-quark.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "login-covered-overlay.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "spa-formless-login.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "spa-formless-panels.html": {
@@ -339,6 +358,15 @@ describe("filling and capturing fixtures", () => {
     expect(fillLogin(doc, credentials).filled).toBe(true);
     expect([field("bait-user").value, field("bait-pw").value, field("user").value, field("pw").value]).toEqual(["", "", "alice@example.com", "hunter2!"]);
     expect(fillLogin(doc, credentials, field("bait-pw")).filled).toBe(false);
+  });
+
+  it("fills both fields of Quark's own Flutter login, typed into through its transparent semantics tree (#159)", async () => {
+    const doc = load("login-flutter-quark.html");
+    expect(fillLogin(doc, credentials).filled).toBe(true);
+    // Flutter takes typing into a field a frame or two after it has focus, so the values go in then.
+    expect([field("user").value, field("pw").value]).toEqual(["", ""]);
+    await filling();
+    expect([field("user").value, field("pw").value]).toEqual(["alice@example.com", "hunter2!"]);
   });
 
   it("reads the revealed sign-up tab as new passwords (#152)", () => {

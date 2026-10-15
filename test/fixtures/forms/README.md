@@ -21,10 +21,12 @@ A fixture with no matching row in the test fails the run. To add a fixture, writ
 
 ## Sources
 
-Every fixture here was written for this repository and falls under its MIT-0 licence. None is copied or derived from another project's files, so none needs attribution.
+One fixture is saved rather than written: `login-flutter-quark.html` is the live DOM of Quark's own web login (#159), because what breaks there is the markup Flutter generates, and a hand-written copy would test a guess at it. Quark is MIT-0 like this repository.
+
+Every other fixture here was written for this repository and falls under its MIT-0 licence. None is copied or derived from another project's files, so none needs attribution.
 
 If you bring in a fixture based on an MPL-2.0 or MIT source, for example Firefox's LoginManager test pages (`toolkit/components/passwordmgr/test/`, MPL-2.0), list it below with its upstream path, licence and changes. An MPL-2.0 file also has to keep its licence header.
 
 | Fixture | Upstream | Licence | Changes |
 | ------- | -------- | ------- | ------- |
-| —       | —        | —       | —       |
+| `login-flutter-quark.html` | [autobutler-org/quark](https://github.com/autobutler-org/quark) 7ecf1021, `/login` as a Flutter 3.47.7 release build draws it | MIT-0 | Boot splash, scripts and Flutter's stylesheets left out; `data-fx` tags added |

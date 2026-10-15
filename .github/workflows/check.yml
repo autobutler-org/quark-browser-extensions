@@ -70,6 +70,48 @@ jobs:
             e2e/playwright-report/
             e2e/.quark/serve.log
 
+  # Quark's own web login (#159): the same Quark at QUARK_REF with its Flutter
+  # web app built and embedded, and e2e/quark-login.spec.ts filling its /login.
+  # Without the web app that spec skips, so the job above doesn't run it.
+  e2e-quark-web:
+    runs-on: ubuntu-latest
+    env:
+      QUARK_REF: ${{ vars.QUARK_REF || '7a2e6688a62c891ea79caafabdd683503d202754' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: autobutler-org/quark
+          ref: ${{ env.QUARK_REF }}
+          path: quark-src
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: quark-src/go.mod
+          cache-dependency-path: quark-src/go.sum
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: quark-src/pubspec.yaml
+          cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Build Quark with its web app
+        run: QUARK_SRC="$GITHUB_WORKSPACE/quark-src" QUARK_WEB=1 scripts/build-quark.sh
+      - name: Fill Quark's own login
+        run: npm run test:e2e -- quark-login --forbid-only
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-quark-web-results
+          include-hidden-files: true
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+            e2e/.quark/serve.log
+
   # The same tests against the offline mock, so it keeps matching the real
   # server: the contract test in e2e/connect.spec.ts runs against both.
   e2e-mock:

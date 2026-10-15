@@ -72,6 +72,7 @@ type Pass = Readonly<{
   exposed: Map<Element, boolean>;
   slots: Map<Element, Slotting>;
   frames: Map<Document, boolean>;
+  canvases: Map<Document, readonly HTMLCanvasElement[]>;
   checks: Map<object, Map<HTMLInputElement, boolean>>;
 }>;
 let pass: Pass | null = null;
@@ -81,7 +82,7 @@ export const onePass = <T>(detect: () => T): T => {
   if (pass !== null) {
     return detect();
   }
-  pass = { inputs: new Map(), styles: new Map(), opacity: new Map(), shown: new Map(), unclipped: new Map(), exposed: new Map(), slots: new Map(), frames: new Map(), checks: new Map() };
+  pass = { inputs: new Map(), styles: new Map(), opacity: new Map(), shown: new Map(), unclipped: new Map(), exposed: new Map(), slots: new Map(), frames: new Map(), canvases: new Map(), checks: new Map() };
   try {
     return detect();
   } finally {
@@ -495,10 +496,13 @@ const outOfSight = (element: Element): boolean => {
   return box.right + x <= 0 || box.bottom + y <= 0 || box.left + x >= width;
 };
 
-// A login field the user can see (#129). Pages hide fields with opacity, a 1px size, clipping or an off-screen
-// position, none of which display, visibility or [hidden] catch, to get a fill the user never sees.
-const inSight = (element: Element): boolean =>
-  opacityOf(element) >= minOpacity && everyAncestor(element, isUnclipped, pass?.unclipped) && !outOfSight(element);
+// An element the user can see (#129). Pages hide fields with opacity, a 1px size, clipping or an off-screen
+// position, none of which display, visibility or [hidden] catch, to get a fill the user never sees. `drawnBelow`
+// may vouch for an element faded out, when something else draws it for the user.
+const inSight = (element: Element, drawnBelow: (element: Element) => boolean = () => false): boolean =>
+  (opacityOf(element) >= minOpacity || drawnBelow(element)) &&
+  everyAncestor(element, isUnclipped, pass?.unclipped) &&
+  !outOfSight(element);
 
 // Where a hit test looks inside an element's box, as fractions of its width and height: the centre and a point
 // toward each corner, all clear of the inline button at the right edge.
@@ -525,19 +529,66 @@ export const markOwn = (host: Element): void => {
 // can't be tested, and without
 // any (below the fold, or no hit testing in jsdom) nothing counts as covered.
 const covered = (element: Element): boolean => {
+  const own = [element, ...((element as HTMLInputElement).labels ?? [])];
+  const results = probeHits(element);
+  return results.length > 0 && !results.some((hit) => own.includes(hit));
+};
+
+// What a hit test finds at each probe inside the viewport, less the extension's own UI.
+const probeHits = (element: Element): readonly Element[] => {
   const root = element.getRootNode() as Partial<DocumentOrShadowRoot>;
   const view = element.ownerDocument.defaultView;
   if (typeof root.elementFromPoint !== "function" || view === null) {
-    return false;
+    return [];
   }
-  const own = [element, ...((element as HTMLInputElement).labels ?? [])];
   const { left, top, width, height } = element.getBoundingClientRect();
-  const results = probes
+  return probes
     .map(([x, y]): Point => [left + x * width, top + y * height])
     .filter(([x, y]) => x >= 0 && y >= 0 && x < view.innerWidth && y < view.innerHeight)
     .map(([x, y]) => root.elementFromPoint?.call(root, x, y) ?? null)
     .filter((hit): hit is Element => hit !== null && !ownHosts.has(hit));
-  return results.length > 0 && !results.some((hit) => own.includes(hit));
+};
+
+const findCanvases = (scope: ParentNode): readonly HTMLCanvasElement[] =>
+  [...scope.querySelectorAll("*")].flatMap((element) => [
+    ...(element.localName === "canvas" ? [element as HTMLCanvasElement] : []),
+    ...(element.shadowRoot === null ? [] : findCanvases(element.shadowRoot)),
+  ]);
+
+// The page's <canvas> elements, open shadow roots included, found once per pass.
+const canvases = (doc: Document): readonly HTMLCanvasElement[] => {
+  const found = pass?.canvases.get(doc) ?? findCanvases(doc);
+  pass?.canvases.set(doc, found);
+  return found;
+};
+
+// Whether a transparent field is typed into through a canvas that paints it (#159). Flutter web draws the whole
+// app, fields included, into a <canvas>, and lays its semantics tree over it, made invisible as a whole with
+// filter: opacity(0%): the <input> the user types into is transparent, but sits on the field the user sees. It
+// counts as shown when every probe of a hit test lands on the field itself, so a click anywhere on it reaches
+// it, and a canvas the user can see lies under the whole of it. A decoy faded out over the page has nothing
+// painted under it, and one under something else that takes the clicks isn't where the user types. Without
+// layout (jsdom) there is nothing to test against, and a faded field stays hidden.
+const overCanvas = (field: Element): boolean => {
+  if (!("checkVisibility" in field)) {
+    return false;
+  }
+  const hits = probeHits(field);
+  if (hits.length === 0 || hits.some((hit) => hit !== field)) {
+    return false;
+  }
+  const box = field.getBoundingClientRect();
+  return canvases(field.ownerDocument).some((canvas) => {
+    const under = canvas.getBoundingClientRect();
+    return (
+      under.left <= box.left &&
+      under.top <= box.top &&
+      under.right >= box.right &&
+      under.bottom >= box.bottom &&
+      isVisible(canvas) &&
+      inSight(canvas)
+    );
+  });
 };
 
 const walk = (scope: ParentNode): readonly HTMLInputElement[] =>
@@ -632,13 +683,15 @@ const documentShown = (doc: Document): boolean => {
 // Whether a login field is under another element, answered once per pass: a hit test costs a layout.
 const isCovered = perPass(covered);
 
+const isOverCanvas = perPass(overCanvas);
+
 // A field login fill may put a username or password in: shown, reachable, in sight, not buried under another
 // element, still on the page, and in a frame that is itself shown.
 export const isLoginField = (input: HTMLInputElement): boolean =>
   input.isConnected &&
   isVisible(input) &&
   !isDecoy(input) &&
-  inSight(input) &&
+  inSight(input, (field) => isOverCanvas(field as HTMLInputElement)) &&
   !isCovered(input) &&
   documentShown(input.ownerDocument);
 
@@ -748,7 +801,7 @@ export const identifierField = (doc: Document): HTMLInputElement | null => {
   return field === null || field.readOnly ? null : field;
 };
 
-export const setValue = (input: HTMLInputElement, value: string): void => {
+const write = (input: HTMLInputElement, value: string): void => {
   const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input) as object, "value");
   input.focus();
   if (descriptor?.set === undefined) {
@@ -760,6 +813,66 @@ export const setValue = (input: HTMLInputElement, value: string): void => {
   input.dispatchEvent(new Event("change", { bubbles: true }));
   input.blur();
 };
+
+// Whether a field is typed into through a canvas that paints it: shown only by overCanvas.
+const drawnByCanvas = (input: HTMLInputElement): boolean =>
+  "checkVisibility" in input && opacityOf(input) < minOpacity && overCanvas(input);
+
+// Two frames, or 150 ms where the page doesn't paint (a tab in the background).
+const frames = (view: Window): Promise<void> =>
+  new Promise((resolve) => {
+    const timer = view.setTimeout(resolve, 150);
+    view.requestAnimationFrame(() =>
+      view.requestAnimationFrame(() => {
+        view.clearTimeout(timer);
+        resolve();
+      }),
+    );
+  });
+
+// Writes still to come, in order, and how many; resolves to whether every one went in.
+let writes: Promise<boolean> = Promise.resolve(true);
+let queued = 0;
+
+// Puts a value in a field the way typing would. A canvas-drawn app (#159) keeps its own text state, and only
+// takes input into a field once its framework has focused it, a frame or two after the DOM focus: so such a field
+// is focused first and written once the app has had those frames. Every write after one of those waits its turn,
+// so the fields fill in order, and each still has to be a login field when its turn comes: once one isn't, the
+// rest are dropped. filling() says when they are done.
+export const setValue = (input: HTMLInputElement, value: string): void => {
+  const view = input.ownerDocument.defaultView;
+  if (queued === 0) {
+    // Nothing is waiting: whatever the last fill came to, this one starts afresh.
+    writes = Promise.resolve(true);
+    if (view === null || !drawnByCanvas(input)) {
+      write(input, value);
+      return;
+    }
+  }
+  queued += 1;
+  writes = writes
+    .then(async (before) => {
+      if (!before) {
+        return false;
+      }
+      if (view !== null && drawnByCanvas(input)) {
+        input.focus();
+        await frames(view);
+      }
+      // The page had time to change: write nothing more once a field it was given no longer shows.
+      if (!isLoginField(input)) {
+        return false;
+      }
+      write(input, value);
+      return true;
+    })
+    .finally(() => {
+      queued -= 1;
+    });
+};
+
+// Resolves once the queued writes are done: true if every value went in, false if the page hid a field meanwhile.
+export const filling = (): Promise<boolean> => writes;
 
 export type FillOutcome = Readonly<{ filled: boolean; form: HTMLFormElement | null }>;
 
