@@ -126,6 +126,9 @@ export const attachPicker = (
     "aria-haspopup": "menu",
     "aria-expanded": "false",
     title: t("pickerTrigger"),
+    // Out of the page's own Tab order, where at the end of <body> Tab from whatever follows the field came back
+    // to it in a loop (#171). Its field hands Tab to it instead.
+    tabindex: "-1",
   });
   trigger.append(icon(doc, icons.quark, 12));
   const status = h$(doc, "div", { className: "sr", role: "status", "aria-live": "polite" });

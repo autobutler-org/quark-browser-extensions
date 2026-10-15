@@ -83,6 +83,17 @@ describe("reaching the inline picker from the keyboard", () => {
     picker.destroy();
   });
 
+  // Drawn at the end of <body>, the button was also a stop in the page's own Tab order, so Tab from whatever
+  // follows the field came back to it, and from it to the field, in a loop the user couldn't Tab out of (#171).
+  it("keeps the button out of the page's own Tab order, reachable only from its field", () => {
+    const { field, picker, root, trigger, press } = setup();
+    expect(trigger.tabIndex).toBe(-1);
+    field.focus();
+    press(field, "Tab");
+    expect(root.activeElement).toBe(trigger);
+    picker.destroy();
+  });
+
   it("leaves Shift+Tab and modified Tab in the field alone", () => {
     const { field, picker, press } = setup();
     field.focus();
