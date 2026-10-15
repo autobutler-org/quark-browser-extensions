@@ -10,7 +10,9 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 - **Unlock**: type the vault password in the popup. Unlocking is server-side and household-wide, the same as unlocking
   in the Quark app, and the Quark locks it on its own schedule. The options page can also lock it when the computer is idle. On Chrome, it locks when the screen locks; on Firefox, after the idle time elapses.
 - **Fill**: on a page with a password field, a Quark button appears in the field when the vault has a login for that
-  site. The toolbar icon shows how many. Pick one, or press **Fill** in the popup.
+  site. The toolbar icon shows how many. Pick one, or press **Fill** in the popup. From the keyboard, Tab from the field
+  reaches the button, and **Alt+↓** in the field opens the picker; Enter, Space or ↓ on the button opens it, and Esc
+  closes it and returns to the field.
 - **Shortcut and right-click**: `Ctrl+Shift+L` (`⌘⇧L` on macOS) fills the only match or opens the picker; right-click a field
   for **Quark Vault › Fill …**. The browser skips the suggested keys when another extension already has them; the
   popup footer and options then say **Not set** and link to `chrome://extensions/shortcuts` (in Firefox:

@@ -285,6 +285,66 @@ describe("attachPicker", () => {
     picker.destroy();
   });
 
+  // A refused fill in a cross-site frame was appended below the rows of a panel that scrolls, so nothing seemed to
+  // happen (#118). The reason goes above the rows, and the panel scrolls back to show it.
+  it("shows a refusal above the logins, scrolled into view", async () => {
+    const reason = "This login form is embedded in 127.0.0.1, so Quark Vault won't fill it.";
+    const { picker, root, items } = setup({ onPick: () => Promise.resolve(reason) });
+    picker.open();
+    const panel = root.querySelector<HTMLElement>(".panel") as HTMLElement;
+    panel.scrollTop = 120;
+    items()[1]?.click();
+    await vi.waitFor(() => expect(root.querySelector("[role=alert]")?.textContent).toBe(reason));
+    const alert = root.querySelector("[role=alert]");
+    expect(alert?.nextElementSibling?.getAttribute("role")).toBe("menu");
+    expect(panel.scrollTop).toBe(0);
+    expect(root.querySelector(".panel")).toBe(panel);
+    picker.destroy();
+  });
+
+  // Quark's own login page draws a show-password toggle over the right end of the field (#119).
+  it("moves the button left of a control drawn over the field's right end", () => {
+    const roots = openShadows();
+    const wrap = document.createElement("div");
+    const field = document.createElement("input");
+    field.type = "password";
+    const eye = document.createElement("button");
+    eye.type = "button";
+    wrap.append(field, eye);
+    document.body.append(wrap);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this === field) {
+        return DOMRect.fromRect({ x: 100, y: 50, width: 300, height: 32 });
+      }
+      if (this === eye) {
+        return DOMRect.fromRect({ x: 368, y: 54, width: 24, height: 24 });
+      }
+      return DOMRect.fromRect({ x: 0, y: 0, width: 0, height: 0 });
+    });
+    const picker = attachPicker(field, [], "localhost", { onPick: () => Promise.resolve(null) });
+    const anchor = roots[0]?.querySelector<HTMLElement>(".anchor");
+    expect(anchor?.style.left).toBe(`${368 - 6 - 22}px`);
+    picker.destroy();
+  });
+
+  it("keeps the button at the field's right end when no control is there", () => {
+    const roots = openShadows();
+    const wrap = document.createElement("div");
+    const field = document.createElement("input");
+    const after = document.createElement("button");
+    wrap.append(field, after);
+    document.body.append(wrap);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this === field) {
+        return DOMRect.fromRect({ x: 100, y: 50, width: 300, height: 32 });
+      }
+      return this === after ? DOMRect.fromRect({ x: 410, y: 50, width: 80, height: 32 }) : DOMRect.fromRect({ x: 0, y: 0, width: 0, height: 0 });
+    });
+    const picker = attachPicker(field, [], "localhost", { onPick: () => Promise.resolve(null) });
+    expect(roots[0]?.querySelector<HTMLElement>(".anchor")?.style.left).toBe(`${400 - 6 - 22}px`);
+    picker.destroy();
+  });
+
   it("places the panel again when the frame resizes", () => {
     frame(400, 600, 250, 160);
     const { picker, root } = setup();
