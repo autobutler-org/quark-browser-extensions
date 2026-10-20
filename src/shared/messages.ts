@@ -8,7 +8,8 @@ export type Request =
   | Readonly<{ type: "state" }>
   | Readonly<{ type: "connect"; server: string; username: string; password: string; persist: boolean; allowInsecure: boolean }>
   | Readonly<{ type: "signOut" }>
-  | Readonly<{ type: "unlock"; masterPassword: string }>
+  // The account's login password, which opens the vault key's wrap in the worker and is never sent anywhere.
+  | Readonly<{ type: "unlock"; password: string }>
   | Readonly<{ type: "lock" }>
   | Readonly<{ type: "entries" }>
   | Readonly<{ type: "matches"; pageUrl?: string }>

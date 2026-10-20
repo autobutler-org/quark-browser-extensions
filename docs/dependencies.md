@@ -17,8 +17,9 @@ It is not in the extension. Nothing under `src/` or `entrypoints/` imports it, a
 
 ## Duplicates
 
-`npm ls --omit=dev --all` is three packages and no second copies:
+`npm ls --omit=dev --all` is four packages and no second copies:
 
+- `@noble/ciphers@2.4.0`
 - `@noble/hashes@2.4.0`
 - `tldts@7.4.18`
 - `tldts-core@7.4.18`
@@ -31,7 +32,8 @@ Both production dependencies are used, and so is every devDependency.
 
 | Package | Used by |
 | --- | --- |
-| `@noble/hashes` | `src/shared/authKey.ts` (Argon2id, HKDF, SHA-256); `e2e/support/authKey.ts` |
+| `@noble/ciphers` | `src/shared/vaultCrypto.ts` (XChaCha20-Poly1305 for the per-account vault, quark#3459; WebCrypto has no ChaCha); `e2e/support/vault.ts`. Background only: it adds about 13 kB to `background.js` (168.3 kB to 181.0 kB raw, `wxt build -b chrome`, 2026-10-19) (#177) |
+| `@noble/hashes` | `src/shared/deriveAuthKey.ts` (Argon2id, HKDF), `src/shared/authKey.ts` (SHA-256); `e2e/support/authKey.ts` |
 | `tldts` | `src/shared/host.ts`, which imports the prebuilt `tldts/dist/index.esm.min.js` |
 | `wxt` | build, `wxt.config.ts`, entrypoints |
 | `vitest`, `jsdom`, `@vitest/coverage-v8` | `vitest.config.ts` (`environment: "jsdom"`, coverage provider `v8`) and `npm run coverage` |
@@ -119,7 +121,7 @@ The two workflows are not on the same majors. Tags below are what was current on
 | `actions/setup-go` | v5 | — | v7.0.0 |
 | `actions/download-artifact` | — | v8 | v8.0.2 |
 
-`check.yml` is the one behind. (#96) It also runs `npm run lint:firefox`, whose script is `npx --yes web-ext@8`. That installs whatever the `8` dist-tag points at (8.10.0 on this date) outside the lockfile, on every check. WXT 0.21.4's optional peer is `web-ext >= 9.2.0`. Current web-ext is 10.7.0. (#95) `npx wxt` and `npx playwright` in the workflows resolve to the copies `npm ci` installed. The Quark checkout is pinned: `QUARK_REF` falls back to `7a2e6688a62c891ea79caafabdd683503d202754`.
+`check.yml` is the one behind. (#96) It also runs `npm run lint:firefox`, whose script is `npx --yes web-ext@8`. That installs whatever the `8` dist-tag points at (8.10.0 on this date) outside the lockfile, on every check. WXT 0.21.4's optional peer is `web-ext >= 9.2.0`. Current web-ext is 10.7.0. (#95) `npx wxt` and `npx playwright` in the workflows resolve to the copies `npm ci` installed. The Quark checkout is pinned: `QUARK_REF` falls back to `11c8ff1e95880881a65c2cb50d458c06c2094678`.
 
 ## Permissions
 

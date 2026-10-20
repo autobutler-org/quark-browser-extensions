@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeChrome } from "./fakeChrome";
+import { openVault } from "./fakeVault";
 import { detectionIntervalSeconds, idleAction } from "../src/background/idle";
 import { defaultSettings, type Settings } from "../src/shared/types";
 
@@ -32,7 +33,6 @@ describe("idleAction", () => {
 
 describe("the worker on Firefox", () => {
   let fake: ReturnType<typeof fakeChrome>;
-  const lockCalls: string[] = [];
   const intervals: number[] = [];
 
   beforeEach(() => {
@@ -43,17 +43,7 @@ describe("the worker on Firefox", () => {
     fake.chrome.idle.setDetectionInterval = ((seconds: number) => void intervals.push(seconds)) as typeof fake.chrome.idle.setDetectionInterval;
     vi.stubGlobal("chrome", fake.chrome);
     vi.stubGlobal("indexedDB", fake.idb.indexedDB);
-    lockCalls.length = 0;
     intervals.length = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: string, init?: RequestInit) => {
-        if (init?.method === "POST" && new URL(input).pathname.endsWith("/vault/lock")) {
-          lockCalls.push(input);
-        }
-        return Promise.resolve(new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }));
-      }),
-    );
   });
 
   afterEach(() => {
@@ -69,6 +59,7 @@ describe("the worker on Firefox", () => {
   const start = async (settings: Settings): Promise<void> => {
     const { saveConnection, saveSettings } = await import("../src/background/storage");
     await saveConnection({ server: "https://quark.local", token: "secret-token" }, false);
+    await openVault(fake.chrome.storage.session, "https://quark.local");
     await saveSettings(settings);
     const { main } = await import("../src/background/index");
     main();
@@ -83,13 +74,13 @@ describe("the worker on Firefox", () => {
     expect(intervals).toEqual([900]);
     fire("idle");
     await settle();
-    expect(lockCalls).toEqual(["https://quark.local/api/v0/vault/lock"]);
+    expect(fake.chrome.storage.session.items.has("vault")).toBe(false);
   });
 
   it("does not lock when Firefox reports active", async () => {
     await start(off);
     fire("active");
     await settle();
-    expect(lockCalls).toEqual([]);
+    expect(fake.chrome.storage.session.items.has("vault")).toBe(true);
   });
 });

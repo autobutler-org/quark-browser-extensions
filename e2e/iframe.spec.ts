@@ -1,31 +1,28 @@
 import type { CDPSession, Frame, Page } from "@playwright/test";
 import { clickInlineButton, expect, signInAndUnlock, test, type Quark } from "./fixtures.ts";
+import { ownerVault } from "./support/env.ts";
 
 // Three more logins for the test site, so the picker has four rows, as in #117 and #118. The worker caches the
 // entry list, so it is unlocked again to see them. The vault is put back as the seed left it.
 const relock = async (popup: Page, quark: Quark) => {
   await popup.evaluate(() => chrome.runtime.sendMessage({ type: "lock" }));
-  expect(await popup.evaluate((masterPassword) => chrome.runtime.sendMessage({ type: "unlock", masterPassword }), quark.seed.masterPassword)).toMatchObject({
+  expect(await popup.evaluate((password) => chrome.runtime.sendMessage({ type: "unlock", password }), quark.seed.owner.password)).toMatchObject({
     ok: true,
   });
 };
 
 const withMoreLogins = async (popup: Page, quark: Quark, site: string, run: () => Promise<void>) => {
-  const token = await quark.api.login(quark.seed.owner.username, quark.seed.owner.password);
+  const vault = await ownerVault(quark);
   const added: number[] = [];
   try {
     for (const name of ["Second", "Third", "Fourth"]) {
-      const entry = await quark.api.expectOk<{ id: number }>(
-        quark.api.call("POST", "/vault/entries", { name, url: site, username: name.toLowerCase(), password: `${name}-pw` }, token),
-        "POST /vault/entries",
-      );
-      added.push(entry.id);
+      added.push(await vault.add({ kind: "entry", name, url: site, username: name.toLowerCase(), password: `${name}-pw` }));
     }
     await relock(popup, quark);
     await run();
   } finally {
     await relock(popup, quark);
-    for (const id of added) await quark.api.call("DELETE", `/vault/entries/${id}`, undefined, token);
+    for (const id of added) await vault.remove(id);
   }
 };
 

@@ -1,5 +1,6 @@
 import type { BrowserContext, Page, Request } from "@playwright/test";
 import type { Quark } from "../fixtures.ts";
+import { ownerVault } from "../support/env.ts";
 
 // Hostile pages, served by Playwright routes rather than the test site, so they can sit on the
 // site's own origin (where the seeded "Local Test" login matches), on another origin, or post to one.
@@ -41,13 +42,8 @@ export const watchSink = async (context: BrowserContext) => {
 export const loot = (page: Page) => page.evaluate(() => (window as unknown as { loot: string[] }).loot.join("\n"));
 
 // The seeded login, read from the Quark at run time so no credential is written into a test.
-export const seededLogin = async (quark: Quark) => {
-  const token = await quark.api.login(quark.seed.owner.username, quark.seed.owner.password);
-  return quark.api.expectOk<{ name: string; username: string; password: string }>(
-    quark.api.call("GET", `/vault/entries/${quark.seed.local}`, undefined, token),
-    "GET the seeded login",
-  );
-};
+export const seededLogin = async (quark: Quark) =>
+  (await (await ownerVault(quark)).get(quark.seed.local)) as { name: string; username: string; password: string };
 
 // Waits for the content script to draw its inline button, a <div> host appended to <body>.
 export const inlineButton = (page: Page) =>

@@ -21,7 +21,7 @@ vi.mock("../src/content/picker", () => ({
 
 vi.mock("../src/content/savebar", () => ({ showSaveBar: () => undefined }));
 
-const entry: EntrySummary = { id: 7, name: "Test basic login", urlHost: "localhost", folderId: null, createdAt: "", updatedAt: "" };
+const entry: EntrySummary = { id: 7, name: "Test basic login", urlHost: "localhost", folderId: null, url: "", updatedAt: "" };
 const credentials = { username: "admin", password: "correct horse battery", autoSubmit: false as boolean };
 
 type Box = Readonly<{ left: number; top: number; width: number; height: number }>;

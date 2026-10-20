@@ -25,10 +25,10 @@ export const client = (server: string) => {
     return { status: response.status, body: parsed };
   };
 
-  // Resolves to the reply's body, which the caller says the shape of.
+  // Resolves to a 2xx reply's body, which the caller says the shape of.
   const expectOk = async <T = unknown>(reply: Promise<Reply>, what: string): Promise<T> => {
     const { status, body } = await reply;
-    if (status !== 200) throw new Error(`${what}: HTTP ${status} ${JSON.stringify(body)}`);
+    if (status < 200 || status > 299) throw new Error(`${what}: HTTP ${status} ${JSON.stringify(body)}`);
     return body as T;
   };
 

@@ -1,6 +1,7 @@
 import { client, type Client } from "./client.ts";
 import { logPath, type Logged } from "./proxy.ts";
 import type { Seeded } from "./seed.ts";
+import { vaultItems } from "./vault.ts";
 
 // What global-setup.ts started, as the tests in every browser see it.
 export const env = (name: string): string => {
@@ -32,4 +33,10 @@ export const quarkFromEnv = (): Quark => {
     clearWire: async () => void (await wire("DELETE")),
     target: env("E2E_TARGET") as "quark" | "mock",
   };
+};
+
+// The owner's vault as the Quark app sees it: a fresh session, and the items decrypted with the seeded vault key.
+export const ownerVault = async (quark: Quark) => {
+  const token = await quark.api.login(quark.seed.owner.username, quark.seed.owner.password);
+  return { token, ...vaultItems(quark.api, token, Buffer.from(quark.seed.vaultKey, "base64")) };
 };

@@ -19,9 +19,11 @@ const connection = { server: "https://quark.local", token: "t0k3n" };
 const salt = Uint8Array.from({ length: 16 }, (_, i) => i);
 const saltBase64 = btoa(String.fromCharCode(...salt));
 
-// Stands in for the Argon2id derivation, which takes seconds; deriveAuthKey
-// itself is pinned by the vector in authKey.test.ts.
-const fakeDerive = (password: string, from: Uint8Array) => Promise.resolve(`key(${password},${from.join(".")})`);
+// Stands in for the Argon2id derivation, which takes seconds; deriveKeys
+// itself is pinned by the vectors in vaultCrypto.test.ts.
+const wrapKey = Uint8Array.of(9, 9, 9);
+const fakeDerive = (password: string, from: Uint8Array) =>
+  Promise.resolve({ authKey: `key(${password},${from.join(".")})`, vaultWrapKey: wrapKey });
 
 // A Quark v0.47.0+ sign-in: GET /auth/salt, then POST /auth/login, which
 // refuses a password sent without an auth key with 426 (quark#2430).
@@ -59,7 +61,7 @@ const bodyOf = (call: Call | undefined) => JSON.parse(call?.init?.body as string
 describe("login", () => {
   it("signs in with the auth key alone and sends no credentials cookie", async () => {
     const { api, calls } = quark(() => [200, { token: "abc" }]);
-    expect(await api.login("https://quark.local", "Brandon Apol", "pw")).toEqual({ ok: true, value: "abc" });
+    expect(await api.login("https://quark.local", "Brandon Apol", "pw")).toEqual({ ok: true, value: { token: "abc", salt, vaultWrapKey: wrapKey } });
     expect(calls.map((c) => [c.init?.method, c.url])).toEqual([
       ["GET", "https://quark.local/api/v0/auth/salt?username=Brandon+Apol"],
       ["POST", "https://quark.local/api/v0/auth/login"],
@@ -71,7 +73,7 @@ describe("login", () => {
   it("sends the password beside the auth key once for a legacy account, after the user consents", async () => {
     const { api, calls, ledger } = quark(() => [200, { token: "abc" }], [200, { salt: saltBase64, legacy: true }]);
     await ledger.giveConsent("https://quark.local", "brandon");
-    expect(await api.login("https://quark.local", "brandon", "pw")).toEqual({ ok: true, value: "abc" });
+    expect((await api.login("https://quark.local", "brandon", "pw")).ok).toBe(true);
     expect(bodyOf(calls[1])).toEqual({ username: "brandon", password: "pw", authKey: `key(pw,${salt.join(".")})` });
   });
 
@@ -225,61 +227,82 @@ describe("login", () => {
   });
 });
 
-describe("unlock", () => {
-  it("tells a wrong master password from an expired session", async () => {
-    expect(await respond(401, { error: "incorrect master password" }).api.unlock(connection, "x")).toEqual({
-      ok: false,
-      error: { kind: "badMasterPassword" },
+describe("the vault routes", () => {
+  const wrapped = {
+    wrappedByPassword: btoa("wrapped"),
+    saltPw: saltBase64,
+    wrappedByPhrase: btoa("phrase"),
+    saltRp: saltBase64,
+    kdfParams: { alg: "argon2id13+hkdf-sha256", opsLimit: 3, memLimit: 67108864 },
+  };
+
+  it("reads the wrapped vault key and the cost it was derived at", async () => {
+    const { api, calls } = respond(200, wrapped);
+    const result = await api.vaultKey(connection);
+    expect(result.ok && { ...result.value, wrapped: new TextDecoder().decode(result.value.wrapped), salt: Array.from(result.value.salt) }).toEqual({
+      wrapped: "wrapped",
+      salt: Array.from(salt),
+      cost: { opsLimit: 3, memLimit: 67108864 },
     });
-    expect(await respond(401, { error: "authentication required" }).api.unlock(connection, "x")).toEqual({
-      ok: false,
-      error: { kind: "signedOut" },
-    });
+    expect(calls.map((call) => [call.init?.method, call.url])).toEqual([["GET", "https://quark.local/api/v0/vault/key"]]);
   });
 
-  it("recognizes an uninitialized vault", async () => {
-    const { api } = respond(400, { error: "vault is not initialized — call POST /vault/setup first" });
-    expect(await api.unlock(connection, "x")).toEqual({ ok: false, error: { kind: "notInitialized" } });
+  it("knows an account with no vault from a missing key, and refuses a key it can't read", async () => {
+    expect(await respond(404, { error: "no vault" }).api.vaultKey(connection)).toEqual({ ok: false, error: { kind: "notInitialized" } });
+    expect(await respond(200, { ...wrapped, kdfParams: null }).api.vaultKey(connection)).toMatchObject({ ok: false, error: { kind: "server" } });
+    expect(await respond(401, { error: "authentication required" }).api.vaultKey(connection)).toEqual({ ok: false, error: { kind: "signedOut" } });
+  });
+
+  it("sends only the sealed item, and knows a vault deleted since it was opened", async () => {
+    const sealed = { ciphertext: "Y2lwaGVy", nonce: "bm9uY2U=", formatVersion: 1 };
+    const { api, calls } = respond(201, { id: 12, ...sealed });
+    expect(await api.createItem(connection, sealed)).toEqual({ ok: true, value: 12 });
+    expect(bodyOf(calls[0])).toEqual(sealed);
+    expect(await respond(409, { error: "no vault" }).api.createItem(connection, sealed)).toEqual({ ok: false, error: { kind: "notInitialized" } });
+    const update = respond(200, sealed);
+    expect(await update.api.updateItem(connection, 12, sealed)).toEqual({ ok: true, value: null });
+    expect([update.calls[0]?.init?.method, update.calls[0]?.url, bodyOf(update.calls[0])]).toEqual([
+      "PUT",
+      "https://quark.local/api/v0/vault/items/12",
+      sealed,
+    ]);
   });
 });
 
 describe("the request path (#144)", () => {
   it("refuses to follow a redirect on any request", async () => {
     const { api, calls } = respond(200, {});
-    await api.unlock(connection, "master");
-    await api.status(connection);
-    expect(calls.map((call) => call.init?.redirect)).toEqual(["error", "error"]);
+    await api.vaultKey(connection);
+    await api.listItems(connection);
+    await api.createItem(connection, { ciphertext: "", nonce: "", formatVersion: 1 });
+    expect(calls.map((call) => call.init?.redirect)).toEqual(["error", "error", "error"]);
   });
 
   it("refuses an answer from another origin", async () => {
     const fetchFn: FetchFn = () => {
       const response = new Response(JSON.stringify({ token: "abc" }), { status: 200 });
-      Object.defineProperty(response, "url", { value: "https://elsewhere.example/api/v0/vault/unlock" });
+      Object.defineProperty(response, "url", { value: "https://elsewhere.example/api/v0/vault/key" });
       return Promise.resolve(response);
     };
-    const result = await createApi(fetchFn, memoryLedger()).unlock(connection, "master");
+    const result = await createApi(fetchFn, memoryLedger()).vaultKey(connection);
     expect(result).toEqual({ ok: false, error: { kind: "network", message: expect.stringContaining("elsewhere.example") as unknown } });
   });
 });
 
 describe("authenticated requests", () => {
   it("sends the bearer token", async () => {
-    const { api, calls } = respond(200, { entries: [] });
-    await api.listEntries(connection);
+    const { api, calls } = respond(200, []);
+    await api.listItems(connection);
     expect((calls[0]?.init?.headers as Record<string, string>)["Authorization"]).toBe("Bearer t0k3n");
   });
 
   it.each([
-    [403, { kind: "notAdmin" }],
     [404, { kind: "notFound" }],
-    [423, { kind: "locked", reason: "idle timeout" }],
     [429, { kind: "rateLimited" }],
-    [503, { kind: "driveDisconnected" }],
     [500, { kind: "server", status: 500, message: "boom" }],
   ])("maps %i", async (status, expected) => {
-    const message = status === 423 ? "vault is locked: idle timeout" : "boom";
-    const { api } = respond(status, { error: message });
-    expect(await api.getEntry(connection, 7)).toEqual({ ok: false, error: expected });
+    const { api } = respond(status, { error: "boom" });
+    expect(await api.getItem(connection, 7)).toEqual({ ok: false, error: expected });
   });
 
   it("maps 426 to a clear 'extension too old' message", () => {
@@ -289,29 +312,18 @@ describe("authenticated requests", () => {
 
   it("reports a network failure", async () => {
     const api = createApi(() => Promise.reject(new TypeError("Failed to fetch")), memoryLedger());
-    expect(await api.status(connection)).toEqual({ ok: false, error: { kind: "network", message: "Failed to fetch" } });
+    expect(await api.vaultKey(connection)).toEqual({ ok: false, error: { kind: "network", message: "Failed to fetch" } });
   });
 });
 
 describe("decoding", () => {
-  it("reads entries and tolerates missing fields", async () => {
-    const { api } = respond(200, { entries: [{ id: 3, name: "GitHub", urlHost: "github.com", folderId: 2 }, { id: 4 }] });
-    const result = await api.listEntries(connection);
+  it("reads items and tolerates missing fields", async () => {
+    const { api } = respond(200, [{ id: 3, ciphertext: "Yw==", nonce: "bg==", formatVersion: 1, createdAt: "c", updatedAt: "u" }, { id: 4 }]);
+    const result = await api.listItems(connection);
     expect(result.ok && result.value).toEqual([
-      { id: 3, name: "GitHub", urlHost: "github.com", folderId: 2, createdAt: "", updatedAt: "" },
-      { id: 4, name: "", urlHost: "", folderId: null, createdAt: "", updatedAt: "" },
+      { id: 3, ciphertext: "Yw==", nonce: "bg==", formatVersion: 1, updatedAt: "u" },
+      { id: 4, ciphertext: "", nonce: "", formatVersion: NaN, updatedAt: "" },
     ]);
-  });
-
-  it("reads the vault status", async () => {
-    const { api } = respond(200, { initialized: true, locked: false, autoLockSeconds: 900, deviceConnected: true });
-    const result = await api.status(connection);
-    expect(result.ok && result.value).toEqual({
-      initialized: true,
-      locked: false,
-      autoLockSeconds: 900,
-      deviceConnected: true,
-      lockReason: "",
-    });
+    expect(await respond(200, { not: "a list" }).api.listItems(connection)).toEqual({ ok: true, value: [] });
   });
 });

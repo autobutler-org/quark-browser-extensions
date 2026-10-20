@@ -31,7 +31,7 @@ vi.mock("../src/content/savebar", () => ({
     void bars.push({ offer, onAction }),
 }));
 
-const entry: EntrySummary = { id: 7, name: "Example", urlHost: "localhost", folderId: null, createdAt: "", updatedAt: "" };
+const entry: EntrySummary = { id: 7, name: "Example", urlHost: "localhost", folderId: null, url: "", updatedAt: "" };
 const credentials = { username: "alice@example.com", password: "hunter2!", autoSubmit: false };
 const offer: SaveOffer = { kind: "save", host: "localhost", username: "alice@example.com" };
 

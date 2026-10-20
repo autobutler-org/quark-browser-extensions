@@ -6,7 +6,7 @@ const match = (id: number, name: string, kind: MatchKind, where: string, note = 
   name,
   urlHost: "localhost",
   folderId: null,
-  createdAt: "",
+  url: "",
   updatedAt: "",
   kind,
   where,

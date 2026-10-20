@@ -7,7 +7,7 @@ import type { EntrySummary } from "../src/shared/types";
 // The content script over a page's life: rescans on a busy page, pickers torn down with their field, and the
 // worker's hello asked again while it can't help yet. The real picker, fake timers, the worker faked.
 
-const entry: EntrySummary = { id: 7, name: "Example", urlHost: "localhost", folderId: null, createdAt: "", updatedAt: "" };
+const entry: EntrySummary = { id: 7, name: "Example", urlHost: "localhost", folderId: null, url: "", updatedAt: "" };
 const loginForm = readFileSync(join(import.meta.dirname, "fixtures", "forms", "login-basic.html"), "utf8");
 
 const observers: MutationObserver[] = [];

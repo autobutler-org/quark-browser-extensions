@@ -36,7 +36,7 @@ const listen = async (
 };
 
 const salt = btoa(String.fromCharCode(...Uint8Array.from({ length: 16 }, (_, i) => i)));
-const fakeDerive = () => Promise.resolve("key");
+const fakeDerive = () => Promise.resolve({ authKey: "key", vaultWrapKey: new Uint8Array(32) });
 
 const listeners: Listener[] = [];
 afterEach(async () => {
@@ -80,11 +80,11 @@ describe("a redirect from the Quark (#144)", () => {
     expect(await ledger.hasKey(quark.origin, "brandon")).toBe(false);
   });
 
-  it("never carries a master password to another origin", async () => {
+  it("never carries a sealed item to another origin", async () => {
     const elsewhere = await thief();
     const quark = await redirectingQuark(() => elsewhere.origin);
     const api = createApi((input, init) => fetch(input, init), memoryLedger(), fakeDerive);
-    const result = await api.unlock({ server: quark.origin, token: "t0k3n" }, "master");
+    const result = await api.createItem({ server: quark.origin, token: "t0k3n" }, { ciphertext: "c2VhbGVk", nonce: "bm9uY2U=", formatVersion: 1 });
     expect(result.ok).toBe(false);
     expect(elsewhere.bodies).toEqual([]);
   });
@@ -92,7 +92,8 @@ describe("a redirect from the Quark (#144)", () => {
   it("doesn't follow a redirect even to its own origin", async () => {
     const quark = await redirectingQuark((origin) => origin);
     const api = createApi((input, init) => fetch(input, init), memoryLedger(), fakeDerive);
-    expect((await api.unlock({ server: quark.origin, token: "t0k3n" }, "master")).ok).toBe(false);
-    expect(quark.bodies).toEqual([JSON.stringify({ masterPassword: "master" })]);
+    const sealed = { ciphertext: "c2VhbGVk", nonce: "bm9uY2U=", formatVersion: 1 };
+    expect((await api.createItem({ server: quark.origin, token: "t0k3n" }, sealed)).ok).toBe(false);
+    expect(quark.bodies).toEqual([JSON.stringify(sealed)]);
   });
 });

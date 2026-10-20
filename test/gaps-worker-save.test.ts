@@ -1,5 +1,5 @@
 import { extensionId, extensionUrl, fakeChrome } from "./fakeChrome";
-import type { EntryDetail } from "../src/shared/types";
+import { opened, openVault, vaultRoutes, type EntryFixture } from "./fakeVault";
 
 const serverUrl = "https://quark.local";
 const connection = { server: serverUrl, token: ["session", "credential"].join("-") };
@@ -7,14 +7,11 @@ const popup: chrome.runtime.MessageSender = { id: extensionId, url: `${extension
 const tabId = 17;
 
 const password = (version: string): string => [version, "login", "password"].join("-");
-const json = (status: number, body: unknown = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-
 type Call = Readonly<{ method: string; path: string; body: unknown }>;
 
 let fake: ReturnType<typeof fakeChrome>;
 let calls: Call[];
-let entries: EntryDetail[];
+let entries: EntryFixture[];
 let locked: boolean;
 
 beforeEach(() => {
@@ -34,46 +31,18 @@ afterEach(() => {
 const startWorker = async (): Promise<void> => {
   const { saveConnection } = await import("../src/background/storage");
   await saveConnection(connection, false);
+  if (!locked) {
+    await openVault(fake.chrome.storage.session, connection.server);
+  }
+  const vault = vaultRoutes(entries);
   vi.stubGlobal(
     "fetch",
     vi.fn((input: string, init?: RequestInit) => {
-      const url = new URL(input);
-      const path = url.pathname.replace(/^\/api\/v0/, "");
+      const path = new URL(input).pathname.replace(/^\/api\/v0/, "");
       const method = init?.method ?? "GET";
       const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
       calls.push({ method, path, body });
-
-      if (method === "GET" && path === "/vault/status") {
-        return Promise.resolve(
-          json(200, { initialized: true, locked, deviceConnected: true, autoLockSeconds: 900, lockReason: "" }),
-        );
-      }
-      if (method === "GET" && path === "/vault/entries") {
-        return Promise.resolve(
-          json(200, {
-            entries: entries.map(({ id, name, urlHost }) => ({
-              id,
-              name,
-              urlHost,
-              folderId: null,
-              createdAt: "created",
-              updatedAt: "updated",
-            })),
-          }),
-        );
-      }
-      const detail = /^\/vault\/entries\/(\d+)$/.exec(path);
-      if (method === "GET" && detail !== null) {
-        const found = entries.find((entry) => entry.id === Number(detail[1]));
-        return Promise.resolve(found === undefined ? json(404, { error: "not found" }) : json(200, found));
-      }
-      if (method === "POST" && path === "/vault/entries") {
-        return Promise.resolve(json(200, { id: 99 }));
-      }
-      if (method === "PUT" && detail !== null) {
-        return Promise.resolve(json(200));
-      }
-      return Promise.resolve(json(404, { error: "not found" }));
+      return Promise.resolve(vault.handle(method, path, body) ?? new Response(null, { status: 404 }));
     }),
   );
   const { main } = await import("../src/background/index");
@@ -108,9 +77,9 @@ describe("resolving a captured login in the worker", () => {
       username: "alice",
     });
     expect(await resolveFromPage(url, "save")).toEqual({ ok: true, value: null });
-    expect(requests("POST", "/vault/entries").map(({ body }) => body)).toEqual([
-      { name: "accounts.example", url: "https://accounts.example", username: "alice", password: submitted },
-    ]);
+    const [sent] = requests("POST", "/vault/items").map(({ body }) => body);
+    expect(JSON.stringify(sent)).not.toContain(submitted);
+    expect(opened(sent)).toEqual({ kind: "entry", name: "accounts.example", url: "https://accounts.example", username: "alice", password: submitted });
     expect(await fake.send({ type: "pendingOffer", tabId }, popup)).toBeNull();
   });
 
@@ -122,10 +91,11 @@ describe("resolving a captured login in the worker", () => {
         id: 4,
         name: "Example account",
         url: "https://accounts.example/login",
-        urlHost: "accounts.example",
         username: "alice",
         password: previous,
-        totpSecret: "",
+        notes: "keep me",
+        customFields: [{ label: "pin", value: "1234", hidden: true }],
+        folderId: 3,
       },
     ];
     await startWorker();
@@ -135,9 +105,18 @@ describe("resolving a captured login in the worker", () => {
       entryId: 4,
     });
     expect(await resolveFromPage("https://accounts.example/login", "update")).toEqual({ ok: true, value: null });
-    expect(requests("PUT", "/vault/entries/4").map(({ body }) => body)).toEqual([
-      expect.objectContaining({ name: "Example account", username: "alice", password: submitted }),
-    ]);
+    const [sent] = requests("PUT", "/vault/items/4").map(({ body }) => body);
+    expect(JSON.stringify(sent)).not.toContain(submitted);
+    expect(opened(sent)).toEqual({
+      kind: "entry",
+      name: "Example account",
+      url: "https://accounts.example/login",
+      username: "alice",
+      password: submitted,
+      notes: "keep me",
+      customFields: [{ label: "pin", value: "1234", hidden: true }],
+      folderId: 3,
+    });
   });
 
   it("remembers when the user never wants save offers for a site", async () => {

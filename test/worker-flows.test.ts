@@ -1,9 +1,11 @@
 import { extensionId, extensionUrl, fakeChrome } from "./fakeChrome";
 import type { PageCommand } from "../src/shared/messages";
 import { defaultSettings, type Settings } from "../src/shared/types";
+import { loginPassword, openVault, vaultRoutes, wrappedVaultKey } from "./fakeVault";
 
 // The service worker's remaining flows end to end: one-time codes, lock and unlock, sign-out, the context menu,
-// the badge, the keyboard shortcut and locking on idle. The Quark is a small in-memory server behind fetch.
+// the badge, the keyboard shortcut and locking on idle. The Quark is a small in-memory server behind fetch that
+// holds only the wrapped vault key and ciphertext (fakeVault.ts).
 
 const connection = { server: "https://quark.local", token: "secret-token" };
 const popup: chrome.runtime.MessageSender = { id: extensionId, url: `${extensionUrl}popup.html` };
@@ -18,80 +20,52 @@ const base32 = (bytes: Uint8Array): string => {
 const rfcSecret = base32(new TextEncoder().encode("1234567890".repeat(2)));
 
 const entries = [
-  { id: 1, name: "GitHub", url: "https://github.com/login", urlHost: "github.com", username: "octocat", password: "gh-secret", totpSecret: rfcSecret },
-  { id: 2, name: "GitLab", url: "https://gitlab.com/users/sign_in", urlHost: "gitlab.com", username: "tanuki", password: "gl-secret", totpSecret: "" },
-  { id: 3, name: "Forum one", url: "https://forum.example/login", urlHost: "forum.example", username: "a", password: "f1-secret", totpSecret: "" },
-  { id: 4, name: "Forum two", url: "https://forum.example/login", urlHost: "forum.example", username: "b", password: "f2-secret", totpSecret: "" },
-].map((entry) => ({ ...entry, folderId: null, createdAt: "2024-01-01", updatedAt: "2024-01-01" }));
+  { id: 1, name: "GitHub", url: "https://github.com/login", username: "octocat", password: "gh-secret", totpSecret: rfcSecret },
+  { id: 2, name: "GitLab", url: "https://gitlab.com/users/sign_in", username: "tanuki", password: "gl-secret", totpSecret: "" },
+  { id: 3, name: "Forum one", url: "https://forum.example/login", username: "a", password: "f1-secret", totpSecret: "" },
+  { id: 4, name: "Forum two", url: "https://forum.example/login", username: "b", password: "f2-secret", totpSecret: "" },
+];
 
 type Call = Readonly<{ method: string; path: string; body: unknown }>;
-
-type GenerateBody = Readonly<{ length: number; lowercase: boolean; uppercase: boolean; digits: boolean; symbols: boolean }>;
-
-// One character of each requested class in turn, so a draw always has every class it was asked for.
-const generatedFor = (body: GenerateBody): string => {
-  const chars = [body.lowercase && "a", body.uppercase && "A", body.digits && "2", body.symbols && "!"].filter((char) => char !== false);
-  return Array.from({ length: body.length }, (_, index) => chars[index % chars.length]).join("");
-};
 
 const json = (status: number, body: unknown = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 const quark = () => {
-  const server = { locked: false, signedIn: true, masterPassword: "correct horse", calls: [] as Call[] };
+  const server = { signedIn: true, calls: [] as Call[] };
+  const vault = vaultRoutes(entries);
   const fetchFn = (input: string, init?: RequestInit): Promise<Response> => {
     const url = new URL(input);
     const path = url.pathname.replace(/^\/api\/v0/, "");
     const method = init?.method ?? "GET";
     const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
     server.calls.push({ method, path, body });
+    if (method === "GET" && path === "/auth/salt") {
+      return Promise.resolve(json(200, { salt: wrappedVaultKey.saltPw, legacy: false, legacyRecovery: false }));
+    }
+    if (method === "POST" && path === "/auth/login") {
+      server.signedIn = true;
+      return Promise.resolve(json(200, { token: connection.token }));
+    }
     const auth = (init?.headers as Record<string, string> | undefined)?.["Authorization"];
     if (!server.signedIn || auth !== `Bearer ${connection.token}`) {
       return Promise.resolve(json(401, { error: "authentication required" }));
     }
-    const lockedReply = () => json(423, { error: "vault is locked: idle" });
     const route = `${method} ${path}`;
-    if (route === "GET /vault/status") {
-      return Promise.resolve(json(200, { initialized: true, locked: server.locked, deviceConnected: true, autoLockSeconds: 900, lockReason: "" }));
-    }
-    if (route === "POST /vault/unlock") {
-      if ((body as { masterPassword: string }).masterPassword !== server.masterPassword) {
-        return Promise.resolve(json(401, { error: "wrong master password" }));
-      }
-      server.locked = false;
-      return Promise.resolve(json(200));
-    }
-    if (route === "POST /vault/lock") {
-      server.locked = true;
-      return Promise.resolve(json(200));
-    }
     if (route === "POST /auth/logout") {
       server.signedIn = false;
       return Promise.resolve(json(200));
     }
-    if (server.locked) {
-      return Promise.resolve(lockedReply());
-    }
-    if (route === "GET /vault/entries") {
-      return Promise.resolve(json(200, { entries: entries.map(({ id, name, urlHost, folderId, createdAt, updatedAt }) => ({ id, name, urlHost, folderId, createdAt, updatedAt })) }));
-    }
-    const one = /^\/vault\/entries\/(\d+)$/.exec(path);
-    if (method === "GET" && one !== null) {
-      const found = entries.find((entry) => entry.id === Number(one[1]));
-      return Promise.resolve(found === undefined ? json(404, { error: "not found" }) : json(200, found));
-    }
-    if (route === "POST /vault/generate") {
-      return Promise.resolve(json(200, { password: generatedFor(body as GenerateBody) }));
-    }
-    return Promise.resolve(json(404, { error: "no route" }));
+    return Promise.resolve(vault.handle(method, path, body) ?? json(404, { error: "no route" }));
   };
-  return { server, fetchFn };
+  return { server, vault, fetchFn };
 };
 
 type Sent = Readonly<{ tab: number; message: PageCommand; options: { frameId?: number } | undefined }>;
 
 let fake: ReturnType<typeof fakeChrome>;
 let server: ReturnType<typeof quark>["server"];
+let vault: ReturnType<typeof quark>["vault"];
 let sent: Sent[];
 let frameReply: (message: PageCommand) => unknown;
 let topUrl: string;
@@ -151,9 +125,11 @@ const settle = async (): Promise<void> => {
 const start = async ({ signedIn = true, settings = defaultSettings }: { signedIn?: boolean; settings?: Settings } = {}) => {
   const fakeQuark = quark();
   server = fakeQuark.server;
+  vault = fakeQuark.vault;
   const { saveConnection, saveSettings } = await import("../src/background/storage");
   if (signedIn) {
     await saveConnection(connection, false);
+    await openVault(fake.chrome.storage.session, connection.server);
   }
   await saveSettings(settings);
   vi.stubGlobal("fetch", vi.fn(fakeQuark.fetchFn));
@@ -168,6 +144,9 @@ const frame = (url: string, frameId: number): chrome.runtime.MessageSender => ({
   tab: { id: tabId, url } as chrome.tabs.Tab,
   frameId,
 });
+
+const lockHere = () => fake.chrome.storage.session.remove("vault");
+const isOpenHere = () => fake.chrome.storage.session.items.has("vault");
 
 const calls = (method: string, path: string) => server.calls.filter((call) => call.method === method && call.path === path);
 const fired = <T extends unknown[]>(event: { listeners: unknown[] }, ...args: T): void =>
@@ -226,64 +205,99 @@ describe("one-time codes", () => {
 
   it("passes on a locked vault", async () => {
     await start();
-    server.locked = true;
+    await lockHere();
     expect(await fake.send({ type: "otp", entryId: 1 }, popup)).toMatchObject({ ok: false, error: { kind: "locked" } });
   });
 
-  // #103: the popup offers "Copy one-time code" in the full list only where an entry may have one.
-  it("tells the popup which listed entries have a code, once it has looked them up", async () => {
+  // #103: the popup offers "Copy one-time code" in the full list only where an entry has one.
+  it("tells the popup which listed entries have a code, and nothing of the secrets", async () => {
     await start();
-    const hasTotp = async (): Promise<Record<string, boolean | undefined>> => {
-      const reply = (await fake.send({ type: "entries" }, popup)) as { ok: true; value: { name: string; hasTotp?: boolean }[] };
-      return Object.fromEntries(reply.value.map((entry) => [entry.name, entry.hasTotp]));
-    };
-    expect(await hasTotp()).toEqual({ GitHub: undefined, GitLab: undefined, "Forum one": undefined, "Forum two": undefined });
-    await fake.send({ type: "matches", pageUrl: "https://github.com/login" }, popup);
-    await fake.send({ type: "otp", entryId: 2 }, popup);
-    expect(await hasTotp()).toEqual({ GitHub: true, GitLab: false, "Forum one": undefined, "Forum two": undefined });
+    const reply = (await fake.send({ type: "entries" }, popup)) as { ok: true; value: { name: string; hasTotp?: boolean }[] };
+    expect(Object.fromEntries(reply.value.map((entry) => [entry.name, entry.hasTotp]))).toEqual({
+      GitHub: true,
+      GitLab: false,
+      "Forum one": false,
+      "Forum two": false,
+    });
+    expect(JSON.stringify(reply)).not.toMatch(/gh-secret|gl-secret|f1-secret|f2-secret|GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ/);
   });
 });
 
 describe("locking and unlocking", () => {
-  it("unlocks with the master password and reports the new state", async () => {
+  it("unlocks with the login password on the device and reports the new state", async () => {
     await start();
-    server.locked = true;
-    expect(await fake.send({ type: "unlock", masterPassword: "correct horse" }, popup)).toEqual({
+    await lockHere();
+    expect(await fake.send({ type: "unlock", password: loginPassword }, popup)).toEqual({
       ok: true,
       value: { kind: "unlocked", server: connection.server, autoLockSeconds: 900 },
     });
-    expect(calls("POST", "/vault/unlock").map((call) => call.body)).toEqual([{ masterPassword: "correct horse" }]);
+    expect(server.calls.map((call) => `${call.method} ${call.path}`)).toEqual(["GET /vault/key"]);
+    expect(JSON.stringify(server.calls)).not.toContain(loginPassword);
+    expect(await fake.send({ type: "reveal", entryId: 2 }, popup)).toEqual({ ok: true, value: { username: "tanuki", password: "gl-secret" } });
   });
 
-  it("reports a wrong master password and stays locked", async () => {
+  it("reports a wrong password and stays locked", async () => {
     await start();
-    server.locked = true;
-    expect(await fake.send({ type: "unlock", masterPassword: "wrong" }, popup)).toEqual({
+    await lockHere();
+    expect(await fake.send({ type: "unlock", password: "wrong" }, popup)).toEqual({
       ok: false,
-      error: { kind: "badMasterPassword" },
+      error: { kind: "wrongPassword" },
     });
-    expect(server.locked).toBe(true);
+    expect(isOpenHere()).toBe(false);
+    expect(await fake.send({ type: "state" }, popup)).toEqual({ kind: "locked", server: connection.server });
+  });
+
+  it("says when the account has no vault to unlock", async () => {
+    await start();
+    await lockHere();
+    vault.state.hasVault = false;
+    expect(await fake.send({ type: "unlock", password: loginPassword }, popup)).toEqual({ ok: false, error: { kind: "notInitialized" } });
+    expect(await fake.send({ type: "state" }, popup)).toEqual({ kind: "notInitialized", server: connection.server });
   });
 
   it("refuses unlock from a web page", async () => {
     await start();
-    server.locked = true;
-    expect(fake.send({ type: "unlock", masterPassword: "correct horse" }, frame("https://github.com/", 0))).toBeUndefined();
+    await lockHere();
+    expect(fake.send({ type: "unlock", password: loginPassword }, frame("https://github.com/", 0))).toBeUndefined();
     await settle();
-    expect(calls("POST", "/vault/unlock")).toEqual([]);
+    expect(server.calls).toEqual([]);
+  });
+
+  it("locks itself after 15 minutes unused, and a user's action restarts the count", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(0);
+    await start();
+    vi.setSystemTime(14 * 60_000);
+    expect(await fake.send({ type: "entries" }, popup)).toMatchObject({ ok: true });
+    vi.setSystemTime(28 * 60_000);
+    // A page asking what matches it doesn't count as use.
+    expect(await fake.send({ type: "matches", pageUrl: "https://github.com/" }, frame("https://github.com/", 0))).toMatchObject({ ok: true });
+    vi.setSystemTime(29 * 60_000);
+    expect(await fake.send({ type: "reveal", entryId: 2 }, popup)).toEqual({ ok: false, error: { kind: "locked" } });
+    expect(isOpenHere()).toBe(false);
+    expect(await fake.send({ type: "state" }, popup)).toEqual({ kind: "locked", server: connection.server });
+  });
+
+  it("forgets the vault key when the vault is deleted from the app", async () => {
+    await start();
+    vault.state.hasVault = false;
+    await fake.send({ type: "captured", username: "new-user", password: "new-pass" }, frame("https://newsite.example/login", 0));
+    expect(await fake.send({ type: "resolveSave", action: "save", tabId }, popup)).toEqual({ ok: false, error: { kind: "notInitialized" } });
+    expect(isOpenHere()).toBe(false);
   });
 
   it("locks the vault and forgets the cached logins", async () => {
     await start();
     expect(await fake.send({ type: "entries" }, popup)).toMatchObject({ ok: true });
     expect(await fake.send({ type: "entries" }, popup)).toMatchObject({ ok: true });
-    expect(calls("GET", "/vault/entries")).toHaveLength(1);
+    expect(calls("GET", "/vault/items")).toHaveLength(1);
     expect(await fake.send({ type: "lock" }, popup)).toEqual({
       ok: true,
-      value: { kind: "locked", server: connection.server, reason: "" },
+      value: { kind: "locked", server: connection.server },
     });
+    expect(isOpenHere()).toBe(false);
     expect(await fake.send({ type: "entries" }, popup)).toMatchObject({ ok: false, error: { kind: "locked" } });
-    expect(calls("GET", "/vault/entries")).toHaveLength(2);
+    expect(calls("GET", "/vault/items")).toHaveLength(1);
   });
 
   it("drops the connection when the Quark says the session is gone", async () => {
@@ -301,6 +315,7 @@ describe("locking and unlocking", () => {
     expect(await fake.send({ type: "signOut" }, popup)).toEqual({ ok: true, value: { kind: "signedOut", server: connection.server } });
     expect(calls("POST", "/auth/logout")).toHaveLength(1);
     expect(fake.chrome.storage.session.items.has("connection")).toBe(false);
+    expect(isOpenHere()).toBe(false);
   });
 
   it("reveals a login to the popup", async () => {
@@ -327,28 +342,28 @@ describe("locking on idle", () => {
     await start();
     fired(fake.chrome.idle.onStateChanged, "locked");
     await settle();
-    expect(calls("POST", "/vault/lock")).toHaveLength(1);
+    expect(isOpenHere()).toBe(false);
   });
 
   it("locks on idle only when the user asked for it", async () => {
     await start({ settings: { ...defaultSettings, lockOnIdle: false } });
     fired(fake.chrome.idle.onStateChanged, "idle");
     await settle();
-    expect(calls("POST", "/vault/lock")).toEqual([]);
+    expect(isOpenHere()).toBe(true);
   });
 
   it("locks on idle when asked to", async () => {
     await start({ settings: { ...defaultSettings, lockOnIdle: true } });
     fired(fake.chrome.idle.onStateChanged, "idle");
     await settle();
-    expect(calls("POST", "/vault/lock")).toHaveLength(1);
+    expect(isOpenHere()).toBe(false);
   });
 
   it("does nothing when the user comes back", async () => {
     await start({ settings: { ...defaultSettings, lockOnIdle: true } });
     fired(fake.chrome.idle.onStateChanged, "active");
     await settle();
-    expect(calls("POST", "/vault/lock")).toEqual([]);
+    expect(isOpenHere()).toBe(true);
   });
 
   it("doesn't call the Quark when signed out", async () => {
@@ -433,19 +448,15 @@ describe("the context menu", () => {
     expect(JSON.stringify(sent)).not.toContain("gh-secret");
   });
 
-  it("fills a generated password into the clicked tab", async () => {
+  it("fills a password generated on the device into the clicked tab, even while locked", async () => {
     await start();
+    await lockHere();
     fired(fake.chrome.contextMenus.onClicked, { menuItemId: "generate" }, { id: tabId });
     await settle();
-    expect(sent.map((record) => record.message)).toEqual([{ type: "fillGenerated", password: "aA2!".repeat(5) }]);
-  });
-
-  it("sends nothing when generating fails", async () => {
-    await start();
-    server.locked = true;
-    fired(fake.chrome.contextMenus.onClicked, { menuItemId: "generate" }, { id: tabId });
-    await settle();
-    expect(sent).toEqual([]);
+    const [message] = sent.map((record) => record.message);
+    expect(message).toMatchObject({ type: "fillGenerated" });
+    expect((message as { password: string }).password).toMatch(/^(?=.*[a-z])(?=.*[A-Z])(?=.*[2-9])(?=.*[^a-zA-Z0-9]).{20}$/);
+    expect(server.calls).toEqual([]);
   });
 
   it("ignores clicks without a tab or on the placeholder", async () => {
@@ -464,18 +475,23 @@ describe("generating a password for a page", () => {
     [4, 4],
     [16, 16],
     [500, 64],
-  ])("asks the Quark for %i characters and gets %i", async (length, clamped) => {
+  ])("draws %i characters on the device and gets %i", async (length, clamped) => {
     await start();
-    expect(await fake.send({ type: "generateForPage", length, classes: every }, frame("https://forum.example/join", 0))).toEqual({
-      ok: true,
-      value: "aA2!".repeat(16).slice(0, clamped),
-    });
+    const reply = (await fake.send({ type: "generateForPage", length, classes: every }, frame("https://forum.example/join", 0))) as {
+      ok: true;
+      value: string;
+    };
+    expect(reply.value).toHaveLength(clamped);
+    expect(server.calls).toEqual([]);
   });
 
-  it("asks the Quark for only the classes the field allows", async () => {
+  it("draws only the classes the field allows", async () => {
     await start();
-    const reply = await fake.send({ type: "generateForPage", length: 8, classes: ["lower", "digit"] }, frame("https://forum.example/join", 0));
-    expect(reply).toEqual({ ok: true, value: "a2a2a2a2" });
+    const reply = (await fake.send({ type: "generateForPage", length: 8, classes: ["lower", "digit"] }, frame("https://forum.example/join", 0))) as {
+      ok: true;
+      value: string;
+    };
+    expect(reply.value).toMatch(/^(?=.*[a-z])(?=.*[2-9])[a-z2-9]{8}$/);
   });
 });
 
@@ -540,6 +556,29 @@ describe("the keyboard shortcut", () => {
 });
 
 describe("connecting", () => {
+  const signIn = (password: string) =>
+    fake.send({ type: "connect", server: connection.server, username: "member", password, persist: false, allowInsecure: false }, popup);
+
+  it("opens the vault with the password it signed in with, and sends neither", async () => {
+    await start({ signedIn: false });
+    expect(await signIn(loginPassword)).toEqual({ ok: true, value: { kind: "unlocked", server: connection.server, autoLockSeconds: 900 } });
+    expect(server.calls.map((call) => `${call.method} ${call.path}`)).toEqual(["GET /auth/salt", "POST /auth/login", "GET /vault/key"]);
+    expect(JSON.stringify(server.calls)).not.toContain(loginPassword);
+    expect(await fake.send({ type: "reveal", entryId: 1 }, popup)).toEqual({ ok: true, value: { username: "octocat", password: "gh-secret" } });
+  }, 60_000);
+
+  it("signs in but stays locked when the password doesn't open the vault", async () => {
+    await start({ signedIn: false });
+    expect(await signIn("an older password")).toEqual({ ok: true, value: { kind: "locked", server: connection.server } });
+    expect(isOpenHere()).toBe(false);
+  }, 60_000);
+
+  it("signs in to an account with no vault yet", async () => {
+    await start({ signedIn: false });
+    vault.state.hasVault = false;
+    expect(await signIn(loginPassword)).toEqual({ ok: true, value: { kind: "notInitialized", server: connection.server } });
+  }, 60_000);
+
   it("rejects an address that isn't one", async () => {
     await start({ signedIn: false });
     expect(

@@ -23,7 +23,7 @@ vi.mock("../src/shared/messages", () => ({
   },
 }));
 
-const entry = (id: number, name: string, urlHost: string): EntrySummary => ({ id, name, urlHost, folderId: null, createdAt: "", updatedAt: "" });
+const entry = (id: number, name: string, urlHost: string): EntrySummary => ({ id, name, urlHost, folderId: null, url: "", updatedAt: "" });
 const match = (id: number, name: string): SiteMatch => ({ ...entry(id, name, "example.com"), kind: "exact", where: "example.com", note: "" });
 
 const answer = (request: Request): unknown => {
@@ -189,15 +189,15 @@ describe("focus across re-renders", () => {
     expect([rebuilt.value, rebuilt.selectionStart]).toEqual(["work", 2]);
   });
 
-  it("goes back to the vault password when Unlock is gone mid-request", async () => {
-    const app = await openPopup({ kind: "locked", server: "https://quark.local", reason: "" });
-    expect(document.activeElement?.id).toBe("master");
-    app.querySelector<HTMLInputElement>("#master")!.value = "wrong";
+  it("goes back to the password when Unlock is gone mid-request", async () => {
+    const app = await openPopup({ kind: "locked", server: "https://quark.local" });
+    expect(document.activeElement?.id).toBe("unlock-password");
+    app.querySelector<HTMLInputElement>("#unlock-password")!.value = "wrong";
     const unlock = button(app, "Unlock");
     unlock.focus();
     unlock.click();
     await vi.waitFor(() => expect(app.querySelector(".error-box")).not.toBeNull());
-    expect(document.activeElement?.id).toBe("master");
+    expect(document.activeElement?.id).toBe("unlock-password");
   });
 
   it("moves to the new screen's heading when the control that had focus is gone", async () => {

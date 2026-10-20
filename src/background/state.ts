@@ -1,29 +1,18 @@
-import type { ApiError, Result, VaultState, VaultStatus } from "../shared/types";
+import type { ApiError, Result, VaultState } from "../shared/types";
+import { autoLockMs } from "./vault";
 
-export const deriveState = (
-  server: string,
-  hasToken: boolean,
-  status: Result<VaultStatus> | null,
-): VaultState => {
+// `vault`: whether this browser holds the vault key, or why the Quark couldn't say there is one to unlock.
+export const deriveState = (server: string, hasToken: boolean, vault: Result<boolean> | null): VaultState => {
   if (server === "") {
     return { kind: "disconnected" };
   }
-  if (!hasToken || status === null) {
+  if (!hasToken || vault === null) {
     return { kind: "signedOut", server };
   }
-  if (!status.ok) {
-    return stateFromError(server, status.error);
+  if (!vault.ok) {
+    return stateFromError(server, vault.error);
   }
-  const { initialized, locked, deviceConnected, autoLockSeconds, lockReason } = status.value;
-  if (!deviceConnected) {
-    return { kind: "driveDisconnected", server };
-  }
-  if (!initialized) {
-    return { kind: "notInitialized", server };
-  }
-  return locked
-    ? { kind: "locked", server, reason: lockReason ?? "" }
-    : { kind: "unlocked", server, autoLockSeconds };
+  return vault.value ? { kind: "unlocked", server, autoLockSeconds: autoLockMs / 1000 } : { kind: "locked", server };
 };
 
 export const stateFromError = (server: string, error: ApiError): VaultState => {
@@ -32,22 +21,17 @@ export const stateFromError = (server: string, error: ApiError): VaultState => {
     case "badCredentials":
     case "accountRefused":
       return { kind: "signedOut", server };
-    case "notAdmin":
-      return { kind: "notAdmin", server };
     case "notInitialized":
       return { kind: "notInitialized", server };
-    case "driveDisconnected":
-      return { kind: "driveDisconnected", server };
-    case "locked":
-      return { kind: "locked", server, reason: error.reason };
     case "network":
       return { kind: "unreachable", server, message: error.message };
-    case "badMasterPassword":
+    case "locked":
+    case "wrongPassword":
     case "rateLimited":
     case "notFound":
     case "refused":
     case "server":
-      return { kind: "locked", server, reason: "" };
+      return { kind: "locked", server };
   }
 };
 

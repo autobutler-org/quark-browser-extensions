@@ -22,13 +22,17 @@ and nowhere else. Those requests are how it does its job:
   once, expires after five minutes, and must be given again after a failed
   attempt. The extension refuses this over an unencrypted connection other than
   to your own computer, or after it has seen that account sign in with a key.
-- **Unlocking:** your vault password, once, so your Quark can unlock the vault.
-- **Filling and copying:** requests for your vault's list of entries, and for one
-  entry's details when you fill or copy it.
-- **Saving:** when you click Save or Update on the save bar, the site's address,
-  the username and the password.
-- **Generating a password:** the length and kinds of characters you want.
-- **Locking and signing out:** the request to do so.
+- **Unlocking:** a request for your vault key, which your Quark keeps encrypted
+  under a key only your account password can derive. The extension decrypts it on
+  your device; your password is not sent.
+- **Filling and copying:** requests for your vault's items, which arrive
+  encrypted and are decrypted on your device.
+- **Saving:** when you click Save or Update on the save bar, the login encrypted
+  on your device. Your Quark never sees the site's address, the username or the
+  password in the clear.
+- **Signing out:** the request to do so.
+
+Passwords are generated and the vault is locked on your device, with no request.
 
 After sign-in, authenticated requests carry the session token your Quark issued.
 The session appears in your Quark under Settings › Sessions, where you can
@@ -47,12 +51,14 @@ login you choose to save.
 - The address of the last Quark you signed in to.
 - A record in the extension's IndexedDB of which accounts already sign in with a
   key, stored as one-way hashes, not names.
+- While your vault is unlocked, its key, in browser memory only. It is dropped
+  when the vault locks, after 15 minutes unused, or when the browser closes.
 - A single-use legacy-upgrade consent in browser memory. It contains the same
   kind of hash and a time, is valid for five minutes, and is removed when used
   or when the browser closes.
 
-It does not store your account password, your vault password, your decrypted
-logins or one-time-code secrets. When you sign in on a website, the username and
+It does not store your account password, your decrypted logins or
+one-time-code secrets. When you sign in on a website, the username and
 password you typed are held in memory for at most two minutes so the extension can
 offer to save them, then dropped.
 

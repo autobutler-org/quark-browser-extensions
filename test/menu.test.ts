@@ -6,7 +6,7 @@ const entry = (id: number, name: string, kind: MatchKind = "exact"): SiteMatch =
   name,
   urlHost: "example.com",
   folderId: null,
-  createdAt: "",
+  url: "",
   updatedAt: "",
   kind,
   where: kind === "otherPort" ? "example.com:8443" : "example.com",

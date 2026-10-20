@@ -45,7 +45,7 @@ const requests: { [K in Request["type"]]: Extract<Request, { type: K }> } = {
   state: { type: "state" },
   connect: { type: "connect", server: "quark.local", username: "u", password: "p", persist: false, allowInsecure: false },
   signOut: { type: "signOut" },
-  unlock: { type: "unlock", masterPassword: "m" },
+  unlock: { type: "unlock", password: "m" },
   lock: { type: "lock" },
   entries: { type: "entries" },
   matches: { type: "matches", pageUrl: "https://github.com/" },

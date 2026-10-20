@@ -21,7 +21,7 @@ test("signs in with the auth key, never the password, and keeps the token in ses
   await expect(popup.getByText("Invalid username or password.")).toBeVisible({ timeout: 30_000 });
 
   await connect(popup, quark, quark.seed.owner);
-  await expect(popup.getByRole("heading", { name: "Vault is locked" })).toBeVisible({ timeout: 30_000 });
+  await expect(popup.getByText("All entries · 2")).toBeVisible({ timeout: 30_000 });
 
   const wire = await quark.wire();
   expect(wire.map((request) => `${request.method} ${request.path}`)).toContain(
@@ -36,8 +36,8 @@ test("signs in with the auth key, never the password, and keeps the token in ses
   const stored = await storedConnection(worker);
   expect(stored.local).toBeUndefined();
   expect(stored.session?.server).toBe(quark.server);
-  const status = await quark.api.call("GET", "/vault/status", undefined, stored.session!.token);
-  expect(status.status).toBe(200);
+  const key = await quark.api.call("GET", "/vault/key", undefined, stored.session!.token);
+  expect(key.status).toBe(200);
 });
 
 test("a legacy account sends its password beside the key once, after the user confirms, which moves it to keys", async ({ popup, quark }) => {
@@ -53,9 +53,8 @@ test("a legacy account sends its password beside the key once, after the user co
   await confirm.check();
   await popup.fill("#password", legacy.password);
   await popup.click("button[type=submit]");
-  await expect(popup.getByRole("heading", { name: "Vault is locked" }).or(popup.getByText(/^All entries/))).toBeVisible({
-    timeout: 30_000,
-  });
+  // A fresh account has no vault until the Quark app sets one up.
+  await expect(popup.getByRole("heading", { name: /has no vault yet/ })).toBeVisible({ timeout: 30_000 });
 
   const sent = logins(await quark.wire());
   expect(sent).toHaveLength(1);
@@ -66,30 +65,36 @@ test("a legacy account sends its password beside the key once, after the user co
   expect((await quark.api.call("POST", "/auth/login", legacy)).status).toBe(426);
 });
 
-test("unlocks the vault and lists its entries; the master password is never stored", async ({ popup, quark, worker }) => {
-  await quark.api.expectOk(
-    quark.api.login(quark.seed.owner.username, quark.seed.owner.password).then((token) => quark.api.call("POST", "/vault/lock", undefined, token)),
-    "lock the vault",
-  );
+test("opens the vault on the device with the Quark password, which never leaves it, nor the vault key", async ({ popup, quark, worker }) => {
+  await quark.clearWire();
   await connect(popup, quark, quark.seed.owner);
-  await expect(popup.getByRole("heading", { name: "Vault is locked" })).toBeVisible({ timeout: 30_000 });
+  await expect(popup.getByText("All entries · 2")).toBeVisible({ timeout: 30_000 });
+  await popup.getByRole("button", { name: "Lock vault" }).click();
+  await expect(popup.getByRole("heading", { name: "Vault is locked" })).toBeVisible();
 
-  await popup.fill("#master", "not the master password");
+  await popup.fill("#unlock-password", "not the password");
   await popup.click("button[type=submit]");
-  await expect(popup.getByText("That password didn't unlock the vault.")).toBeVisible();
+  await expect(popup.getByText("That isn't this account's Quark password, so it didn't open the vault.")).toBeVisible({ timeout: 30_000 });
 
-  await popup.fill("#master", quark.seed.masterPassword);
+  await popup.fill("#unlock-password", quark.seed.owner.password);
   await popup.click("button[type=submit]");
-  await expect(popup.getByText("All entries · 2")).toBeVisible();
+  await expect(popup.getByText("All entries · 2")).toBeVisible({ timeout: 30_000 });
   await expect(popup.getByText("Local Test", { exact: true })).toBeVisible();
   await expect(popup.getByText("GitHub", { exact: true })).toBeVisible();
   await expect(popup.getByText("may also try to fill logins")).toBeVisible();
 
+  // Only ciphertext and the auth key cross the wire: no password, no vault key, no entry in the clear.
+  const wire = JSON.stringify(await quark.wire());
+  for (const secret of [quark.seed.owner.password, quark.seed.vaultKey, "s3cret", "Local Test"]) {
+    expect(wire).not.toContain(secret);
+  }
   const everything = await worker.evaluate(async () => ({
     session: await chrome.storage.session.get(null),
     local: await chrome.storage.local.get(null),
   }));
-  expect(JSON.stringify(everything)).not.toContain(quark.seed.masterPassword);
+  expect(JSON.stringify(everything)).not.toContain(quark.seed.owner.password);
+  // The vault key is held in session storage only, never in local storage.
+  expect(JSON.stringify(everything.local)).not.toContain(quark.seed.vaultKey);
 });
 
 test("signing out ends the session on the Quark and forgets the token", async ({ context, extensionId, popup, quark, worker }) => {
@@ -105,7 +110,7 @@ test("signing out ends the session on the Quark and forgets the token", async ({
     "POST /api/v0/auth/logout",
   );
   await expect.poll(() => storedConnection(worker)).toEqual({ session: undefined, local: undefined });
-  expect((await quark.api.call("GET", "/vault/status", undefined, token)).status).toBe(401);
+  expect((await quark.api.call("GET", "/vault/key", undefined, token)).status).toBe(401);
   await popup.reload();
   await expect(popup.getByRole("heading", { name: "Connect to your Quark" })).toBeVisible();
 });

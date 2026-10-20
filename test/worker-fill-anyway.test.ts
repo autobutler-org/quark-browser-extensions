@@ -1,3 +1,4 @@
+import { openVault, vaultFetch } from "./fakeVault";
 import { extensionId, extensionUrl, fakeChrome } from "./fakeChrome";
 import type { PageCommand } from "../src/shared/messages";
 import { defaultSettings } from "../src/shared/types";
@@ -19,9 +20,6 @@ const entry = {
   password: "hunter2-secret",
   totpSecret: "",
 };
-
-const json = (status: number, body: unknown = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 const frame = (url: string, frameId: number, tab = tabId): chrome.runtime.MessageSender => ({
   id: extensionId,
@@ -49,6 +47,7 @@ afterEach(() => {
 const setup = async (tabUrl: string | undefined, onFill: (sent: Sent) => Promise<unknown> = () => Promise.resolve(undefined)) => {
   const { saveConnection, saveSettings } = await import("../src/background/storage");
   await saveConnection(connection, false);
+  await openVault(fake.chrome.storage.session, connection.server);
   await saveSettings({ ...defaultSettings, autoSubmit: true });
   const sent: Sent[] = [];
   fake.chrome.tabs.get = (id: number) => Promise.resolve({ id, ...(tabUrl === undefined ? {} : { url: tabUrl }) } as chrome.tabs.Tab);
@@ -60,7 +59,7 @@ const setup = async (tabUrl: string | undefined, onFill: (sent: Sent) => Promise
     }
     return onFill(record);
   }) as typeof fake.chrome.tabs.sendMessage;
-  vi.stubGlobal("fetch", vi.fn((url: string) => Promise.resolve(url.endsWith("/vault/entries/1") ? json(200, entry) : json(200, {}))));
+  vi.stubGlobal("fetch", vi.fn(vaultFetch([entry])));
   const { main } = await import("../src/background/index");
   main();
   return sent;

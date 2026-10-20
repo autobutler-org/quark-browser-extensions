@@ -5,11 +5,15 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 
 ## What it does
 
-- **Connect**: sign in once with a Quark admin account. The extension gets an ordinary session token, so it shows up
+- **Connect**: sign in once with your Quark account; any account works, since each has its own vault. The extension
+  gets an ordinary session token, so it shows up
   in the Quark under Settings › Sessions and can be revoked there. If the Quark reports an old `legacy` account,
   the first attempt stops and asks before sending its password once to upgrade it to auth-key sign-in.
-- **Unlock**: type the vault password in the popup. Unlocking is server-side and household-wide, the same as unlocking
-  in the Quark app, and the Quark locks it on its own schedule. Chrome always locks it when the screen locks and can
+- **Unlock**: the vault is end-to-end encrypted, as in the Quark app (autobutler-org/quark#3456). The password you
+  sign in with also opens it: the extension derives a key from it, unwraps the vault key on the device and decrypts
+  your logins itself, so the Quark only ever stores ciphertext. Set the vault up in the Quark app first. After a lock,
+  the popup asks for the same password again. Locking forgets the key in this browser only. The vault locks after 15
+  minutes unused, like the app, and when the browser quits. Chrome also locks it when the screen locks and can
   optionally lock it after 5, 15 or 30 idle minutes. Firefox cannot detect a screen lock, so it always locks after
   the selected idle time (15 minutes by default).
 - **Fill**: on a page with a password field, a Quark button appears in the field when the vault has a login for that
@@ -46,9 +50,10 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 | Concern                  | How it is handled                                                                              |
 | ------------------------ | ---------------------------------------------------------------------------------------------- |
 | Account password         | Normally never sent: sign-in sends an auth key derived from it (Argon2id + HKDF, as the Quark app does) with the salt from `GET /api/v0/auth/salt`. If the Quark marks an account `legacy`, the attempt stops and the popup asks for consent before retrying with the password beside the key once. It refuses that upgrade over non-loopback HTTP and will not send the password again after a successful auth-key sign-in. See [docs/legacy-upgrade.md](docs/legacy-upgrade.md). Needs Quark v0.47.0+ |
-| Vault password           | Sent once to `POST /api/v0/vault/unlock`, never stored                                          |
+| Vault key                | Wrapped on the Quark under a key only the account password derives (Argon2id + HKDF `vault-wrap`, as the Quark app does). Unwrapped in the background worker and held in `chrome.storage.session` (memory, never `storage.local`, never sealed for "stay signed in") until the vault locks. Never sent anywhere. Needs a Quark with the per-account vault (autobutler-org/quark#3459) |
+| Vault items              | XChaCha20-Poly1305 ciphertext on the Quark. Decrypted and encrypted in the worker; a new or updated login goes back as ciphertext only |
 | Session token            | `chrome.storage.session` (memory, gone when the browser quits). With "stay signed in" it is also encrypted at rest under a non-extractable key in IndexedDB, never stored in plaintext. See [docs/security.md](docs/security.md) |
-| Decrypted entries        | Fetched one at a time on a click, passed straight to the page, never stored or cached          |
+| Decrypted entries        | Names and URLs are kept in worker memory for 30 seconds to match pages. A password or one-time code secret is decrypted from its item on a click, passed straight to the page, and never stored or cached |
 | Captured sign-ins        | Held in background memory per tab for at most two minutes, then dropped                        |
 | Which site gets a login  | The page must use the entry's saved scheme and port, and its host must equal the entry's host (ignoring `www.`) or be a subdomain within the same registrable domain. A public suffix (`co.uk`, `github.io`) is never a parent, and an IP address matches only itself. Checked in the worker and again in the page. A login inside an iframe fills only when the top page also matches |
 | Generated password       | Right-click **Generate password** sends it only to the frame you clicked, into the password field you are on, and its confirmation when that field is a new password. It is never broadcast to the other frames |
@@ -59,8 +64,8 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 | Page scripts             | Can't message the extension; the picker lives in a closed shadow root                          |
 | Permissions              | See [Permissions](#permissions) |
 
-Listing entries (`GET /api/v0/vault/entries`) returns names and hosts only, so the match count works while the vault
-is locked. More detail in [docs/security.md](docs/security.md).
+Pages are matched against the decrypted entries, so nothing matches, and no badge counts, while the vault is locked.
+Passwords are generated on the device. More detail in [docs/security.md](docs/security.md).
 
 ## Permissions
 
@@ -68,7 +73,7 @@ From the built manifests (`.output/*/manifest.json`):
 
 | Permission | Why |
 | --- | --- |
-| `storage` | Settings, the session token (`storage.session`) and the encrypted "stay signed in" copy. The Quark address is kept in IndexedDB, not here |
+| `storage` | Settings, the session token and the open vault key (`storage.session`), and the encrypted "stay signed in" copy of the token. The Quark address is kept in IndexedDB, not here |
 | `activeTab` | Reading the active tab's URL when you fill from the popup, shortcut or menu |
 | `idle` | Chrome locks on a screen lock and, optionally, after the selected idle time. Firefox always locks after the selected idle time because it cannot distinguish a locked screen |
 | `contextMenus` | The right-click **Quark Vault** menu on editable fields |
@@ -141,7 +146,8 @@ is no husky.
 The e2e tests in `e2e/` use [Playwright](https://playwright.dev/docs/chrome-extensions): each test launches Chromium
 with `.output/chrome-mv3` loaded in a fresh profile and drives the popup, the options page and test web pages. They
 run against a real Quark: `e2e/global-setup.ts` starts `quark serve --insecure` in a throwaway `HOME`, creates the
-owner and the vault through the API the way the Quark app does, and seeds a folder, two entries and a legacy account
+owner and its vault through the API the way the Quark app does, encrypting on the client, and seeds a folder, two
+entries and a legacy account
 (one from before auth keys). The tests cover sign-in with the auth key (salt, then key, never the password), the
 legacy account's one-time upgrade, unlocking, the entry list, filling (popup, inline picker, shortcut, frames,
 one-time codes, sign-up forms), saving and updating, locking and signing out. A proxy in front of the Quark records

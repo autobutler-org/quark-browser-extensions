@@ -23,7 +23,7 @@ vi.mock("../src/content/picker", () => ({
   },
 }));
 
-const entry: EntrySummary = { id: 7, name: "Example", urlHost: "localhost", folderId: null, createdAt: "", updatedAt: "" };
+const entry: EntrySummary = { id: 7, name: "Example", urlHost: "localhost", folderId: null, url: "", updatedAt: "" };
 
 // Each test loads the content script afresh; disconnect the earlier copies' observers and cancel the scans they
 // have queued, so they don't rescan the next test's page.

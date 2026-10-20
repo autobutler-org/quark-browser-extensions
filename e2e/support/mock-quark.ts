@@ -8,11 +8,11 @@ import type { Target } from "./quark.ts";
 // the extension and the seed call. It follows the real server where the
 // extension's behaviour depends on it, and the e2e contract test runs against
 // both: a raw password with no auth key is refused with 426 at setup and login,
-// a legacy account upgrades once with the password beside the key, the entry
-// list works while the vault is locked and an entry doesn't.
+// a legacy account upgrades once with the password beside the key, and each
+// account has its own vault of ciphertext the mock never opens (quark#3459).
 
 type Account = { salt: string; authKey: string | null; password: string | null };
-type Entry = Record<string, unknown> & { id: number };
+type Item = { id: number; owner: string; ciphertext: unknown; nonce: unknown; formatVersion: unknown; createdAt: string; updatedAt: string };
 
 const json = (res: http.ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
@@ -22,7 +22,7 @@ const json = (res: http.ServerResponse, status: number, body: unknown) => {
 // A request body as the mock reads it. The extension and the seed always send a
 // username; the rest is checked where it matters, as the real server does.
 type Body = Record<string, unknown> &
-  Readonly<{ username: string; authKey?: unknown; password?: unknown; masterPassword?: unknown; length?: number; name?: string }>;
+  Readonly<{ username: string; authKey?: unknown; password?: unknown }>;
 
 const readBody = (req: http.IncomingMessage): Promise<Body | null> =>
   new Promise((resolve) => {
@@ -38,22 +38,14 @@ const readBody = (req: http.IncomingMessage): Promise<Body | null> =>
   });
 
 const tooOld = { error: "This version of the app is too old for this Quark. Update the app to continue." };
-const hostOf = (url: unknown) => {
-  try {
-    return new URL(String(url)).hostname;
-  } catch {
-    return "";
-  }
-};
 
 export const startMockQuark = async (port?: number): Promise<Target> => {
   const unknownSalt = randomBytes(16).toString("base64");
   const accounts = new Map<string, Account>();
   const tokens = new Map<string, string>();
-  const entries = new Map<number, Entry>();
+  const keys = new Map<string, Record<string, unknown>>();
+  const items = new Map<number, Item>();
   let nextId = 1;
-  let master: string | null = null;
-  let locked = true;
 
   const issue = (username: string) => {
     const token = randomBytes(32).toString("hex");
@@ -104,75 +96,44 @@ export const startMockQuark = async (port?: number): Promise<Target> => {
       tokens.delete(token);
       return json(res, 200, { message: "Logged out" });
     }
-    if (path === "/vault/status") {
-      return json(res, 200, { initialized: master !== null, locked, autoLockSeconds: 300, storageDevice: "internal", deviceConnected: true });
-    }
-    if (path === "/vault/setup" && method === "POST") {
-      if (master !== null) return json(res, 400, { error: "vault already initialized" });
-      if (typeof body.masterPassword !== "string" || body.masterPassword.length < 8) {
-        return json(res, 400, { error: "master password must be at least 8 characters" });
-      }
-      master = body.masterPassword;
-      locked = false;
-      return json(res, 200, { initialized: true, locked: false });
-    }
-    if (path === "/vault/unlock" && method === "POST") {
-      if (master === null) return json(res, 400, { error: "vault has not been initialized" });
-      if (body.masterPassword !== master) return json(res, 401, { error: "incorrect master password" });
-      locked = false;
-      return json(res, 200, { locked: false });
-    }
-    if (path === "/vault/lock" && method === "POST") {
-      locked = true;
-      return json(res, 200, { locked: true });
-    }
-    if (path === "/vault/generate" && method === "POST") {
-      const length = Number(body.length ?? 20);
-      return json(res, 200, { password: randomBytes(length).toString("base64url").slice(0, length) });
-    }
-    if (path === "/vault/folders" && method === "POST") {
-      return json(res, 200, { id: 1, name: body.name, parentId: null, sortOrder: 0 });
-    }
-    if (path === "/vault/entries" && method === "GET") {
-      return json(res, 200, {
-        entries: [...entries.values()].map(({ id, name, urlHost, folderId, createdAt, updatedAt }) => ({
-          id, name, urlHost, folderId, createdAt, updatedAt,
-        })),
-      });
-    }
-    if (locked) return json(res, 423, { error: "vault is locked" });
+    const username = tokens.get(token)!;
     const now = new Date().toISOString();
-    const stored = (id: number, fields: Record<string, unknown>, createdAt = now): Entry => ({
-      id,
-      name: fields.name ?? "",
-      url: fields.url ?? "",
-      urlHost: hostOf(fields.url),
-      username: fields.username ?? "",
-      password: fields.password ?? "",
-      totpSecret: fields.totpSecret ?? "",
-      notes: fields.notes ?? "",
-      customFields: fields.customFields ?? [],
-      folderId: fields.folderId ?? null,
-      createdAt,
-      updatedAt: now,
-    });
-    if (path === "/vault/entries" && method === "POST") {
-      const entry = stored(nextId++, body);
-      entries.set(entry.id, entry);
-      return json(res, 200, entry);
+    if (path === "/vault/key" && method === "GET") {
+      const key = keys.get(username);
+      return key === undefined ? json(res, 404, { error: "no vault" }) : json(res, 200, key);
     }
-    const match = path.match(/^\/vault\/entries\/(\d+)$/);
-    const current = match ? entries.get(Number(match[1])) : undefined;
-    if (match && current === undefined) return json(res, 404, { error: "entry not found" });
-    if (current && method === "GET") return json(res, 200, current);
+    if (path === "/vault/key" && method === "PUT") {
+      if (body.password !== accounts.get(username)?.authKey) return json(res, 403, { error: "not the login password" });
+      if (keys.has(username)) return json(res, 409, { error: "vault exists" });
+      const { password: _, ...key } = body;
+      keys.set(username, { ...key, createdAt: now, updatedAt: now });
+      return json(res, 201, keys.get(username));
+    }
+    const sealed = (fields: Body) => ({ ciphertext: fields.ciphertext, nonce: fields.nonce, formatVersion: fields.formatVersion });
+    const shown = ({ owner: _, ...item }: Item) => item;
+    if (path === "/vault/items" && method === "GET") {
+      return json(res, 200, [...items.values()].filter((item) => item.owner === username).map(shown));
+    }
+    if (path === "/vault/items" && method === "POST") {
+      if (!keys.has(username)) return json(res, 409, { error: "no vault" });
+      const item: Item = { id: nextId++, owner: username, ...sealed(body), createdAt: now, updatedAt: now };
+      items.set(item.id, item);
+      return json(res, 201, shown(item));
+    }
+    const match = path.match(/^\/vault\/items\/(\d+)$/);
+    const current = match ? items.get(Number(match[1])) : undefined;
+    // Another account's item is as missing as one that never was.
+    if (match && current?.owner !== username) return json(res, 404, { error: "item not found" });
+    if (current && method === "GET") return json(res, 200, shown(current));
     if (current && method === "PUT") {
-      const entry = stored(current.id, body, current.createdAt as string);
-      entries.set(entry.id, entry);
-      return json(res, 200, entry);
+      const item: Item = { ...current, ...sealed(body), updatedAt: now };
+      items.set(item.id, item);
+      return json(res, 200, shown(item));
     }
     if (current && method === "DELETE") {
-      entries.delete(current.id);
-      return json(res, 200, { message: "Entry deleted" });
+      items.delete(current.id);
+      res.writeHead(204, { "Access-Control-Allow-Origin": "*" });
+      return res.end();
     }
     json(res, 404, { error: "not found" });
   };

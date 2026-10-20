@@ -1,3 +1,4 @@
+import { openVault, vaultFetch } from "./fakeVault";
 import { extensionId, extensionUrl, fakeChrome } from "./fakeChrome";
 
 const connection = { server: "https://quark.local", token: "secret-token" };
@@ -6,16 +7,12 @@ const tabId = 7;
 
 // One box running several services, as self-hosters do, plus a login elsewhere.
 const details = [
-  { id: 1, name: "Router", url: "http://localhost:8099/basic.html", urlHost: "localhost" },
-  { id: 2, name: "NAS", url: "http://localhost:8087/login", urlHost: "localhost" },
-  { id: 3, name: "Quark", url: "https://localhost:8087", urlHost: "localhost" },
-  { id: 4, name: "GitHub", url: "https://github.com", urlHost: "github.com" },
+  { id: 1, name: "Router", url: "http://localhost:8099/basic.html" },
+  { id: 2, name: "NAS", url: "http://localhost:8087/login" },
+  { id: 3, name: "Quark", url: "https://localhost:8087" },
+  { id: 4, name: "GitHub", url: "https://github.com" },
 ].map((entry) => ({ ...entry, username: `${entry.name}-user`, password: `${entry.name}-secret`, totpSecret: entry.id === 2 ? "JBSWY3DPEHPK3PXP" : "" }));
 
-const summaries = details.map(({ id, name, urlHost }) => ({ id, name, urlHost, folderId: null, createdAt: "", updatedAt: "v1" }));
-
-const json = (status: number, body: unknown = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 let fake: ReturnType<typeof fakeChrome>;
 
@@ -33,13 +30,8 @@ afterEach(() => {
 const startWorker = async () => {
   const { saveConnection } = await import("../src/background/storage");
   await saveConnection(connection, false);
-  const fetchSpy = vi.fn((url: string) => {
-    if (url.endsWith("/vault/entries")) {
-      return Promise.resolve(json(200, { entries: summaries }));
-    }
-    const detail = details.find((entry) => url.endsWith(`/vault/entries/${entry.id}`));
-    return Promise.resolve(detail === undefined ? json(404) : json(200, detail));
-  });
+  await openVault(fake.chrome.storage.session, connection.server);
+  const fetchSpy = vi.fn(vaultFetch(details));
   vi.stubGlobal("fetch", fetchSpy);
   const { main } = await import("../src/background/index");
   main();
@@ -53,8 +45,7 @@ const page = (url: string, frameId = 0): chrome.runtime.MessageSender => ({
   frameId,
 });
 
-const detailFetches = (fetchSpy: ReturnType<typeof vi.fn>): readonly string[] =>
-  fetchSpy.mock.calls.map(([url]) => String(url)).filter((url) => /\/vault\/entries\/\d+$/.test(url));
+const fetched = (fetchSpy: ReturnType<typeof vi.fn>): readonly string[] => fetchSpy.mock.calls.map(([url]) => String(url));
 
 describe("matching logins to the page by origin", () => {
   it("ranks the exact origin first and labels other ports and schemes", async () => {
@@ -83,13 +74,11 @@ describe("matching logins to the page by origin", () => {
     ]);
   });
 
-  it("looks up only the entries on the page's host, and only once", async () => {
+  it("matches from one decrypted list, fetching no entry on its own", async () => {
     const fetchSpy = await startWorker();
     await fake.send({ type: "matches", pageUrl: "http://localhost:8087/" }, popup);
     await fake.send({ type: "matches", pageUrl: "http://localhost:8099/" }, popup);
-    const fetched = detailFetches(fetchSpy);
-    expect(fetched).toHaveLength(3);
-    expect(fetched.some((url) => url.endsWith("/vault/entries/4"))).toBe(false);
+    expect(fetched(fetchSpy)).toEqual([`${connection.server}/api/v0/vault/items`]);
   });
 
   it("badges only the logins for this origin, never the fallbacks", async () => {

@@ -1,44 +1,13 @@
-import { fromBase64, type DeriveAuthKey, type UpgradeLedger } from "./authKey";
-import { deriveAuthKey } from "./deriveAuthKey";
+import { fromBase64, type DeriveKeys, type KdfCost, type UpgradeLedger } from "./authKey";
+import { deriveKeys } from "./deriveAuthKey";
 import { extensionTooOld, legacyAgain, legacyInsecure, legacyUpgradeNeeded, quarkTooOld } from "./errors";
 import { serverTransport } from "./host";
-import { charClasses, type CharClass } from "./password";
-import {
-  err,
-  ok,
-  type ApiError,
-  type Connection,
-  type EntryDetail,
-  type EntrySummary,
-  type Result,
-  type VaultStatus,
-} from "./types";
+import { err, ok, type ApiError, type Connection, type Result } from "./types";
+import type { SealedItem } from "./vaultCrypto";
 
 export type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 
 type Method = "GET" | "POST" | "PUT";
-
-export type NewEntry = Readonly<{
-  name: string;
-  url: string;
-  username: string;
-  password: string;
-}>;
-
-export const replacementBody = (current: unknown, password: string): Record<string, unknown> => {
-  const folderId = field(current, "folderId");
-  const customFields = field(current, "customFields");
-  return {
-    name: stringField(current, "name"),
-    url: stringField(current, "url"),
-    username: stringField(current, "username"),
-    password,
-    notes: stringField(current, "notes"),
-    totpSecret: stringField(current, "totpSecret"),
-    customFields: Array.isArray(customFields) ? customFields : [],
-    folderId: typeof folderId === "number" ? folderId : null,
-  };
-};
 
 type Request = Readonly<{
   method: Method;
@@ -47,8 +16,6 @@ type Request = Readonly<{
 }>;
 
 type Failure = Readonly<{ status: number; message: string; state: string }>;
-
-const authRequired = "authentication required";
 
 const readJson = async (response: Response): Promise<unknown> => {
   const text = await response.text();
@@ -74,18 +41,12 @@ export const toApiError = ({ status, message }: Failure): ApiError => {
   switch (status) {
     case 401:
       return { kind: "signedOut" };
-    case 403:
-      return { kind: "notAdmin" };
     case 404:
       return { kind: "notFound" };
-    case 423:
-      return { kind: "locked", reason: message.replace(/^vault is locked:?\s*/i, "") };
     case 426:
       return { kind: "refused", reason: extensionTooOld() };
     case 429:
       return { kind: "rateLimited" };
-    case 503:
-      return { kind: "driveDisconnected" };
     default:
       return { kind: "server", status, message };
   }
@@ -143,32 +104,35 @@ const normalizeError = (error: Failure | ApiError): ApiError => (isFailure(error
 const mapResult = <T>(result: Result<unknown, Failure | ApiError>, decode: (payload: unknown) => T): Result<T> =>
   result.ok ? ok(decode(result.value)) : err(normalizeError(result.error));
 
-const asEntrySummary = (value: unknown): EntrySummary => ({
+// GET /vault/key: the account's vault key, wrapped under its login password's vaultWrapKey. The phrase wrap beside
+// it is for the app's account recovery and isn't read here.
+export type WrappedKey = Readonly<{ wrapped: Uint8Array; salt: Uint8Array; cost: KdfCost }>;
+
+export type StoredItem = SealedItem & Readonly<{ id: number; updatedAt: string }>;
+
+const asWrappedKey = (value: unknown): WrappedKey | null => {
+  const wrapped = fromBase64(stringField(value, "wrappedByPassword"));
+  const salt = fromBase64(stringField(value, "saltPw"));
+  const params = field(value, "kdfParams");
+  const [opsLimit, memLimit] = [field(params, "opsLimit"), field(params, "memLimit")];
+  return wrapped === null || salt === null || typeof opsLimit !== "number" || typeof memLimit !== "number"
+    ? null
+    : { wrapped, salt, cost: { opsLimit, memLimit } };
+};
+
+const asStoredItem = (value: unknown): StoredItem => ({
   id: Number(field(value, "id")),
-  name: stringField(value, "name"),
-  urlHost: stringField(value, "urlHost"),
-  folderId: typeof field(value, "folderId") === "number" ? (field(value, "folderId") as number) : null,
-  createdAt: stringField(value, "createdAt"),
+  ciphertext: stringField(value, "ciphertext"),
+  nonce: stringField(value, "nonce"),
+  formatVersion: Number(field(value, "formatVersion")),
   updatedAt: stringField(value, "updatedAt"),
 });
 
-const asEntryDetail = (value: unknown): EntryDetail => ({
-  id: Number(field(value, "id")),
-  name: stringField(value, "name"),
-  url: stringField(value, "url"),
-  urlHost: stringField(value, "urlHost"),
-  username: stringField(value, "username"),
-  password: stringField(value, "password"),
-  totpSecret: stringField(value, "totpSecret"),
-});
+const itemPath = (id: number): string => `/vault/items/${encodeURIComponent(String(id))}`;
 
-const asStatus = (value: unknown): VaultStatus => ({
-  initialized: field(value, "initialized") === true,
-  locked: field(value, "locked") !== false,
-  autoLockSeconds: Number(field(value, "autoLockSeconds") ?? 0),
-  deviceConnected: field(value, "deviceConnected") !== false,
-  lockReason: stringField(value, "lockReason"),
-});
+// What a sign-in leaves the worker: the session token, and the vault wrap key the same Argon2id run derived, which
+// opens the vault right away when it was wrapped over the same salt and cost (src/background/vault.ts).
+export type SignedIn = Readonly<{ token: string; salt: Uint8Array; vaultWrapKey: Uint8Array }>;
 
 type AuthSalt = Readonly<{ salt: Uint8Array; legacy: boolean }>;
 
@@ -182,7 +146,7 @@ const asAuthSalt = (payload: unknown): AuthSalt | null => {
 };
 
 // The worker passes the ledger in src/background/keyedAccounts.ts.
-export const createApi = (fetchFn: FetchFn, ledger: UpgradeLedger, deriveKey: DeriveAuthKey = deriveAuthKey) => {
+export const createApi = (fetchFn: FetchFn, ledger: UpgradeLedger, derive: DeriveKeys = deriveKeys) => {
   const request = send(fetchFn);
   const authed = (connection: Connection, req: Request) => request(connection.server, connection.token, req);
 
@@ -196,8 +160,8 @@ export const createApi = (fetchFn: FetchFn, ledger: UpgradeLedger, deriveKey: De
     return next;
   };
 
-  const signIn = async (server: string, username: string, password: string, salt: AuthSalt): Promise<Result<string>> => {
-    const authKey = await deriveKey(password, salt.salt);
+  const signIn = async (server: string, username: string, password: string, salt: AuthSalt): Promise<Result<SignedIn>> => {
+    const { authKey, vaultWrapKey } = await derive(password, salt.salt);
     const result = await request(server, null, {
       method: "POST",
       path: "/auth/login",
@@ -209,7 +173,7 @@ export const createApi = (fetchFn: FetchFn, ledger: UpgradeLedger, deriveKey: De
         return err({ kind: "server", status: 200, message: "no token in response" });
       }
       await ledger.markKeyed(server, username);
-      return ok(token);
+      return ok({ token, salt: salt.salt, vaultWrapKey });
     }
     if (isFailure(result.error) && result.error.status === 401) {
       return err({ kind: "badCredentials" });
@@ -220,7 +184,7 @@ export const createApi = (fetchFn: FetchFn, ledger: UpgradeLedger, deriveKey: De
     return err(normalizeError(result.error));
   };
 
-  const upgrade = async (server: string, username: string, password: string, salt: AuthSalt): Promise<Result<string>> => {
+  const upgrade = async (server: string, username: string, password: string, salt: AuthSalt): Promise<Result<SignedIn>> => {
     if (await ledger.hasKey(server, username)) {
       return err({ kind: "refused", reason: legacyAgain(server) });
     }
@@ -238,7 +202,7 @@ export const createApi = (fetchFn: FetchFn, ledger: UpgradeLedger, deriveKey: De
     // legacy, so that password goes out only over https or loopback, only on
     // the user's consent from the connect form, and never for an account this
     // extension has seen sign in with a key (docs/legacy-upgrade.md).
-    login: async (server: string, username: string, password: string): Promise<Result<string>> => {
+    login: async (server: string, username: string, password: string): Promise<Result<SignedIn>> => {
       const saltReply = await request(server, null, {
         method: "GET",
         path: `/auth/salt?${new URLSearchParams({ username })}`,
@@ -262,76 +226,35 @@ export const createApi = (fetchFn: FetchFn, ledger: UpgradeLedger, deriveKey: De
     logout: async (connection: Connection): Promise<Result<null>> =>
       mapResult(await authed(connection, { method: "POST", path: "/auth/logout" }), () => null),
 
-    status: async (connection: Connection): Promise<Result<VaultStatus>> =>
-      mapResult(await authed(connection, { method: "GET", path: "/vault/status" }), asStatus),
-
-    unlock: async (connection: Connection, masterPassword: string): Promise<Result<null>> => {
-      const result = await authed(connection, {
-        method: "POST",
-        path: "/vault/unlock",
-        body: { masterPassword },
-      });
-      if (!result.ok && isFailure(result.error)) {
-        const { status, message } = result.error;
-        if (status === 401 && message !== authRequired) {
-          return err({ kind: "badMasterPassword" });
-        }
-        if (status === 400 && /not (been )?initiali[sz]ed/i.test(message)) {
-          return err({ kind: "notInitialized" });
-        }
+    // The per-account vault (autobutler-org/quark#3459). The Quark holds only the wrapped key and ciphertext; every
+    // route answers for the signed-in account alone, and another account's item is a 404 like a missing one.
+    vaultKey: async (connection: Connection): Promise<Result<WrappedKey>> => {
+      const result = await authed(connection, { method: "GET", path: "/vault/key" });
+      if (!result.ok) {
+        return isFailure(result.error) && result.error.status === 404 ? err({ kind: "notInitialized" }) : err(normalizeError(result.error));
       }
-      return mapResult(result, () => null);
+      const key = asWrappedKey(result.value);
+      return key === null ? err({ kind: "server", status: 200, message: "unreadable vault key" }) : ok(key);
     },
 
-    lock: async (connection: Connection): Promise<Result<null>> =>
-      mapResult(await authed(connection, { method: "POST", path: "/vault/lock" }), () => null),
-
-    listEntries: async (connection: Connection): Promise<Result<readonly EntrySummary[]>> =>
-      mapResult(await authed(connection, { method: "GET", path: "/vault/entries" }), (payload) => {
-        const entries = field(payload, "entries");
-        return Array.isArray(entries) ? entries.map(asEntrySummary) : [];
-      }),
-
-    getEntry: async (connection: Connection, id: number): Promise<Result<EntryDetail>> =>
-      mapResult(
-        await authed(connection, { method: "GET", path: `/vault/entries/${encodeURIComponent(String(id))}` }),
-        asEntryDetail,
+    listItems: async (connection: Connection): Promise<Result<readonly StoredItem[]>> =>
+      mapResult(await authed(connection, { method: "GET", path: "/vault/items" }), (payload) =>
+        Array.isArray(payload) ? payload.map(asStoredItem) : [],
       ),
 
-    createEntry: async (connection: Connection, entry: NewEntry): Promise<Result<number>> =>
-      mapResult(
-        await authed(connection, { method: "POST", path: "/vault/entries", body: entry }),
-        (payload) => Number(field(payload, "id")),
-      ),
+    getItem: async (connection: Connection, id: number): Promise<Result<StoredItem>> =>
+      mapResult(await authed(connection, { method: "GET", path: itemPath(id) }), asStoredItem),
 
-    replacePassword: async (connection: Connection, id: number, password: string): Promise<Result<null>> => {
-      const path = `/vault/entries/${encodeURIComponent(String(id))}`;
-      const current = await authed(connection, { method: "GET", path });
-      if (!current.ok) {
-        return err(normalizeError(current.error));
-      }
-      return mapResult(
-        await authed(connection, { method: "PUT", path, body: replacementBody(current.value, password) }),
-        () => null,
-      );
+    createItem: async (connection: Connection, item: SealedItem): Promise<Result<number>> => {
+      const result = await authed(connection, { method: "POST", path: "/vault/items", body: item });
+      // 409: the account has no vault to add to, as when it was deleted from the app since this one was unlocked.
+      return !result.ok && isFailure(result.error) && result.error.status === 409
+        ? err({ kind: "notInitialized" })
+        : mapResult(result, (payload) => Number(field(payload, "id")));
     },
 
-    generate: async (connection: Connection, length = 20, classes: readonly CharClass[] = charClasses): Promise<Result<string>> =>
-      mapResult(
-        await authed(connection, {
-          method: "POST",
-          path: "/vault/generate",
-          body: {
-            length,
-            uppercase: classes.includes("upper"),
-            lowercase: classes.includes("lower"),
-            digits: classes.includes("digit"),
-            symbols: classes.includes("symbol"),
-            avoidAmbiguous: true,
-          },
-        }),
-        (payload) => stringField(payload, "password"),
-      ),
+    updateItem: async (connection: Connection, id: number, item: SealedItem): Promise<Result<null>> =>
+      mapResult(await authed(connection, { method: "PUT", path: itemPath(id), body: item }), () => null),
   };
 };
 

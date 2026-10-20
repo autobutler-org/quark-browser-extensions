@@ -4,7 +4,7 @@ What the extension does to keep your Quark session and vault entries away from w
 
 ## Plain http Quark addresses
 
-When you sign in, the extension sends your username and auth key to your Quark. After that it sends a bearer token with every request, the vault password when you unlock, and every decrypted entry it fills. Over plain `http://`, anyone on the network path can read all of that.
+When you sign in, the extension sends your username and auth key to your Quark. After that it sends a bearer token with every request. The vault itself only ever crosses the network as ciphertext (see [The end-to-end encrypted vault](#the-end-to-end-encrypted-vault)), but over plain `http://` anyone on the network path can read the auth key and the token, sign in as you, and change or delete your vault items.
 
 The policy:
 
@@ -20,9 +20,22 @@ The extension doesn't store the confirmation. You confirm again each time you si
 
 The code is in `src/shared/host.ts` (`isLoopbackHost`, `serverTransport`, `needsInsecureConfirmation`) and in `connect` in `src/background/index.ts`.
 
+## The end-to-end encrypted vault
+
+Each account has its own vault, encrypted on the client the way the Quark app does it (autobutler-org/quark#3456). The Quark stores only the vault key wrapped and each item as ciphertext, and never holds anything that opens either. The code is `src/shared/deriveAuthKey.ts`, `src/shared/vaultCrypto.ts` and `src/background/vault.ts`.
+
+- **Keys.** One Argon2id run over the account password and the account's auth salt (`GET /auth/salt`), at the cost the Quark stores beside the wrap (`kdfParams`, 3 passes over 64 MiB today), is split by HKDF-SHA256 into the auth key sign-in sends (info `auth`) and the vault wrap key (info `vault-wrap`). The wrap key never leaves the worker.
+- **Unlocking.** The worker fetches `GET /vault/key` and opens `wrappedByPassword`, `nonce || XChaCha20-Poly1305(vaultKey)`, with the wrap key. A wrong password fails the tag check and the popup says so; nothing about the attempt reaches the Quark. Sign-in unlocks too, reusing the Argon2id run it already made when the wrap was made over the same salt and cost.
+- **Items.** Each item is XChaCha20-Poly1305 under the vault key, with a fresh random nonce and the additional data `utf8("quark-vault-item-v1") || 0x00 || formatVersion`. The plaintext is the app's JSON for the item; folders are items too. Updating a password rewrites the whole item with only the password changed, so notes, custom fields and the folder survive. An item that doesn't open, or is in a newer layout, is left out, as the app leaves it out.
+- **Holding the key.** The open vault key is kept in `chrome.storage.session` with the server it belongs to and when it was last used, so the service worker can stop and start without asking again. That is the area the session token lives in (below): memory only, closed to content scripts, and never copied to `storage.local` or sealed for "stay signed in", so a browser restart always locks the vault. Locking, signing out, a 401, an idle or screen lock, or 15 minutes without a user's action (the app's auto-lock) delete it. A page asking which logins match it does not count as use.
+- **Decrypted entries.** The list of names and URLs the worker matches pages against is kept in its memory for 30 seconds and dropped on lock. A password or one-time code secret is decrypted from its own item when it is used, and never kept.
+- **Generated passwords** are drawn on the device from the app's character pool with `crypto.getRandomValues`.
+
+The fixed vectors in `test/vaultCrypto.test.ts` pin all of this to the app: the app's own derived-key vectors, and a key wrap and an item sealed with the libsodium the app links.
+
 ## Where the session token lives
 
-The Quark session token belongs to an admin account, so it can do anything an admin can for the life of the session. Content scripts run inside web pages, and a compromised renderer can drive them. They can read `chrome.storage.local`, and `setAccessLevel` can't restrict that area. So the token never goes into `storage.local` in plaintext.
+The Quark session token can do anything its account can for the life of the session. Content scripts run inside web pages, and a compromised renderer can drive them. They can read `chrome.storage.local`, and `setAccessLevel` can't restrict that area. So the token never goes into `storage.local` in plaintext.
 
 - **The live token** is kept only in `chrome.storage.session`. That area is held in memory and cleared when the browser exits. In Chrome it is limited to trusted contexts (extension pages and the service worker). The worker also calls `storage.session.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })` on startup, so the restriction holds even if Chrome's default ever changes. Firefox also keeps `storage.session` from content scripts by default. A browser that lacks `setAccessLevel`, or throws on it, keeps that default, and the worker goes on without the call.
 - **"Stay signed in"** encrypts the token at rest:
@@ -36,7 +49,7 @@ The Quark session token belongs to an admin account, so it can do anything an ad
 
 ### Nothing in `storage.local` picks the Quark
 
-Content scripts can **write** `storage.local` as well as read it. If the worker trusted anything there, a compromised renderer could plant `{ server: "https://evil.example", token: "x" }` and the worker would send the master password there on the next unlock (issue #75). So:
+Content scripts can **write** `storage.local` as well as read it. If the worker trusted anything there, a compromised renderer could plant `{ server: "https://evil.example", token: "x" }` and the worker would send the session token there, and ask it for the vault key, on the next unlock (issue #75). So:
 
 - The worker connects only to a server from a sealed record that decrypts with the key in IndexedDB, or from a sign-in on the extension's own pages (`connect`, which the gate accepts only from them). The sealed record's server is bound in as associated data, so it can't be swapped without failing to decrypt.
 - A plaintext `connection` in `storage.local` is never used. The worker deletes it when it next restores the session, and never deletes the real sealed record or its key because of it.
@@ -48,7 +61,7 @@ A content script can still delete or corrupt `sealedConnection`, which signs you
 
 - **Protected:** web pages, content scripts and compromised renderers. The ciphertext in `storage.local` is useless to them without the key, and they can't reach the key or `storage.session`.
 - **Not protected:** someone who copies your browser profile from disk. Chrome and Firefox save IndexedDB, CryptoKeys included, without a user secret, so with the whole profile they can decrypt the token. This is the price of "stay signed in" with no prompt. The alternatives were to keep the token only for the browser session, or to ask for your password again after every restart, and both would make "stay signed in" mean nothing. If someone may copy your profile, leave **Stay signed in** unticked. You can also revoke the browser's session any time in Quark's **Settings › Sessions**.
-- **Still open (needs Quark):** the token carries full admin rights. A token scoped to the vault would limit the damage if it leaked.
+- **Still open (needs Quark):** the token carries the account's full rights. A leaked token can't read the vault, which is end-to-end encrypted, but it can delete or overwrite its items. A token scoped to the vault would limit the damage.
 
 ## Who gets credentials when filling
 

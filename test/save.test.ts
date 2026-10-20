@@ -1,4 +1,3 @@
-import { replacementBody } from "../src/shared/api";
 import {
   afterNavigation,
   capturedNow,
@@ -14,7 +13,7 @@ import {
 import { saveBarCopy } from "../src/shared/saveCopy";
 import type { EntryDetail, EntrySummary, Result } from "../src/shared/types";
 
-const summary = (id: number): EntrySummary => ({ id, name: `E${id}`, urlHost: "example.com", folderId: null, createdAt: "", updatedAt: "" });
+const summary = (id: number): EntrySummary => ({ id, name: `E${id}`, urlHost: "example.com", folderId: null, url: "", updatedAt: "" });
 const detail = (id: number, username: string, password: string): EntryDetail => ({
   id,
   name: `E${id}`,
@@ -115,31 +114,6 @@ describe("helpers", () => {
       url: "https://www.example.com",
       username: "a",
       password: "b",
-    });
-  });
-
-  it("keeps every other field when replacing a password", () => {
-    const current = {
-      id: 3,
-      name: "Bank",
-      url: "https://bank.example",
-      urlHost: "bank.example",
-      username: "me",
-      password: "old",
-      notes: "keep",
-      totpSecret: "GEZDGNBV",
-      customFields: [{ name: "pin", value: "1234", hidden: true }],
-      folderId: 5,
-    };
-    expect(replacementBody(current, "new")).toEqual({
-      name: "Bank",
-      url: "https://bank.example",
-      username: "me",
-      password: "new",
-      notes: "keep",
-      totpSecret: "GEZDGNBV",
-      customFields: [{ name: "pin", value: "1234", hidden: true }],
-      folderId: 5,
     });
   });
 
