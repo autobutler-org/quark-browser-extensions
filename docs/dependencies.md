@@ -121,7 +121,7 @@ The two workflows are not on the same majors. Tags below are what was current on
 | `actions/setup-go` | v5 | — | v7.0.0 |
 | `actions/download-artifact` | — | v8 | v8.0.2 |
 
-`check.yml` is the one behind. (#96) It also runs `npm run lint:firefox`, whose script is `npx --yes web-ext@8`. That installs whatever the `8` dist-tag points at (8.10.0 on this date) outside the lockfile, on every check. WXT 0.21.4's optional peer is `web-ext >= 9.2.0`. Current web-ext is 10.7.0. (#95) `npx wxt` and `npx playwright` in the workflows resolve to the copies `npm ci` installed. The Quark checkout is pinned: `QUARK_REF` falls back to `11c8ff1e95880881a65c2cb50d458c06c2094678`.
+`check.yml` is the one behind. (#96) It also runs `npm run lint:firefox`, whose script is `npx --yes web-ext@8`. That installs whatever the `8` dist-tag points at (8.10.0 on this date) outside the lockfile, on every check. WXT 0.21.4's optional peer is `web-ext >= 9.2.0`. Current web-ext is 10.7.0. (#95) `npx wxt` and `npx playwright` in the workflows resolve to the copies `npm ci` installed. The Quark checkout is pinned: `QUARK_REF` falls back to `f1fc12e271efbd81c690f571b9a19aff4881c6ef`.
 
 ## Permissions
 
