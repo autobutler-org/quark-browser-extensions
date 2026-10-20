@@ -7,7 +7,7 @@ const entry = (id: number, name: string, urlHost: string): EntrySummary => ({
   name,
   urlHost,
   folderId: null,
-  createdAt: "",
+  url: "",
   updatedAt: "",
 });
 

@@ -26,7 +26,7 @@ for host access; AMO asks in the reviewer notes ([amo-notes.md](amo-notes.md)
 repeats these).
 
 **storage**
-> Stores the user's settings (inline button, badge, auto-submit, idle locking), the list of sites the user chose never to save logins for, and the signed-in session. The session token lives in storage.session, which is memory only and closed to content scripts. A single-use consent to upgrade an older account also lives there and is valid for five minutes. If the user ticks "Stay signed in", an AES-GCM encrypted copy of the token is kept in storage.local; its key is non-extractable and lives in the extension's IndexedDB. No password or decrypted vault entry is ever stored.
+> Stores the user's settings (inline button, badge, auto-submit, idle locking), the list of sites the user chose never to save logins for, and the signed-in session. The session token lives in storage.session, which is memory only and closed to content scripts. A single-use consent to upgrade an older account also lives there and is valid for five minutes. While the vault is unlocked, its key is kept in storage.session too, and dropped when the vault locks. If the user ticks "Stay signed in", an AES-GCM encrypted copy of the token is kept in storage.local; its key is non-extractable and lives in the extension's IndexedDB. The vault key is never put in storage.local. No password or decrypted vault entry is ever stored.
 
 **activeTab**
 > Lets the popup, the keyboard shortcut and the right-click menu work on the page the user is on: they read that tab's address to find its logins and send the fill to it. The extension has no tabs permission and cannot see other tabs' addresses.
@@ -60,6 +60,7 @@ All of it stays in the browser profile. Nothing is stored on any server we run.
 | Data | Where | How long |
 | --- | --- | --- |
 | Session token for the user's Quark | `storage.session` (memory) | Until the browser quits, sign-out or a 401 |
+| The unlocked vault key, with its server and when it was last used | `storage.session` (memory) | Until the vault locks: the user locks it, 15 minutes unused, an idle or screen lock, sign-out, a 401, or the browser quits |
 | Same token, encrypted (only with "Stay signed in") | `storage.local` as AES-GCM ciphertext; the non-extractable key in the extension's IndexedDB | Until sign-out, a 401 or tampering |
 | Last Quark address signed in to | Extension IndexedDB | Until replaced |
 | Settings | `storage.local` | Until changed |
@@ -69,8 +70,8 @@ All of it stays in the browser profile. Nothing is stored on any server we run.
 | A sign-in captured on submit (username and password) | Background memory, per tab | Two minutes at most, or until the user answers the save bar, the tab navigates on, or closes |
 | A generated password shown in the popup | Popup memory | Until dismissed, the vault locks, or the popup closes |
 
-Never stored: the account password, the vault password, decrypted entries, one-time
-code secrets.
+Never stored: the account password, the key it derives to open the vault, decrypted
+entries, one-time code secrets.
 
 ### What leaves the device
 
@@ -81,11 +82,9 @@ with `credentials: "omit"` (no cookies):
 | --- | --- |
 | `GET /auth/salt`, `POST /auth/login` | Username and an Argon2id + HKDF auth key derived from the account password. For an account the Quark marks legacy, the password accompanies the key only after a single-use consent; never over non-loopback plain http, and never after that account has signed in with a key |
 | `POST /auth/logout` | The session token |
-| `GET /vault/status`, `POST /vault/lock` | The session token |
-| `POST /vault/unlock` | The vault password, once |
-| `GET /vault/entries`, `GET /vault/entries/{id}` | The session token. Returns names and hosts; one entry's secrets only when the user fills or copies it |
-| `POST /vault/entries`, `PUT /vault/entries/{id}` | When the user clicks Save or Update: the site's origin, username and password |
-| `POST /vault/generate` | Requested length and character classes |
+| `GET /vault/key` | The session token. Returns the vault key wrapped under a key only the account password derives; the extension unwraps it on the device |
+| `GET /vault/items`, `GET /vault/items/{id}` | The session token. Returns ciphertext the extension decrypts on the device |
+| `POST /vault/items`, `PUT /vault/items/{id}` | When the user clicks Save or Update: the login encrypted on the device (XChaCha20-Poly1305), its nonce and format version. Nothing in the clear |
 
 There is no analytics, telemetry, crash reporting, advertising or update check of
 our own, and no request to any other host. The page addresses the extension sees

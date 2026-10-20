@@ -1,3 +1,4 @@
+import { openVault, vaultFetch } from "./fakeVault";
 import { extensionId, extensionUrl, fakeChrome } from "./fakeChrome";
 import type { PageCommand } from "../src/shared/messages";
 
@@ -16,9 +17,6 @@ const entry = {
   password: "hunter2-secret",
   totpSecret: "",
 };
-
-const json = (status: number, body: unknown = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 const frame = (url: string, frameId: number, tab = tabId): chrome.runtime.MessageSender => ({
   id: extensionId,
@@ -49,6 +47,7 @@ type Sent = Readonly<{ message: PageCommand; frameId: number | undefined }>;
 const setup = async (parents: Readonly<Record<number, readonly [parent: number, shown: boolean]>>) => {
   const { saveConnection } = await import("../src/background/storage");
   await saveConnection(connection, false);
+  await openVault(fake.chrome.storage.session, connection.server);
   const sent: Sent[] = [];
   fake.chrome.tabs.sendMessage = ((_tab: number, message: PageCommand, options?: { frameId?: number }) => {
     sent.push({ message, frameId: options?.frameId });
@@ -62,7 +61,7 @@ const setup = async (parents: Readonly<Record<number, readonly [parent: number, 
     }
     return Promise.resolve(undefined);
   }) as typeof fake.chrome.tabs.sendMessage;
-  vi.stubGlobal("fetch", vi.fn((url: string) => Promise.resolve(url.endsWith("/vault/entries/1") ? json(200, entry) : json(200, {}))));
+  vi.stubGlobal("fetch", vi.fn(vaultFetch([entry])));
   const { main } = await import("../src/background/index");
   main();
   return sent;

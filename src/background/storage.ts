@@ -12,6 +12,9 @@ const keys = {
   connection: "connection",
   // "Stay signed in": the token sealed with a key content scripts can't reach. See docs/security.md.
   sealed: "sealedConnection",
+  // The open vault key, in storage.session only (memory, gone when the browser quits), never in storage.local
+  // and never sealed for "stay signed in": a browser restart always locks the vault.
+  vault: "vault",
   settings: "settings",
   neverSave: "neverSave",
 } as const;
@@ -131,11 +134,32 @@ export const saveConnection = async (connection: Connection, stay: boolean): Pro
 export const clearConnection = async (): Promise<void> => {
   await Promise.all([
     chrome.storage.session.remove(keys.connection),
+    chrome.storage.session.remove(keys.vault),
     chrome.storage.local.remove(keys.connection),
     chrome.storage.local.remove(keys.sealed),
   ]);
   await deleteSealKey().catch(() => undefined);
 };
+
+// The vault key the worker unwrapped, the server it belongs to, and when it was last used, which the 15-minute
+// auto-lock counts from (src/background/vault.ts).
+export type OpenVault = Readonly<{ server: string; key: string; usedAt: number }>;
+
+const isOpenVault = (value: unknown): value is OpenVault =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as OpenVault).server === "string" &&
+  typeof (value as OpenVault).key === "string" &&
+  typeof (value as OpenVault).usedAt === "number";
+
+export const loadOpenVault = async (): Promise<OpenVault | null> => {
+  const stored: unknown = (await chrome.storage.session.get(keys.vault))[keys.vault];
+  return isOpenVault(stored) ? stored : null;
+};
+
+export const saveOpenVault = (vault: OpenVault): Promise<void> => chrome.storage.session.set({ [keys.vault]: vault });
+
+export const clearOpenVault = (): Promise<void> => chrome.storage.session.remove(keys.vault);
 
 export const loadSettings = async (): Promise<Settings> => {
   const stored = await chrome.storage.local.get(keys.settings);

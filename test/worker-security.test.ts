@@ -1,3 +1,4 @@
+import { openVault, vaultFetch } from "./fakeVault";
 import { extensionId, extensionUrl, fakeChrome } from "./fakeChrome";
 import type { PageCommand } from "../src/shared/messages";
 
@@ -9,7 +10,6 @@ const entry = {
   id: 1,
   name: "GitHub",
   url: "https://github.com/login",
-  urlHost: "github.com",
   username: "octocat",
   password: "hunter2-secret",
   totpSecret: "",
@@ -75,6 +75,7 @@ describe("filling from the popup, shortcut or context menu", () => {
   const setup = async (topUrl: string) => {
     const { saveConnection } = await import("../src/background/storage");
     await saveConnection(connection, false);
+    await openVault(fake.chrome.storage.session, connection.server);
     const sent: Sent[] = [];
     let frameReply: unknown = undefined;
     fake.chrome.tabs.sendMessage = ((_tab: number, message: PageCommand, options?: { frameId?: number }) => {
@@ -89,7 +90,7 @@ describe("filling from the popup, shortcut or context menu", () => {
       }
       return Promise.resolve(frameReply);
     }) as typeof fake.chrome.tabs.sendMessage;
-    const fetchSpy = await startWorker((url) => Promise.resolve(url.endsWith("/vault/entries/1") ? json(200, entry) : json(200, {})));
+    const fetchSpy = await startWorker(vaultFetch([entry]));
     return { sent, fetchSpy, replyFromFrame: (value: unknown) => (frameReply = value) };
   };
 
@@ -112,7 +113,7 @@ describe("filling from the popup, shortcut or context menu", () => {
       type: "fill",
       entryId: 1,
       entryUrl: entry.url,
-      entryHost: entry.urlHost,
+      entryHost: "github.com",
       topUrl: "https://github.com/login",
     });
     const everything = JSON.stringify(sent);
@@ -169,14 +170,17 @@ describe("a connection planted in storage.local", () => {
     vi.resetModules();
   };
 
-  it("never receives the master password after a restart", async () => {
+  it("is never asked for the vault key after a restart, which also locks the vault", async () => {
     const { saveConnection } = await import("../src/background/storage");
     await saveConnection(connection, true);
+    await openVault(fake.chrome.storage.session, connection.server);
     await plantAndRestart();
     const fetchSpy = await startWorker(() => Promise.resolve(json(200, {})));
-    await fake.send({ type: "unlock", masterPassword: "master-secret" }, popup);
+    expect(await fake.send({ type: "entries" }, popup)).toEqual({ ok: false, error: { kind: "locked" } });
+    await fake.send({ type: "unlock", password: "login-secret" }, popup);
     const urls = fetchSpy.mock.calls.map(([url]) => url);
-    expect(urls).toContain(`${connection.server}/api/v0/vault/unlock`);
+    expect(urls).toContain(`${connection.server}/api/v0/vault/key`);
+    expect(JSON.stringify(fetchSpy.mock.calls)).not.toContain("login-secret");
     expect(urls.filter((url) => url.startsWith(evil))).toEqual([]);
     expect(fake.chrome.storage.local.items.get("sealedConnection")).toBeDefined();
   });

@@ -1,7 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
-// The tests share one Quark, whose vault lock is server-wide, so they run one
-// at a time. Each test gets its own Chromium profile (see fixtures.ts).
+// The tests share one Quark and its seeded vault, which some of them change and
+// put back, so they run one at a time. Each test gets its own Chromium profile (see fixtures.ts).
 export default defineConfig({
   testDir: ".",
   testMatch: "*.spec.ts",

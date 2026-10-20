@@ -31,7 +31,7 @@ describe("the upgraded-account record (#143)", () => {
   it("still refuses a second legacy upgrade after a content script deletes keyedAccounts", async () => {
     const record = await ledger();
     const bodies: Record<string, unknown>[] = [];
-    const api = createApi(legacyQuark(bodies), record, () => Promise.resolve("key"));
+    const api = createApi(legacyQuark(bodies), record, () => Promise.resolve({ authKey: "key", vaultWrapKey: new Uint8Array(32) }));
     await record.giveConsent("https://quark.local", "brandon");
     expect((await api.login("https://quark.local", "brandon", "pw")).ok).toBe(true);
 

@@ -12,7 +12,7 @@ describe("showWelcome", () => {
   it("never interrupts someone who has signed in before", () => {
     const states: readonly VaultState[] = [
       { kind: "signedOut", server: "https://quark.local" },
-      { kind: "locked", server: "https://quark.local", reason: "" },
+      { kind: "locked", server: "https://quark.local" },
       { kind: "unlocked", server: "https://quark.local", autoLockSeconds: 0 },
       { kind: "unreachable", server: "https://quark.local", message: "" },
     ];
@@ -28,10 +28,11 @@ describe("welcomeSections", () => {
       .flatMap((section) => [section.title, ...section.lines])
       .join("\n");
 
-  it("explains the admin account, the vault password and the address format", () => {
+  it("explains the account, its end-to-end encrypted vault and the address format", () => {
     const chrome = text("chrome");
-    expect(chrome).toContain("admin account");
-    expect(chrome).toContain("vault password");
+    expect(chrome).toContain("Quark account");
+    expect(chrome).toContain("same password unlocks your vault");
+    expect(chrome).toContain("end-to-end encrypted");
     expect(chrome).toContain("http://host:port");
     expect(chrome).toContain("unencrypted");
   });

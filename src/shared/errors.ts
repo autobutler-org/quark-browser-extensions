@@ -20,16 +20,12 @@ export const errorText = (error: ApiError): string => {
       return t("errorBadCredentials");
     case "accountRefused":
       return error.status === "pending" ? t("errorAccountPending") : t("errorAccountDisabled");
-    case "notAdmin":
-      return t("errorNotAdmin");
     case "locked":
-      return error.reason === "" ? t("errorLocked") : t("errorLockedReason", error.reason);
-    case "badMasterPassword":
-      return t("errorBadMasterPassword");
+      return t("errorLocked");
+    case "wrongPassword":
+      return t("errorWrongPassword");
     case "notInitialized":
       return t("errorNotInitialized");
-    case "driveDisconnected":
-      return t("errorDriveDisconnected");
     case "rateLimited":
       return t("errorRateLimited");
     case "notFound":
@@ -49,14 +45,10 @@ export const stateText = (state: VaultState): string => {
       return t("stateDisconnected");
     case "signedOut":
       return t("stateSignedOut");
-    case "notAdmin":
-      return errorText({ kind: "notAdmin" });
     case "notInitialized":
       return errorText({ kind: "notInitialized" });
-    case "driveDisconnected":
-      return errorText({ kind: "driveDisconnected" });
     case "locked":
-      return errorText({ kind: "locked", reason: state.reason });
+      return errorText({ kind: "locked" });
     case "unlocked":
       return t("stateUnlocked");
     case "unreachable":

@@ -8,7 +8,7 @@ vi.mock("../src/content/picker", () => ({
   attachPicker: () => ({ open: () => undefined, destroy: () => undefined }),
 }));
 
-const entry: EntrySummary = { id: 7, name: "Example", urlHost: "localhost", folderId: null, createdAt: "", updatedAt: "" };
+const entry: EntrySummary = { id: 7, name: "Example", urlHost: "localhost", folderId: null, url: "", updatedAt: "" };
 
 const observers: MutationObserver[] = [];
 class TrackedObserver extends MutationObserver {

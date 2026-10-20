@@ -118,29 +118,14 @@
   "errorAccountDisabled": {
     "message": "This account is disabled."
   },
-  "errorNotAdmin": {
-    "message": "The vault needs an admin account."
-  },
   "errorLocked": {
     "message": "The vault is locked."
   },
-  "errorLockedReason": {
-    "message": "The vault is locked: $REASON$.",
-    "description": "REASON is the explanation the Quark gave, in English.",
-    "placeholders": {
-      "reason": {
-        "content": "$1"
-      }
-    }
-  },
-  "errorBadMasterPassword": {
-    "message": "That password didn't unlock the vault."
+  "errorWrongPassword": {
+    "message": "That isn't this account's Quark password, so it didn't open the vault."
   },
   "errorNotInitialized": {
-    "message": "The vault isn't set up yet. Create it in the Quark app first."
-  },
-  "errorDriveDisconnected": {
-    "message": "The drive holding the vault is disconnected."
+    "message": "This account has no vault yet. Set it up on the Vault page of the Quark app, then try again."
   },
   "errorRateLimited": {
     "message": "Too many attempts. Wait a minute and try again."
@@ -378,10 +363,10 @@
     "message": "What you need"
   },
   "welcomeNeedQuark": {
-    "message": "A Quark with the password vault set up, an admin account on it, and the vault password."
+    "message": "A Quark account with its password vault set up in the Quark app."
   },
   "welcomeNeedAdmin": {
-    "message": "You sign in with the admin account first, then unlock with the vault password. Only admins can open the vault; if you aren't one, ask whoever runs your Quark."
+    "message": "You sign in with your Quark account; the same password unlocks your vault. Every account has its own vault, end-to-end encrypted: the extension decrypts it here, and your Quark only ever stores ciphertext."
   },
   "welcomeNeedSessions": {
     "message": "This browser shows up in your Quark's Settings › Sessions, where you can revoke it any time."
@@ -543,10 +528,10 @@
     "message": "Locking"
   },
   "optionsLockingIntroChrome": {
-    "message": "Locking from this browser locks the vault on your Quark for every device. The vault locks when your screen locks. Turn on idle locking to also lock it after a set time."
+    "message": "The vault locks when your screen locks. Turn on idle locking to also lock it after a set time."
   },
   "optionsLockingIntroFirefox": {
-    "message": "Locking from this browser locks the vault on your Quark for every device. Firefox can't tell when your screen locks, so the vault locks after the idle time below."
+    "message": "Firefox can't tell when your screen locks, so the vault locks after the idle time below."
   },
   "optionsLockOnIdle": {
     "message": "Lock the vault when this computer is idle"
@@ -596,7 +581,7 @@
     "message": "None yet. Choose \"Never for this site\" when Quark Vault offers to save a login."
   },
   "optionsServerAutoLock": {
-    "message": "The vault also auto-locks on the schedule set on your Quark."
+    "message": "The vault also locks after 15 minutes unused, as in the Quark app, and whenever the browser quits."
   },
   "popupChecking": {
     "message": "Checking your Quark…"
@@ -605,13 +590,13 @@
     "message": "Connect to your Quark"
   },
   "popupConnectIntro": {
-    "message": "Sign in with an admin account; only admins can open the vault."
+    "message": "Sign in with your Quark account. The same password unlocks your vault."
   },
   "popupConnectIntroRevoke": {
-    "message": "Sign in with an admin account; only admins can open the vault. You can revoke this browser in Settings › Sessions."
+    "message": "Sign in with your Quark account. The same password unlocks your vault. You can revoke this browser in Settings › Sessions."
   },
   "popupInsecureAddress": {
-    "message": "This address uses plain http, not https. Your Quark password, vault password and every login you fill would cross the network unencrypted, where anyone on it can read them."
+    "message": "This address uses plain http, not https. Your Quark session token would cross the network unencrypted, where anyone on it can read it and use your account."
   },
   "popupInsecureConfirm": {
     "message": "I understand this connection is unencrypted"
@@ -665,10 +650,10 @@
     "message": "Vault is locked"
   },
   "popupLockedIntro": {
-    "message": "Unlocking here unlocks the vault on your Quark for every device, until it auto-locks."
+    "message": "Your vault is end-to-end encrypted. Enter your Quark password to decrypt it in this browser; it isn't sent anywhere."
   },
-  "popupMasterPassword": {
-    "message": "Vault password"
+  "popupAccountPassword": {
+    "message": "Quark password"
   },
   "popupUnlocking": {
     "message": "Unlocking…"

@@ -1,11 +1,12 @@
+// What the worker keeps of a decrypted entry for listing and matching: no password and no one-time code secret.
 export type EntrySummary = Readonly<{
   id: number;
   name: string;
+  url: string;
   urlHost: string;
   folderId: number | null;
-  createdAt: string;
   updatedAt: string;
-  // Whether the entry has a one-time code; set by the worker only once it has looked the entry up.
+  // Whether the entry has a one-time code.
   hasTotp?: boolean;
 }>;
 
@@ -17,14 +18,6 @@ export type EntryDetail = Readonly<{
   username: string;
   password: string;
   totpSecret: string;
-}>;
-
-export type VaultStatus = Readonly<{
-  initialized: boolean;
-  locked: boolean;
-  autoLockSeconds: number;
-  deviceConnected: boolean;
-  lockReason?: string;
 }>;
 
 export type Credentials = Readonly<{
@@ -71,11 +64,11 @@ export type ApiError =
   | Readonly<{ kind: "signedOut" }>
   | Readonly<{ kind: "badCredentials" }>
   | Readonly<{ kind: "accountRefused"; status: string }>
-  | Readonly<{ kind: "notAdmin" }>
-  | Readonly<{ kind: "locked"; reason: string }>
-  | Readonly<{ kind: "badMasterPassword" }>
+  | Readonly<{ kind: "locked" }>
+  // The password typed to unlock didn't open the vault key's wrap.
+  | Readonly<{ kind: "wrongPassword" }>
+  // The account has no vault yet; it is set up in the Quark app.
   | Readonly<{ kind: "notInitialized" }>
-  | Readonly<{ kind: "driveDisconnected" }>
   | Readonly<{ kind: "rateLimited" }>
   | Readonly<{ kind: "notFound" }>
   // legacyUpgrade: the Quark calls the account legacy and wants its password once, which the connect form asks
@@ -94,9 +87,7 @@ export const err = <E>(error: E): Result<never, E> => ({ ok: false, error });
 export type VaultState =
   | Readonly<{ kind: "disconnected" }>
   | Readonly<{ kind: "signedOut"; server: string }>
-  | Readonly<{ kind: "notAdmin"; server: string }>
   | Readonly<{ kind: "notInitialized"; server: string }>
-  | Readonly<{ kind: "driveDisconnected"; server: string }>
-  | Readonly<{ kind: "locked"; server: string; reason: string }>
+  | Readonly<{ kind: "locked"; server: string }>
   | Readonly<{ kind: "unlocked"; server: string; autoLockSeconds: number }>
   | Readonly<{ kind: "unreachable"; server: string; message: string }>;

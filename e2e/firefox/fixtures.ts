@@ -124,8 +124,8 @@ export const waitForText = async (page: Page | Frame, text: string | RegExp, tim
   }
 };
 
-// Signs the popup in as the owner and unlocks the vault, from whatever state
-// the shared Quark's vault is in.
+// Signs the popup in as the owner, which opens the vault with the same
+// password; unlocks it from the lock screen if it didn't.
 export const signInAndUnlock = async (popup: Page, quark: Quark) => {
   await waitForText(popup, "Connect to your Quark");
   await popup.type("#server", quark.server);
@@ -133,8 +133,8 @@ export const signInAndUnlock = async (popup: Page, quark: Quark) => {
   await popup.type("#password", quark.seed.owner.password);
   await popup.click("button[type=submit]");
   await waitForText(popup, /Vault is locked|All entries · \d+/, 30_000);
-  if ((await popup.$("#master")) !== null) {
-    await popup.type("#master", quark.seed.masterPassword);
+  if ((await popup.$("#unlock-password")) !== null) {
+    await popup.type("#unlock-password", quark.seed.owner.password);
     await popup.click("button[type=submit]");
   }
   await waitForText(popup, /All entries · \d+/);

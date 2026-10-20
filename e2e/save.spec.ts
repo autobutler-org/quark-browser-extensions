@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, openLoginPage, signInAndUnlock, test } from "./fixtures.ts";
+import { ownerVault } from "./support/env.ts";
 
 const submitLogin = async (page: Page, popup: Page, tabId: number, username: string, password: string): Promise<unknown> => {
   await page.evaluate(
@@ -17,9 +18,9 @@ const submitLogin = async (page: Page, popup: Page, tabId: number, username: str
 
 test("offers to save a new login and to update a changed password", async ({ context, popup, quark, site, worker }) => {
   await signInAndUnlock(popup, quark);
-  const token = await quark.api.login(quark.seed.owner.username, quark.seed.owner.password);
-  const entry = (id: number) => quark.api.expectOk<Record<string, unknown>>(quark.api.call("GET", `/vault/entries/${id}`, undefined, token), "GET entry");
-  const before = await entry(quark.seed.local);
+  // What the extension stored, decrypted the way the Quark app reads it.
+  const vault = await ownerVault(quark);
+  const before = await vault.get(quark.seed.local);
   const { page, tabId } = await openLoginPage(context, worker, site);
   let savedId: number | undefined;
 
@@ -30,29 +31,24 @@ test("offers to save a new login and to update a changed password", async ({ con
     expect(await submitLogin(page, popup, tabId, "bob@example.com", "hunter2")).toMatchObject({ kind: "save", username: "bob@example.com" });
     expect(await page.locator("body > div").count(), "the save bar beside the inline button").toBeGreaterThanOrEqual(2);
     expect(await popup.evaluate((id) => chrome.runtime.sendMessage({ type: "resolveSave", action: "save", tabId: id }), tabId)).toMatchObject({ ok: true });
-    const list = await quark.api.expectOk<{ entries: { id: number }[] }>(
-      quark.api.call("GET", "/vault/entries", undefined, token),
-      "GET entries",
-    );
-    const added = list.entries.filter((e) => e.id !== quark.seed.local && e.id !== quark.seed.github);
+    const added = [...(await vault.list()).keys()].filter((id) => ![quark.seed.local, quark.seed.github, quark.seed.folderId].includes(id));
     expect(added).toHaveLength(1);
-    savedId = added[0]!.id;
-    expect(await entry(savedId)).toMatchObject({ urlHost: "localhost", url: site, username: "bob@example.com", password: "hunter2" });
+    savedId = added[0]!;
+    expect(await vault.get(savedId)).toEqual({ kind: "entry", name: "localhost", url: new URL(site).origin, username: "bob@example.com", password: "hunter2" });
 
     expect(await submitLogin(page, popup, tabId, "alice", "n3w-pass")).toMatchObject({ kind: "update", entryId: quark.seed.local });
     expect(await popup.evaluate((id) => chrome.runtime.sendMessage({ type: "resolveSave", action: "update", tabId: id }), tabId)).toMatchObject({ ok: true });
-    const after = await entry(quark.seed.local);
     // Only the password changed: notes, the TOTP secret, the folder and the
-    // custom fields all survived the PUT.
-    const { password, updatedAt: _updatedAt, ...rest } = after;
-    const { password: oldPassword, updatedAt: _oldUpdatedAt, ...restBefore } = before;
+    // custom fields all survived the rewrite.
+    const { password, ...rest } = await vault.get(quark.seed.local);
+    const { password: oldPassword, ...restBefore } = before;
     expect(password).toBe("n3w-pass");
     expect(oldPassword).toBe("s3cret");
     expect(rest).toEqual(restBefore);
-    expect(rest).toMatchObject({ notes: "keep me", folderId: quark.seed.folderId, customFields: [{ name: "pin", value: "1234", hidden: true }] });
+    expect(rest).toMatchObject({ notes: "keep me", folderId: quark.seed.folderId, customFields: [{ label: "pin", value: "1234", hidden: true }] });
   } finally {
     // Put the vault back as the seed left it for the tests that follow.
-    if (savedId !== undefined) await quark.api.call("DELETE", `/vault/entries/${savedId}`, undefined, token);
-    await quark.api.call("PUT", `/vault/entries/${quark.seed.local}`, before, token);
+    if (savedId !== undefined) await vault.remove(savedId);
+    await vault.put(quark.seed.local, before);
   }
 });

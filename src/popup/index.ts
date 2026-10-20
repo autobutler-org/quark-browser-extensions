@@ -350,11 +350,11 @@ const welcomeView = (): HTMLElement =>
   );
 
 const unlockView = (): HTMLElement => {
-  const master = h("input", { id: "master", type: "password", autocomplete: "current-password", required: true, "data-autofocus": true });
+  const password = h("input", { id: "unlock-password", type: "password", autocomplete: "current-password", required: true, "data-autofocus": true });
   const submit = async (event: Event): Promise<void> => {
     event.preventDefault();
     update({ busy: true, error: "" });
-    await applyState(await ask({ type: "unlock", masterPassword: master.value }));
+    await applyState(await ask({ type: "unlock", password: password.value }));
   };
   return h(
     "div",
@@ -371,7 +371,7 @@ const unlockView = (): HTMLElement => {
         h("h1", {}, t("popupLockedTitle")),
         h("p", { className: "muted" }, t("popupLockedIntro")),
       ),
-      field("master", t("popupMasterPassword"), master),
+      field("unlock-password", t("popupAccountPassword"), password),
       errorBox(),
       h("div", { className: "spacer" }),
       h("button", { className: "primary", type: "submit", disabled: model.busy }, model.busy ? t("popupUnlocking") : t("unlock")),
@@ -800,9 +800,7 @@ const view = (): HTMLElement => {
       return entriesView(state);
     case "unreachable":
       return model.editingAddress ? connectView() : messageView(state);
-    case "notAdmin":
     case "notInitialized":
-    case "driveDisconnected":
       return messageView(state);
   }
 };

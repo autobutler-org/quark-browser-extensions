@@ -11,7 +11,7 @@ import { defaultSettings, err, ok, type ApiError, type EntrySummary, type Result
 
 const server = "https://quark.local";
 const unlocked: VaultState = { kind: "unlocked", server, autoLockSeconds: 900 };
-const locked: VaultState = { kind: "locked", server, reason: "" };
+const locked: VaultState = { kind: "locked", server };
 
 const worker = {
   state: unlocked as VaultState,
@@ -37,7 +37,7 @@ const answer = (request: Request): unknown => {
       worker.settings = request.settings;
       return request.settings;
     case "entries":
-      return worker.state.kind === "unlocked" ? ok(worker.entries) : err({ kind: "locked", reason: "" });
+      return worker.state.kind === "unlocked" ? ok(worker.entries) : err({ kind: "locked" });
     case "matches":
       return ok([]);
     case "pendingOffer":
@@ -411,13 +411,13 @@ describe("the first-run welcome", () => {
 });
 
 describe("unlocking and locking", () => {
-  it("unlocks with the vault password", async () => {
+  it("unlocks with the Quark password", async () => {
     worker.state = locked;
     const app = await openPopup();
     expect(heading(app)).toBe("Vault is locked");
-    typeInto(app, "master", "correct horse");
+    typeInto(app, "unlock-password", "correct horse");
     await submitForm(app);
-    expect(asked("unlock")).toEqual([{ type: "unlock", masterPassword: "correct horse" }]);
+    expect(asked("unlock")).toEqual([{ type: "unlock", password: "correct horse" }]);
     expect(app.querySelector("#search")).not.toBeNull();
   });
 
@@ -447,7 +447,7 @@ describe("unlocking and locking", () => {
   });
 
   it("warns on every screen while the Quark is on plain http", async () => {
-    worker.state = { kind: "locked", server: "http://192.168.1.10", reason: "" };
+    worker.state = { kind: "locked", server: "http://192.168.1.10" };
     const app = await openPopup();
     expect(app.querySelector('.error-box[role="status"]')).not.toBeNull();
   });
@@ -483,7 +483,7 @@ describe("notices (#102)", () => {
   it("goes when the copied one-time code changes", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     worker.otp = ok({ code: "123456", secondsLeft: 2 });
-    worker.entries = [{ id: 1, name: "Mail", urlHost: "mail.test", folderId: null, createdAt: "", updatedAt: "" }];
+    worker.entries = [{ id: 1, name: "Mail", urlHost: "mail.test", folderId: null, url: "", updatedAt: "" }];
     const app = await openPopup();
     await click(app, "Copy one-time code for Mail");
     expect(notice(app)).toBe("Copied the code for Mail. It changes in 2s.");
@@ -529,7 +529,7 @@ describe("a generated password (#111)", () => {
     const app = await openPopup();
     await click(app, "Generate password");
     await click(app, "Lock vault");
-    typeInto(app, "master", "pw");
+    typeInto(app, "unlock-password", "pw");
     await submitForm(app);
     expect(app.querySelector("#search")).not.toBeNull();
     expect(panel(app)).toBeNull();
@@ -547,7 +547,7 @@ describe("a generated password (#111)", () => {
 });
 
 describe("when the vault locks behind the popup's back", () => {
-  const lockedError: ApiError = { kind: "locked", reason: "" };
+  const lockedError: ApiError = { kind: "locked" };
 
   it("goes to the lock screen instead of showing an error after Generate", async () => {
     const app = await openPopup();
@@ -707,8 +707,8 @@ describe("screens for a Quark that can't open the vault", () => {
     expect(heading(app)).toBe("Vault is locked");
   });
 
-  it("signs out from an account that isn't an admin", async () => {
-    worker.state = { kind: "notAdmin", server };
+  it("signs out from an account with no vault yet", async () => {
+    worker.state = { kind: "notInitialized", server };
     const app = await openPopup();
     expect(buttonNamed(app, "Edit address")).toBeUndefined();
     await click(app, "Sign out");
@@ -716,13 +716,10 @@ describe("screens for a Quark that can't open the vault", () => {
     expect(heading(app)).toBe("Connect to your Quark");
   });
 
-  it.each([
-    [{ kind: "notInitialized", server }],
-    [{ kind: "driveDisconnected", server }],
-  ] as const)("explains %o with a way to try again", async (state) => {
-    worker.state = state;
+  it("tells an account with no vault where to set one up, with a way to try again", async () => {
+    worker.state = { kind: "notInitialized", server };
     const app = await openPopup();
-    expect(heading(app)).not.toBe("");
+    expect(heading(app)).toContain("Vault page of the Quark app");
     expect(buttonNamed(app, "Try again")).toBeDefined();
   });
 });

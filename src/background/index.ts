@@ -9,10 +9,10 @@ import {
   serverTransport,
   type SiteMatch,
 } from "../shared/host";
-import { frameMayFill, hostMatches, matchEntries } from "../shared/hostMatch";
+import { frameMayFill, matchEntries } from "../shared/hostMatch";
 import type { Hello, PageCommand, PageReply, Request, Responses } from "../shared/messages";
-import { err, ok, type Connection, type EntryDetail, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
-import { defaultPlan, generateFor, sanePlan, type PasswordPlan } from "../shared/password";
+import { err, ok, type Connection, type EntrySummary, type Result, type Settings, type VaultState } from "../shared/types";
+import { defaultPlan, drawPassword, generateFor, sanePlan, type PasswordPlan } from "../shared/password";
 import { parseOtpSecret, totp } from "../shared/totp";
 import { entryIdFromMenu, generateMenuId, menuItems, menuRoot, shortcutPlan } from "../shared/menu";
 import { detectionIntervalSeconds, idleAction, type IdleState } from "./idle";
@@ -32,7 +32,8 @@ import { isTopFrame, route, type ContentScriptHandlers, type ExtensionPageHandle
 import { frameIsShown, frameReport } from "./frames";
 import { grantAllows, grantFor, manualFillCommand, manualFillRefusal, type ManualGrant } from "./manual";
 import { upgradeLedger } from "./keyedAccounts";
-import { createCache, deriveState, stateFromError } from "./state";
+import { createCache, deriveState } from "./state";
+import { createVault } from "./vault";
 import {
   clearConnection,
   loadConnection,
@@ -46,18 +47,15 @@ import {
 } from "./storage";
 
 const api = createApi((input, init) => fetch(input, init), upgradeLedger);
+const vault = createVault(api);
+// The decrypted entries without their secrets, in memory only, for matching pages and the popup's list.
 const entriesCache = createCache<readonly EntrySummary[]>(30_000);
-// Each entry's full URL and whether it has a one-time code, which the list leaves out, so matches can be
-// ranked by origin and the popup offers a code only where there is one. Kept in memory only and dropped with
-// the list; an edited entry gets a new updatedAt and is looked up again.
-const entryUrls = new Map<number, Readonly<{ updatedAt: string; url: string; hasTotp: boolean }>>();
 
 // Manual fills the user confirmed in the popup, by tab; see manual.ts.
 const manualGrants = new Map<number, ManualGrant>();
 
 const forgetEntries = (): void => {
   entriesCache.clear();
-  entryUrls.clear();
   manualGrants.clear();
 };
 
@@ -92,21 +90,30 @@ const withConnection = async <T>(run: (connection: Connection) => Promise<Result
     forgetEntries();
     await clearConnection();
   }
+  // The vault was deleted from the app since it was opened here.
+  if (!result.ok && result.error.kind === "notInitialized") {
+    forgetEntries();
+    await vault.lock();
+  }
   return result;
 };
 
-// The Quark draws the characters; generateFor keeps a draw only when it has every class asked for (#131).
-const generated = (plan: PasswordPlan): Promise<Result<string>> =>
-  withConnection((conn) => generateFor(plan, (length, classes) => api.generate(conn, length, classes)));
+// Drawn on the device; generateFor keeps a draw only when it has every class asked for (#131).
+const generated = (plan: PasswordPlan): Promise<Result<string>> => generateFor(plan, drawPassword);
 
+// Open when this browser holds the vault key. Otherwise the Quark says whether there is a vault to unlock, and
+// whether the session still holds.
 const currentState = async (): Promise<VaultState> => {
   const [server, connection] = await Promise.all([loadServer(), loadConnection()]);
   if (connection === null) {
     return deriveState(server, false, null);
   }
-  const status = await withConnection((conn) => api.status(conn));
+  if (await vault.isOpen(connection.server)) {
+    return deriveState(server, true, ok(true));
+  }
+  const wrapped = await withConnection((conn) => api.vaultKey(conn));
   const stillSignedIn = (await loadConnection()) !== null;
-  return deriveState(server, stillSignedIn, status);
+  return deriveState(server, stillSignedIn, wrapped.ok ? ok(false) : wrapped);
 };
 
 const stateAfter = async (result: Result<unknown>): Promise<Result<VaultState>> => {
@@ -115,55 +122,30 @@ const stateAfter = async (result: Result<unknown>): Promise<Result<VaultState>> 
   return result.ok ? ok(await currentState()) : err(result.error);
 };
 
-const entries = async (): Promise<Result<readonly EntrySummary[]>> => {
-  const cached = entriesCache.get();
-  if (cached !== undefined) {
-    return ok(cached);
-  }
-  const result = await withConnection((conn) => api.listEntries(conn));
-  if (result.ok) {
-    entriesCache.set(result.value);
-  }
-  return result;
-};
-
-const knownUrl = (entry: EntrySummary): string | undefined => {
-  const known = entryUrls.get(entry.id);
-  return known?.updatedAt === entry.updatedAt ? known.url : undefined;
-};
-
-const remember = (entry: EntrySummary, detail: EntryDetail): void => {
-  entryUrls.set(entry.id, { updatedAt: entry.updatedAt, url: detail.url, hasTotp: parseOtpSecret(detail.totpSecret) !== null });
-};
-
-// The summaries with hasTotp wherever an entry's detail has been looked up, for the popup's full list.
-const withKnownTotp = (list: readonly EntrySummary[]): readonly EntrySummary[] =>
-  list.map((entry) => {
-    const known = entryUrls.get(entry.id);
-    return known?.updatedAt === entry.updatedAt ? { ...entry, hasTotp: known.hasTotp } : entry;
+// `touch`: a user opened the list, which keeps the vault from auto-locking; a page asking for matches doesn't.
+const entries = (touch = false): Promise<Result<readonly EntrySummary[]>> =>
+  withConnection(async (conn) => {
+    if (!(await vault.isOpen(conn.server, touch))) {
+      entriesCache.clear();
+      return err({ kind: "locked" });
+    }
+    const cached = entriesCache.get();
+    if (cached !== undefined) {
+      return ok(cached);
+    }
+    const result = await vault.entries(conn, false);
+    if (result.ok) {
+      entriesCache.set(result.value);
+    }
+    return result;
   });
-
-const learnUrls = async (candidates: readonly EntrySummary[]): Promise<void> => {
-  const missing = candidates.filter((entry) => knownUrl(entry) === undefined);
-  await Promise.all(
-    missing.map(async (entry) => {
-      const detail = await withConnection((conn) => api.getEntry(conn, entry.id));
-      if (detail.ok) {
-        remember(entry, detail.value);
-      }
-    }),
-  );
-};
 
 const matchesFor = async (pageUrl: string): Promise<Result<readonly SiteMatch[]>> => {
   const result = await entries();
-  if (!result.ok) {
-    return result;
-  }
-  const pageHost = hostOf(pageUrl);
-  await learnUrls(result.value.filter((entry) => hostMatches(entry.urlHost, pageHost)));
-  return ok(matchEntries(withKnownTotp(result.value), pageUrl, knownUrl));
+  return result.ok ? ok(matchEntries(result.value, pageUrl, (found) => found.url)) : result;
 };
+
+const entryDetail = (entryId: number) => withConnection((conn) => vault.entry(conn, entryId));
 
 const refused = (reason: string) => err({ kind: "refused", reason } as const);
 
@@ -174,7 +156,7 @@ const fillFromPage = async (
   const pageUrl = sender.url ?? "";
   const [settings, entry, topUrl] = await Promise.all([
     loadSettings(),
-    withConnection((conn) => api.getEntry(conn, entryId)),
+    entryDetail(entryId),
     topFrameUrl(sender),
   ]);
   if (!entry.ok) {
@@ -202,7 +184,7 @@ const fillFromPage = async (
 
 const otpFor = async (entryId: number, sender: Sender | null): Promise<Responses["otp"]> => {
   const [entry, topUrl] = await Promise.all([
-    withConnection((conn) => api.getEntry(conn, entryId)),
+    entryDetail(entryId),
     sender === null ? Promise.resolve("") : topFrameUrl(sender),
   ]);
   if (!entry.ok) {
@@ -215,10 +197,6 @@ const otpFor = async (entryId: number, sender: Sender | null): Promise<Responses
   if (sender !== null && !frameMayFill(pageUrl, topUrl, entry.value.url, entry.value.urlHost)) {
     return refused(embeddedRefusal(topUrl));
   }
-  const summary = entriesCache.get()?.find((found) => found.id === entryId);
-  if (summary !== undefined) {
-    remember(summary, entry.value);
-  }
   const params = parseOtpSecret(entry.value.totpSecret);
   return params === null ? refused(t("refuseNoOtp")) : ok(await totp(params, Date.now()));
 };
@@ -227,7 +205,7 @@ const otpFor = async (entryId: number, sender: Sender | null): Promise<Responses
 // login form asks for them with fillFromPage, which checks that frame's own URL in the worker.
 const fillInTab = async (tabId: number, entryId: number): Promise<Responses["fillInTab"]> => {
   const [entry, topUrl] = await Promise.all([
-    withConnection((conn) => api.getEntry(conn, entryId)),
+    entryDetail(entryId),
     tabTopUrl(tabId),
   ]);
   if (!entry.ok) {
@@ -256,7 +234,7 @@ const fillInTab = async (tabId: number, entryId: number): Promise<Responses["fil
 // collects the credentials with fillFromPage under a one-time grant.
 const fillAnyway = async (tabId: number, entryId: number, pageHost: string): Promise<Responses["fillAnyway"]> => {
   const [entry, tab] = await Promise.all([
-    withConnection((conn) => api.getEntry(conn, entryId)),
+    entryDetail(entryId),
     chrome.tabs.get(tabId).catch(() => undefined),
   ]);
   if (!entry.ok) {
@@ -322,13 +300,13 @@ const offerFor = async (tabId: number): Promise<SaveOffer | null> => {
   if (pending === null || connection === null) {
     return null;
   }
-  const [status, matches] = await Promise.all([api.status(connection), matchesFor(pending.pageUrl)]);
+  const [open, matches] = await Promise.all([vault.isOpen(connection.server), matchesFor(pending.pageUrl)]);
   return decideOffer({
     pageUrl: pending.pageUrl,
     credentials: pending.credentials,
     matches: matches.ok ? matches.value : [],
-    locked: !status.ok || status.value.locked,
-    loadDetail: (id) => api.getEntry(connection, id),
+    locked: !open,
+    loadDetail: (id) => vault.entry(connection, id),
   });
 };
 
@@ -379,13 +357,13 @@ const resolveSave = async (tabId: number, action: SaveAction): Promise<Result<nu
       await openPopup();
       return ok(null);
     case "save":
-      return finish(await withConnection((conn) => api.createEntry(conn, newEntryFor(pending.pageUrl, pending.credentials))));
+      return finish(await withConnection((conn) => vault.create(conn, newEntryFor(pending.pageUrl, pending.credentials))));
     case "update": {
       const offer = await offerFor(tabId);
       if (offer?.kind !== "update") {
         return refused(t("refuseNothingToUpdate"));
       }
-      return finish(await withConnection((conn) => api.replacePassword(conn, offer.entryId, pending.credentials.password)));
+      return finish(await withConnection((conn) => vault.replacePassword(conn, offer.entryId, pending.credentials.password)));
     }
   }
 };
@@ -463,13 +441,16 @@ const connect = async (
   if (serverTransport(server) === "insecure" && !request.allowInsecure) {
     return refused(insecureServerRefusal());
   }
-  const token = await api.login(server, request.username, request.password);
-  if (!token.ok) {
-    return token;
+  const signedIn = await api.login(server, request.username, request.password);
+  if (!signedIn.ok) {
+    return signedIn;
   }
-  await saveConnection({ server, token: token.value }, request.persist);
-  const state = await currentState();
-  return state.kind === "notAdmin" ? err({ kind: "notAdmin" }) : ok(state);
+  const connection = { server, token: signedIn.value.token };
+  await saveConnection(connection, request.persist);
+  // The password that just signed in opens the vault too. If it doesn't (no vault yet, or one wrapped under an
+  // older password), the state says so and the popup asks.
+  await vault.unlock(connection, request.password, signedIn.value);
+  return ok(await currentState());
 };
 
 const signOut = async (): Promise<Responses["signOut"]> => {
@@ -478,6 +459,7 @@ const signOut = async (): Promise<Responses["signOut"]> => {
     await api.logout(connection);
   }
   forgetEntries();
+  await vault.lock();
   await clearConnection();
   return ok(await currentState());
 };
@@ -486,19 +468,14 @@ const forExtensionPages: ExtensionPageHandlers = {
   state: () => currentState(),
   connect: (request) => connect(request),
   signOut: () => signOut(),
-  unlock: (request) =>
-    withConnection((conn) => api.unlock(conn, request.masterPassword)).then(async (result) =>
-      result.ok || result.error.kind !== "locked"
-        ? stateAfter(result)
-        : ok(stateFromError(await loadServer(), result.error)),
-    ),
-  lock: () => withConnection((conn) => api.lock(conn)).then(stateAfter),
-  entries: () => entries().then((result) => (result.ok ? ok(withKnownTotp(result.value)) : result)),
+  unlock: (request) => withConnection((conn) => vault.unlock(conn, request.password)).then(stateAfter),
+  lock: () => vault.lock().then(() => stateAfter(ok(null))),
+  entries: () => entries(true),
   matches: (request) => matchesFor(request.pageUrl ?? ""),
   fillInTab: (request) => fillInTab(request.tabId, request.entryId),
   fillAnyway: (request) => fillAnyway(request.tabId, request.entryId, request.pageHost),
   reveal: (request) =>
-    withConnection((conn) => api.getEntry(conn, request.entryId)).then((entry) =>
+    entryDetail(request.entryId).then((entry) =>
       entry.ok ? ok({ username: entry.value.username, password: entry.value.password }) : entry,
     ),
   generate: () => generated(defaultPlan),
@@ -535,9 +512,9 @@ const applyIdleInterval = (settings: Settings): Settings => {
 
 const onIdleState = async (state: IdleState): Promise<void> => {
   const settings = await loadSettings();
-  if (idleAction(state, settings) === "lock" && (await loadConnection()) !== null) {
+  if (idleAction(state, settings) === "lock") {
     forgetEntries();
-    await withConnection((conn) => api.lock(conn));
+    await vault.lock();
   }
 };
 

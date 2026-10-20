@@ -1,6 +1,6 @@
 import type { BrowserContext, Page, Worker } from "@playwright/test";
 import { expect, signInAndUnlock, test, type Quark } from "./fixtures.ts";
-import { env } from "./support/env.ts";
+import { env, ownerVault } from "./support/env.ts";
 
 // Quark's own web login, /login, as its Flutter web app draws it (#159). Flutter paints the fields into a canvas
 // and takes the typing in transparent <input>s laid over them; the extension has to see those as the fields they
@@ -21,7 +21,7 @@ test.beforeEach(async ({ popup, quark }) => {
 // The worker caches the entry list, so the vault is locked and unlocked again to see an entry a test adds.
 const relock = async (popup: Page, quark: Quark) => {
   await popup.evaluate(() => chrome.runtime.sendMessage({ type: "lock" }));
-  expect(await popup.evaluate((masterPassword) => chrome.runtime.sendMessage({ type: "unlock", masterPassword }), quark.seed.masterPassword)).toMatchObject({
+  expect(await popup.evaluate((password) => chrome.runtime.sendMessage({ type: "unlock", password }), quark.seed.owner.password)).toMatchObject({
     ok: true,
   });
 };
@@ -92,16 +92,8 @@ test("fills Quark's Flutter login after the Fill anyway confirmation (#159, #157
 // A login saved for the Quark itself: the inline button is on its fields, and what it fills reaches Flutter, so
 // Sign in signs the user in.
 test("signs in to Quark from the inline picker on its own login (#159)", async ({ context, popup, quark, worker }) => {
-  const token = await quark.api.login(quark.seed.owner.username, quark.seed.owner.password);
-  const created = await quark.api.expectOk<{ id: number }>(
-    quark.api.call(
-      "POST",
-      "/vault/entries",
-      { name: "This Quark", url: loginUrl(), username: quark.seed.owner.username, password: quark.seed.owner.password },
-      token,
-    ),
-    "POST /vault/entries",
-  );
+  const vault = await ownerVault(quark);
+  const created = await vault.add({ kind: "entry", name: "This Quark", url: loginUrl(), username: quark.seed.owner.username, password: quark.seed.owner.password });
   try {
     await relock(popup, quark);
     const page = await openLogin(context);
@@ -135,6 +127,6 @@ test("signs in to Quark from the inline picker on its own login (#159)", async (
     await expect(page.getByRole("button", { name: "Sign in" })).toBeHidden();
   } finally {
     await relock(popup, quark);
-    await quark.api.call("DELETE", `/vault/entries/${created.id}`, undefined, token);
+    await vault.remove(created);
   }
 });

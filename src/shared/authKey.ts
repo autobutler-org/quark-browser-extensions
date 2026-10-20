@@ -1,10 +1,16 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 
-export type DeriveAuthKey = (password: string, salt: Uint8Array) => Promise<string>;
+// The Argon2id cost a key was derived at, as the Quark stores it in kdfParams: passes, and memory in bytes.
+export type KdfCost = Readonly<{ opsLimit: number; memLimit: number }>;
+
+export type DerivedKeys = Readonly<{ authKey: string; vaultWrapKey: Uint8Array }>;
+
+export type DeriveKeys = (password: string, salt: Uint8Array, cost?: KdfCost) => Promise<DerivedKeys>;
 
 const encoder = new TextEncoder();
 
-export const toBase64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes));
+// One character at a time: spreading a large ciphertext into String.fromCharCode overflows the stack.
+export const toBase64 = (bytes: Uint8Array): string => btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 
 export const fromBase64 = (text: string): Uint8Array | null => {
   try {

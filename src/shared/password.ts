@@ -1,7 +1,7 @@
 import { err, ok, type Result } from "./types";
 
 // A generated password that fits the field it goes into and has a character of every class it asks for
-// (#131). The Quark draws each character uniformly from the pool of the requested classes but never promises
+// (#131). drawPassword draws each character uniformly from the pool of the requested classes but never promises
 // one of each, so a draw without every class is thrown away and drawn again. Redrawing keeps every valid
 // password equally likely, which placing one of each class first and shuffling would only approximate.
 
@@ -9,7 +9,7 @@ export type CharClass = "lower" | "upper" | "digit" | "symbol";
 
 export const charClasses: readonly CharClass[] = ["lower", "upper", "digit", "symbol"];
 
-// Quark's pool is 83 characters, 6.38 bits each: 20 characters is about 127 bits and 12 about 76. Below 12
+// The full pool is 83 characters, 6.38 bits each: 20 characters is about 127 bits and 12 about 76. Below 12
 // the password still fills the field, but the user is told the site keeps it short.
 export const preferredLength = 20;
 export const floorLength = 12;
@@ -25,6 +25,31 @@ export const isShort = (password: string): boolean => password.length < floorLen
 // Whether a password already passes the field's own checks.
 export const fits = (password: string, rules: FieldRules): boolean =>
   (rules.maxLength <= 0 || password.length <= rules.maxLength) && password.length >= rules.minLength && patternTest(rules.pattern)(password);
+
+// The Quark app's generator's characters (lib/utils/vault_password_generator.dart), less the ones that read
+// alike, as the extension always asked the Quark's old /vault/generate for.
+const pools: Record<CharClass, string> = {
+  lower: "abcdefghijkmnopqrstuvwxyz",
+  upper: "ABCDEFGHJKLMNPQRSTUVWXYZ",
+  digit: "23456789",
+  symbol: "!@#$%^&*()-_=+[]{}|;:,.<>?",
+};
+
+// A uniform index below `bound`, from the browser's CSPRNG; values past the last whole multiple are drawn again.
+const randomBelow = (bound: number): number => {
+  const limit = Math.floor(0x1_0000_0000 / bound) * bound;
+  const word = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(word);
+  } while ((word[0] ?? 0) >= limit);
+  return (word[0] ?? 0) % bound;
+};
+
+// Draws on the device: the Quark no longer generates passwords (autobutler-org/quark#3459).
+export const drawPassword: Draw = (length, classes) => {
+  const pool = classes.map((name) => pools[name]).join("");
+  return Promise.resolve(ok(Array.from({ length }, () => pool[randomBelow(pool.length)]).join("")));
+};
 
 const classOf = (char: string): CharClass =>
   /[a-z]/.test(char) ? "lower" : /[A-Z]/.test(char) ? "upper" : /[0-9]/.test(char) ? "digit" : "symbol";
@@ -126,7 +151,7 @@ export const generateFor = async (plan: PasswordPlan, draw: Draw): Promise<Resul
       }
     }
   }
-  return err({ kind: "server", status: 0, message: "The Quark didn't generate a password with every kind of character" });
+  return err({ kind: "server", status: 0, message: "No password with every kind of character was drawn" });
 };
 
 const triesPerPlan = 4;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   charClasses,
+  drawPassword,
   floorLength,
   generateFor,
   isShort,
@@ -15,28 +16,17 @@ import { err, ok, type Result } from "../src/shared/types";
 
 // A generated password fits the field it goes into and has a character of every class it asks for (#131).
 
-// Quark's pool: lower, upper, digits and 26 symbols, minus the ambiguous 0O1lI. 83 characters in all.
+// The Quark app's generator's pool (vault_password_generator.dart): lower, upper, digits and 26 symbols, minus the
+// ambiguous 0O1lI. 83 characters in all.
 const pools: Record<CharClass, string> = {
   lower: "abcdefghijkmnopqrstuvwxyz",
   upper: "ABCDEFGHJKLMNPQRSTUVWXYZ",
   digit: "23456789",
-  symbol: "!@#$%^&*()-_=+[]{};:,.<>?/",
+  symbol: "!@#$%^&*()-_=+[]{}|;:,.<>?",
 };
 
-const uniform = (bound: number): number => {
-  const limit = Math.floor(0x1_0000_0000 / bound) * bound;
-  const word = new Uint32Array(1);
-  do {
-    crypto.getRandomValues(word);
-  } while ((word[0] ?? 0) >= limit);
-  return (word[0] ?? 0) % bound;
-};
-
-// Like vaultutil.GeneratePassword: one uniform draw per character from the pool of the requested classes.
-const server = (length: number, classes: readonly CharClass[]): Promise<Result<string>> => {
-  const pool = classes.map((name) => pools[name]).join("");
-  return Promise.resolve(ok(Array.from({ length }, () => pool[uniform(pool.length)]).join("")));
-};
+// One uniform draw per character from the pool of the requested classes, on the device.
+const server = drawPassword;
 
 const classesIn = (password: string): ReadonlySet<CharClass> =>
   new Set([...password].map((char) => charClasses.find((name) => pools[name].includes(char)) ?? "symbol"));
@@ -106,6 +96,15 @@ describe("sanePlan", () => {
     expect(sanePlan("8", ["nope", "digit", "digit"])).toEqual({ length: 20, classes: ["digit"] });
     expect(sanePlan(8, [])).toEqual({ length: 8, classes: charClasses });
     expect(sanePlan(3, charClasses)).toEqual({ length: 3, classes: ["lower", "upper", "digit"] });
+  });
+});
+
+describe("drawPassword", () => {
+  it("draws only from the requested classes' pools, and reaches every character in them", async () => {
+    const drawn = value(await drawPassword(20_000, charClasses));
+    expect(drawn).toHaveLength(20_000);
+    expect(new Set(drawn)).toEqual(new Set(Object.values(pools).join("")));
+    expect(value(await drawPassword(500, ["digit"]))).toMatch(/^[2-9]{500}$/);
   });
 });
 

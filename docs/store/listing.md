@@ -48,15 +48,15 @@ as the same text and can be edited.
 > **How it keeps your logins safe**
 >
 > • Sign-in normally sends only a key derived from your account password with Argon2id, as the Quark app does. An account made before auth keys can send the password beside the key for its upgrade, but only after you confirm that one attempt; never over non-loopback plain HTTP, and never after the extension has seen that account sign in with a key.
-> • Unlocking is done by your Quark. The vault password is sent once to unlock and never stored.
-> • Decrypted logins are fetched one at a time when you fill, and never stored or cached.
+> • Your vault is end-to-end encrypted, as in the Quark app: the extension decrypts it on your device with the password you sign in with, and your Quark only ever stores ciphertext.
+> • A login's password is decrypted when you fill it, and never stored or cached.
 > • A login fills directly only with the scheme and port where it was saved, on that host or a safe subdomain, checked in both the page and the extension. Another scheme or port is labelled as a fallback; filling any other location takes a popup confirmation that names both places and never auto-submits.
 > • Optional auto-submit runs only when the form sends to the page's own site and does not downgrade HTTPS to HTTP. Otherwise you press the site's submit button yourself.
 > • The session token is kept in memory. "Stay signed in" stores it encrypted, never in plain text. The session shows up in your Quark under Settings › Sessions, and you can revoke it there.
-> • On Chrome the vault locks when the screen locks; optional idle locking can also lock it after 5, 15 or 30 minutes. Firefox cannot detect the screen lock, so it always locks after the chosen idle time.
+> • The vault locks after 15 minutes unused. On Chrome it also locks when the screen locks; optional idle locking can also lock it after 5, 15 or 30 minutes. Firefox cannot detect the screen lock, so it always locks after the chosen idle time.
 > • No analytics, no telemetry, no remote code.
 >
-> **You need** a Quark (v0.47.0 or later) with its password vault set up, and a Quark admin account.
+> **You need** a Quark account with its end-to-end encrypted vault set up in the Quark app.
 >
 > Open source under MIT-0: https://github.com/autobutler-org/quark-browser-extensions
 

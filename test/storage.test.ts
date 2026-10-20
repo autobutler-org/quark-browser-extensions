@@ -1,4 +1,5 @@
 import { extensionUrl, fakeChrome, extensionId } from "./fakeChrome";
+import { openVault } from "./fakeVault";
 
 const connection = { server: "https://quark.local", token: "secret-token" };
 
@@ -282,13 +283,15 @@ describe("the worker drops the connection", () => {
 
   it("when the server answers 401", async () => {
     await signedIn();
+    await openVault(fake.chrome.storage.session, connection.server);
     await startWorker(() => Promise.resolve(json(401, { error: "authentication required" })));
     const reply = await fake.send({ type: "entries" }, popup);
     expect(reply).toEqual({ ok: false, error: { kind: "signedOut" } });
     expect(gone()).toEqual(signedOut);
+    expect(fake.chrome.storage.session.items.has("vault")).toBe(false);
   });
 
-  it("when the vault status check answers 401", async () => {
+  it("when the vault key check answers 401", async () => {
     await signedIn();
     await startWorker(() => Promise.resolve(json(401)));
     const reply = await fake.send({ type: "state" }, popup);
@@ -298,6 +301,7 @@ describe("the worker drops the connection", () => {
 
   it("but keeps it on other errors", async () => {
     await signedIn();
+    await openVault(fake.chrome.storage.session, connection.server);
     await startWorker(() => Promise.resolve(json(500, { error: "boom" })));
     await fake.send({ type: "entries" }, popup);
     expect(stored().session).toEqual(connection);

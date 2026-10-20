@@ -62,15 +62,15 @@ export const connect = async (popup: Page, quark: Quark, account: Readonly<{ use
   await popup.click("button[type=submit]");
 };
 
-// Signs the popup in as the owner and unlocks the vault, from whatever state
-// the shared Quark's vault is in.
+// Signs the popup in as the owner, which opens the vault with the same
+// password; unlocks it from the lock screen if it didn't.
 export const signInAndUnlock = async (popup: Page, quark: Quark) => {
   await connect(popup, quark, quark.seed.owner);
   const locked = popup.getByRole("heading", { name: "Vault is locked" });
   const entries = popup.getByText(/^All entries · \d+$/);
   await expect(locked.or(entries)).toBeVisible({ timeout: 30_000 });
   if (await locked.isVisible()) {
-    await popup.fill("#master", quark.seed.masterPassword);
+    await popup.fill("#unlock-password", quark.seed.owner.password);
     await popup.click("button[type=submit]");
   }
   await expect(entries).toBeVisible();

@@ -110,13 +110,8 @@ test("fills a one-time code, the same one the popup gets", async ({ context, pop
 test("a locked vault refuses to fill, and the options page loads", async ({ context, extensionId, popup, quark, site, worker }) => {
   const { tabId } = await openLoginPage(context, worker, site);
   await popup.evaluate(() => chrome.runtime.sendMessage({ type: "lock" }));
-  const status = await quark.api.call(
-    "GET",
-    "/vault/status",
-    undefined,
-    await quark.api.login(quark.seed.owner.username, quark.seed.owner.password),
-  );
-  expect((status.body as { locked: boolean }).locked, "the lock reached the Quark").toBe(true);
+  // Locking is local: the worker forgets the vault key, and the Quark has nothing to lock.
+  expect(await worker.evaluate(async () => (await chrome.storage.session.get("vault")).vault), "the vault key is forgotten").toBeUndefined();
   const fill: unknown = await popup.evaluate(([id, entryId]) => chrome.runtime.sendMessage({ type: "fillInTab", tabId: id, entryId }), [tabId, quark.seed.local]);
   expect(fill).toMatchObject({ ok: false, error: { kind: "locked" } });
 
