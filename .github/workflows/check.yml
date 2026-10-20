@@ -38,7 +38,7 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     env:
-      QUARK_REF: ${{ vars.QUARK_REF || '11c8ff1e95880881a65c2cb50d458c06c2094678' }}
+      QUARK_REF: ${{ vars.QUARK_REF || 'f1fc12e271efbd81c690f571b9a19aff4881c6ef' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/checkout@v7
@@ -76,7 +76,7 @@ jobs:
   e2e-quark-web:
     runs-on: ubuntu-latest
     env:
-      QUARK_REF: ${{ vars.QUARK_REF || '11c8ff1e95880881a65c2cb50d458c06c2094678' }}
+      QUARK_REF: ${{ vars.QUARK_REF || 'f1fc12e271efbd81c690f571b9a19aff4881c6ef' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/checkout@v7
@@ -140,7 +140,7 @@ jobs:
   firefox-e2e:
     runs-on: ubuntu-latest
     env:
-      QUARK_REF: ${{ vars.QUARK_REF || '11c8ff1e95880881a65c2cb50d458c06c2094678' }}
+      QUARK_REF: ${{ vars.QUARK_REF || 'f1fc12e271efbd81c690f571b9a19aff4881c6ef' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/checkout@v7
