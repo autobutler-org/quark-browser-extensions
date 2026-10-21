@@ -1,4 +1,4 @@
-import { h, icon, icons } from "../shared/dom";
+import { h } from "../shared/dom";
 import { stateText } from "../shared/errors";
 import { formatDuration, t } from "../shared/i18n";
 import { ask } from "../shared/messages";
@@ -161,7 +161,7 @@ const render = async (): Promise<void> => {
     h(
       "main",
       { className: "page" },
-      h("div", { className: "title" }, h("div", { className: "brand-mark large" }, icon(document, icons.quark, 20)), h("h1", {}, t("optionsTitle"))),
+      h("div", { className: "title" }, h("img", { className: "brand-mark large", src: "/icons/icon-128.png", alt: "" }), h("h1", {}, t("optionsTitle"))),
       connection(state),
       h(
         "section",

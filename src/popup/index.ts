@@ -123,7 +123,7 @@ const header = (actions: readonly HTMLElement[] = [], subtitle = ""): HTMLElemen
   h(
     "header",
     { className: "bar" },
-    h("div", { className: "brand-mark" }, icon(document, icons.quark, 16)),
+    h("img", { className: "brand-mark", src: "/icons/icon-128.png", alt: "" }),
     h("div", { className: "brand" }, h("div", { className: "brand-name" }, t("extName")), subtitle === "" ? null : h("div", { className: "mono muted small" }, subtitle)),
     ...actions,
   );

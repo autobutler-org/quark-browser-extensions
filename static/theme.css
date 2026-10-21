@@ -148,18 +148,11 @@ button:disabled {
   width: 28px;
   height: 28px;
   flex-shrink: 0;
-  border-radius: 8px;
-  background: var(--mark);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .brand-mark.large {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
 }
 
 .mono {

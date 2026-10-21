@@ -68,6 +68,13 @@ afterEach(() => {
 });
 
 describe("the options page", () => {
+  // The header shows the same Quark logo as the toolbar icon (#180); the heading names the page, so it's decorative.
+  it("shows the Quark logo in its header", async () => {
+    const mark = (await openOptions()).querySelector<HTMLImageElement>(".title img.brand-mark");
+    expect(mark?.getAttribute("src")).toBe("/icons/icon-128.png");
+    expect(mark?.getAttribute("alt")).toBe("");
+  });
+
   it("names each checkbox by its title and reads its hint as the description", async () => {
     const app = await openOptions();
     const box = app.querySelector<HTMLInputElement>("#autoSubmit")!;
