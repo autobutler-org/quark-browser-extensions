@@ -105,6 +105,15 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
+// The header shows the same Quark logo as the toolbar icon (#180); the name beside it says what it is.
+describe("the popup header", () => {
+  it("shows the Quark logo", async () => {
+    const mark = (await openPopup(unlocked)).querySelector<HTMLImageElement>("header img.brand-mark");
+    expect(mark?.getAttribute("src")).toBe("/icons/icon-128.png");
+    expect(mark?.getAttribute("alt")).toBe("");
+  });
+});
+
 describe("the popup's match cards", () => {
   it("names each Fill button after its entry", async () => {
     const app = await openPopup(unlocked);
