@@ -33,6 +33,11 @@ afterEach(() => {
 });
 
 describe("attachPicker", () => {
+  // A rendered field by default: a hidden picker can't take focus. Tests that place things mock their own rects.
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(DOMRect.fromRect({ x: 10, y: 10, width: 200, height: 30 }));
+  });
+
   it("lists this origin's logins first and fallbacks under their own label, with where each was saved", () => {
     const roots = openShadows();
     const field = document.createElement("input");
