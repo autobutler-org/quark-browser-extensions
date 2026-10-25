@@ -118,10 +118,10 @@ describe("matchEntries", () => {
 describe("mayHaveOtp", () => {
   const [match] = matchEntries([entry(1, "A", "github.com")], "https://github.com/");
 
-  it("offers a code unless the entry is known to have none", () => {
+  it("offers a code only when the entry has a secret", () => {
     expect(match).toBeDefined();
     if (match === undefined) return;
-    expect(mayHaveOtp(match)).toBe(true);
+    expect(mayHaveOtp(match)).toBe(false);
     expect(mayHaveOtp({ ...match, hasTotp: true })).toBe(true);
     expect(mayHaveOtp({ ...match, hasTotp: false })).toBe(false);
   });

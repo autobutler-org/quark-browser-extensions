@@ -28,8 +28,8 @@ export type SiteMatch = EntrySummary &
     note: string;
   }>;
 
-// Offer "Copy one-time code" unless the entry is known to have none.
-export const mayHaveOtp = (entry: EntrySummary): boolean => entry.hasTotp !== false;
+// Offer "Copy one-time code" only for entries with a secret; the button is a dead end on the rest.
+export const mayHaveOtp = (entry: EntrySummary): boolean => entry.hasTotp === true;
 
 export const isFallback = (match: SiteMatch): boolean => match.kind === "otherPort" || match.kind === "otherScheme";
 
