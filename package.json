@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit && tsc -p e2e",
     "test": "vitest run",
     "test:scripts": "node --test 'scripts/*.test.js'",
-    "check": "npm run typecheck && npm run lint && npm test && npm run test:scripts",
+    "check": "npm run typecheck && npm run lint && npm run coverage && npm run test:scripts",
     "test:e2e": "npm run build:chrome && playwright test -c e2e",
     "package": "wxt zip -b chrome && wxt zip -b firefox",
     "build:chrome": "wxt build -b chrome",
