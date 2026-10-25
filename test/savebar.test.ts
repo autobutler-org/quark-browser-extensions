@@ -32,6 +32,16 @@ afterEach(() => {
 });
 
 describe("showSaveBar", () => {
+  // A fixed 340px bar would run off a narrow window or a zoomed page (#31).
+  it("fits narrow and zoomed windows instead of overflowing them (#31)", () => {
+    const { root } = show();
+    const css = [...root.adoptedStyleSheets].flatMap((sheet) => [...sheet.cssRules].map((rule) => rule.cssText)).join("\n") ||
+      (root.querySelector("style")?.textContent ?? "");
+    expect(css).toMatch(/max-width: calc\(100vw - 16px\)/);
+    expect(css).toMatch(/max-height: calc\(100vh - 16px\)/);
+    expect(css).toMatch(/overflow-y: auto/);
+  });
+
   it("is a dialog named and described by its own text", () => {
     const { root, bar } = show();
     const title = root.getElementById(bar.getAttribute("aria-labelledby") ?? "");
