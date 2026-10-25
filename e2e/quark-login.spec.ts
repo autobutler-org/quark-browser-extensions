@@ -29,12 +29,21 @@ const relock = async (popup: Page, quark: Quark) => {
 const tabIds = (worker: Worker) => worker.evaluate(async () => (await chrome.tabs.query({})).map((tab) => tab.id!));
 
 // Opens Quark's /login, past the terms screen a fresh browser gets first, until Flutter has drawn both fields.
+// Quark no longer turns Flutter's semantics tree on at startup (autobutler-org/quark#3769), and the fields are
+// <input>s only in that tree, so the page opts in through Flutter's own "Enable accessibility" button, as a
+// screen reader user does. An older Quark has the tree on already and shows no such button.
 const openLogin = async (context: BrowserContext): Promise<Page> => {
   const page = await context.newPage();
   await page.goto(loginUrl());
+  const enable = page.getByRole("button", { name: "Enable accessibility" });
   const agree = page.getByRole("button", { name: "I Agree" });
   const username = page.getByRole("textbox", { name: "Username" });
-  await expect(agree.or(username)).toBeVisible({ timeout: 30_000 });
+  await expect(enable.or(agree).or(username)).toBeVisible({ timeout: 30_000 });
+  if (await enable.isVisible()) {
+    // The button is a 1px element off the page's edge, out of reach of a real click.
+    await enable.dispatchEvent("click");
+  }
+  await expect(agree.or(username)).toBeVisible();
   if (await agree.isVisible()) {
     await agree.click();
     await page.waitForURL(/\/login$/);
