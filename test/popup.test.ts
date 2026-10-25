@@ -91,7 +91,7 @@ beforeEach(() => {
 const clipboard: string[] = [];
 
 beforeEach(() => {
-  worker.entries = [entry(1, "Work mail", "example.com"), entry(2, "Bank", "bank.test")];
+  worker.entries = [entry(1, "Work mail", "example.com"), { ...entry(2, "Bank", "bank.test"), hasTotp: true }];
 });
 
 afterEach(() => {
@@ -311,11 +311,11 @@ describe("all entries", () => {
     expect(clipboard).toEqual(["ana", "hunter2", "123456"]);
   });
 
-  it("offers a one-time code only for entries not known to lack one (#103)", async () => {
+  it("offers a one-time code only for entries with a secret (#30)", async () => {
     worker.entries = [{ ...entry(2, "Bank", "bank.test"), hasTotp: false }, { ...entry(4, "Shop", "shop.test"), hasTotp: true }, entry(5, "Forum", "forum.test")];
     const app = await openPopup(unlocked);
     const codeButtons = [...app.querySelectorAll(".list button")].map((found) => found.getAttribute("aria-label")).filter((label) => label?.startsWith("Copy one-time code"));
-    expect(codeButtons).toEqual(["Copy one-time code for Forum", "Copy one-time code for Shop"]);
+    expect(codeButtons).toEqual(["Copy one-time code for Shop"]);
   });
 
   it("fills an entry that matches this page with one click", async () => {

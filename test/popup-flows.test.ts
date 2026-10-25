@@ -483,7 +483,7 @@ describe("notices (#102)", () => {
   it("goes when the copied one-time code changes", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     worker.otp = ok({ code: "123456", secondsLeft: 2 });
-    worker.entries = [{ id: 1, name: "Mail", urlHost: "mail.test", folderId: null, url: "", updatedAt: "" }];
+    worker.entries = [{ id: 1, name: "Mail", urlHost: "mail.test", folderId: null, url: "", updatedAt: "", hasTotp: true }];
     const app = await openPopup();
     await click(app, "Copy one-time code for Mail");
     expect(notice(app)).toBe("Copied the code for Mail. It changes in 2s.");
