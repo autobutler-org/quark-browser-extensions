@@ -119,6 +119,29 @@ describe("resolving a captured login in the worker", () => {
     });
   });
 
+  // autobutler-org/quark#3601: an entry's androidApps link, and any field a newer app adds, survive a rewrite here.
+  it("keeps fields it doesn't know when it rewrites a login", async () => {
+    const submitted = password("replacement");
+    const unknown = {
+      androidApps: [{ packageName: "com.example.app", sha256CertFingerprints: ["AB:CD:EF"] }],
+      futureField: { nested: [1, "two", null] },
+    };
+    entries = [{ id: 5, name: "Example", url: "https://accounts.example/login", username: "alice", password: password("previous"), ...unknown }];
+    await startWorker();
+
+    expect(await captured("https://accounts.example/login", "alice", submitted)).toMatchObject({ kind: "update", entryId: 5 });
+    expect(await resolveFromPage("https://accounts.example/login", "update")).toEqual({ ok: true, value: null });
+    const [sent] = requests("PUT", "/vault/items/5").map(({ body }) => body);
+    expect(opened(sent)).toEqual({
+      kind: "entry",
+      name: "Example",
+      url: "https://accounts.example/login",
+      username: "alice",
+      password: submitted,
+      ...unknown,
+    });
+  });
+
   it("remembers when the user never wants save offers for a site", async () => {
     await startWorker();
     const url = "https://accounts.example/login";

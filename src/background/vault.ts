@@ -142,7 +142,8 @@ export const createVault = (api: Api, derive: DeriveKeys = deriveKeys, now: () =
     create: (connection: Connection, entry: NewEntry): Promise<Result<number>> =>
       withKey(connection, true, (key) => api.createItem(connection, sealItem(newItem(entry), key))),
 
-    // Rewrites the whole item with only the password changed, so its notes, custom fields and folder stay.
+    // Rewrites the whole item with only the password changed, so its notes, custom fields, folder, androidApps and
+    // any field a newer app adds stay.
     replacePassword: (connection: Connection, id: number, password: string): Promise<Result<null>> =>
       withKey(connection, true, async (key) => {
         const item = await getEntry(connection, id, key);
