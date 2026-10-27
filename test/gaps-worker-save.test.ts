@@ -1,5 +1,6 @@
 import { extensionId, extensionUrl, fakeChrome } from "./fakeChrome";
 import { opened, openVault, vaultRoutes, type EntryFixture } from "./fakeVault";
+import { pendingTtlMs } from "../src/background/save";
 
 const serverUrl = "https://quark.local";
 const connection = { server: serverUrl, token: ["session", "credential"].join("-") };
@@ -26,6 +27,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 const startWorker = async (): Promise<void> => {
@@ -165,9 +167,19 @@ describe("resolving a captured login in the worker", () => {
 
   it("explains when there is no longer a captured login to resolve", async () => {
     await startWorker();
-    expect(await fake.send({ type: "resolveSave", action: "dismiss", tabId }, popup)).toEqual({
+    expect(await fake.send({ type: "resolveSave", action: "save", tabId }, popup)).toEqual({
       ok: false,
       error: { kind: "refused", reason: "That login is no longer waiting to be saved." },
     });
+  });
+
+  // "Not now" on a bar whose login timed out was refused, so the bar could never be closed.
+  it("lets a login that has timed out still be dismissed", async () => {
+    await startWorker();
+    const url = "https://accounts.example/login";
+    expect(await captured(url, "alice", password("new"))).toMatchObject({ kind: "save" });
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + pendingTtlMs);
+    expect(await resolveFromPage(url, "dismiss")).toEqual({ ok: true, value: null });
+    expect(await resolveFromPage(url, "save")).toMatchObject({ ok: false, error: { kind: "refused" } });
   });
 });
