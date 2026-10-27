@@ -27,7 +27,7 @@
     "test:e2e:mock": "npm run build:chrome && E2E_TARGET=mock playwright test -c e2e",
     "test:e2e:firefox": "npm run build:firefox && playwright test -c e2e/firefox",
     "test:e2e:firefox:mock": "npm run build:firefox && E2E_TARGET=mock playwright test -c e2e/firefox",
-    "firefox:install": "browsers install firefox@stable --path e2e/.firefox",
+    "firefox:install": "browsers install firefox@stable_158.0.1 --path e2e/.firefox",
     "lint": "eslint ."
   },
   "devDependencies": {
