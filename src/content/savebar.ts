@@ -1,4 +1,4 @@
-import type { SaveAction, SaveOffer } from "../background/save";
+import { pendingTtlMs, type SaveAction, type SaveOffer } from "../background/save";
 import { h$, icon, icons } from "../shared/dom";
 import { adoptStyles } from "./styles";
 import { saveBarCopy } from "../shared/saveCopy";
@@ -40,8 +40,11 @@ button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 let current: HTMLElement | null = null;
 let previous: HTMLElement | null = null;
+let expiry: ReturnType<typeof setTimeout> | undefined;
 
 export const hideSaveBar = (): void => {
+  clearTimeout(expiry);
+  expiry = undefined;
   // Hand focus back to wherever it was before the bar took it, unless the user has moved on.
   const hadFocus = current !== null && current.ownerDocument.activeElement === current;
   current?.remove();
@@ -113,6 +116,8 @@ export const showSaveBar = (
   const active = doc.activeElement;
   doc.body.append(host);
   current = host;
+  // The worker forgets the login after pendingTtlMs; a bar left up past that could only fail, so it goes too.
+  expiry = setTimeout(hideSaveBar, pendingTtlMs);
   previous = active instanceof HTMLElement && active !== doc.body ? active : null;
   // Move focus to the bar so a keyboard or screen-reader user lands on it (and hears its name)
   // instead of having to Tab through the whole page; Escape dismisses it.

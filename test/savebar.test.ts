@@ -1,5 +1,5 @@
 import { hideSaveBar, showSaveBar } from "../src/content/savebar";
-import type { SaveAction, SaveOffer } from "../src/background/save";
+import { pendingTtlMs, type SaveAction, type SaveOffer } from "../src/background/save";
 
 // The bar's shadow root is closed; open it so the test can look inside.
 const openShadows = (): ShadowRoot[] => {
@@ -86,6 +86,19 @@ describe("showSaveBar", () => {
     await vi.waitFor(() => expect(root.host.isConnected).toBe(false));
     expect(seen).not.toHaveBeenCalled();
     document.removeEventListener("keydown", seen);
+  });
+
+  it("goes away on its own once the worker has forgotten the login", () => {
+    vi.useFakeTimers();
+    try {
+      const { root } = show();
+      vi.advanceTimersByTime(pendingTtlMs - 1);
+      expect(root.host.isConnected).toBe(true);
+      vi.advanceTimersByTime(1);
+      expect(root.host.isConnected).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows a failure as an alert and stays open", async () => {

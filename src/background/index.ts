@@ -337,7 +337,8 @@ const myOffer = async (sender: Sender): Promise<SaveOffer | null> => {
 const resolveSave = async (tabId: number, action: SaveAction): Promise<Result<null>> => {
   const pending = freshPending(tabId);
   if (pending === null) {
-    return refused(t("refuseSaveGone"));
+    // Nothing left to dismiss is still dismissed: refusing would leave the page's bar with no way to close.
+    return action === "dismiss" ? ok(null) : refused(t("refuseSaveGone"));
   }
   const finish = <T>(result: Result<T>): Result<null> => {
     if (result.ok) {
