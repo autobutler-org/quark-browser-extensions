@@ -223,6 +223,10 @@ describe("one-time codes", () => {
   });
 });
 
+// An unlock with the password derives at the standard Argon2id cost, the lowest a wrap may ask for (quark-project
+// #233): seconds in pure JS under a loaded test run.
+const unlockTimeout = 60_000;
+
 describe("locking and unlocking", () => {
   it("unlocks with the login password on the device and reports the new state", async () => {
     await start();
@@ -234,7 +238,7 @@ describe("locking and unlocking", () => {
     expect(server.calls.map((call) => `${call.method} ${call.path}`)).toEqual(["GET /vault/key"]);
     expect(JSON.stringify(server.calls)).not.toContain(loginPassword);
     expect(await fake.send({ type: "reveal", entryId: 2 }, popup)).toEqual({ ok: true, value: { username: "tanuki", password: "gl-secret" } });
-  });
+  }, unlockTimeout);
 
   it("reports a wrong password and stays locked", async () => {
     await start();
@@ -245,7 +249,7 @@ describe("locking and unlocking", () => {
     });
     expect(isOpenHere()).toBe(false);
     expect(await fake.send({ type: "state" }, popup)).toEqual({ kind: "locked", server: connection.server });
-  });
+  }, unlockTimeout);
 
   it("says when the account has no vault to unlock", async () => {
     await start();
