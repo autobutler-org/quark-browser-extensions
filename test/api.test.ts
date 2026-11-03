@@ -253,6 +253,20 @@ describe("the vault routes", () => {
     expect(await respond(401, { error: "authentication required" }).api.vaultKey(connection)).toEqual({ ok: false, error: { kind: "signedOut" } });
   });
 
+  it("refuses a key wrapped below the standard Argon2id cost or above the ceiling, without deriving (quark-project #233)", async () => {
+    const at = (opsLimit: unknown, memLimit: unknown) =>
+      respond(200, { ...wrapped, kdfParams: { alg: "argon2id13+hkdf-sha256", opsLimit, memLimit } }).api.vaultKey(connection);
+    const outOfBounds = { ok: false, error: { kind: "server", status: 200, message: "vault key cost out of bounds" } };
+    expect(await at(1, 8192)).toEqual(outOfBounds);
+    expect(await at(2, 67108864)).toEqual(outOfBounds);
+    expect(await at(3, (64 << 20) - 1024)).toEqual(outOfBounds);
+    expect(await at(11, 67108864)).toEqual(outOfBounds);
+    expect(await at(3, (1 << 30) + 1024)).toEqual(outOfBounds);
+    expect(await at(4294967295, 4398046511104)).toEqual(outOfBounds);
+    expect(await at(3.5, 67108864)).toEqual(outOfBounds);
+    expect(await at(10, 1 << 30)).toMatchObject({ ok: true, value: { cost: { opsLimit: 10, memLimit: 1 << 30 } } });
+  });
+
   it("sends only the sealed item, and knows a vault deleted since it was opened", async () => {
     const sealed = { ciphertext: "Y2lwaGVy", nonce: "bm9uY2U=", formatVersion: 1 };
     const { api, calls } = respond(201, { id: 12, ...sealed });

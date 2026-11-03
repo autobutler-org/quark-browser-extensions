@@ -1,5 +1,5 @@
 import { fromBase64, type DeriveKeys, type KdfCost, type UpgradeLedger } from "./authKey";
-import { deriveKeys } from "./deriveAuthKey";
+import { deriveKeys, standardCost } from "./deriveAuthKey";
 import { extensionTooOld, legacyAgain, legacyInsecure, legacyUpgradeNeeded, quarkTooOld } from "./errors";
 import { serverTransport } from "./host";
 import { err, ok, type ApiError, type Connection, type Result } from "./types";
@@ -110,14 +110,32 @@ export type WrappedKey = Readonly<{ wrapped: Uint8Array; salt: Uint8Array; cost:
 
 export type StoredItem = SealedItem & Readonly<{ id: number; updatedAt: string }>;
 
-const asWrappedKey = (value: unknown): WrappedKey | null => {
+// The Argon2id cost a wrap may ask for, the bounds the Quark's vaultutil.ValidateKey enforces (autobutler-org/quark#3648).
+// The floor is the app's KdfParams.standard: a tampered Quark that lowered it would have the password guessed
+// cheaply offline. The ceiling keeps an unlock from hanging the worker or running it out of memory.
+export const kdfCostBounds = {
+  opsLimit: { min: standardCost.opsLimit, max: 10 },
+  memLimit: { min: standardCost.memLimit, max: 1 << 30 },
+} as const;
+
+const within = (value: unknown, bounds: Readonly<{ min: number; max: number }>): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= bounds.min && value <= bounds.max;
+
+type ReadKey = Readonly<{ key: WrappedKey }> | Readonly<{ problem: string }>;
+
+const asWrappedKey = (value: unknown): ReadKey => {
   const wrapped = fromBase64(stringField(value, "wrappedByPassword"));
   const salt = fromBase64(stringField(value, "saltPw"));
   const params = field(value, "kdfParams");
   const [opsLimit, memLimit] = [field(params, "opsLimit"), field(params, "memLimit")];
-  return wrapped === null || salt === null || typeof opsLimit !== "number" || typeof memLimit !== "number"
-    ? null
-    : { wrapped, salt, cost: { opsLimit, memLimit } };
+  if (wrapped === null || salt === null || typeof opsLimit !== "number" || typeof memLimit !== "number") {
+    return { problem: "unreadable vault key" };
+  }
+  // Refused, never derived with (quark-project #233).
+  if (!within(opsLimit, kdfCostBounds.opsLimit) || !within(memLimit, kdfCostBounds.memLimit)) {
+    return { problem: "vault key cost out of bounds" };
+  }
+  return { key: { wrapped, salt, cost: { opsLimit, memLimit } } };
 };
 
 const asStoredItem = (value: unknown): StoredItem => ({
@@ -233,8 +251,8 @@ export const createApi = (fetchFn: FetchFn, ledger: UpgradeLedger, derive: Deriv
       if (!result.ok) {
         return isFailure(result.error) && result.error.status === 404 ? err({ kind: "notInitialized" }) : err(normalizeError(result.error));
       }
-      const key = asWrappedKey(result.value);
-      return key === null ? err({ kind: "server", status: 200, message: "unreadable vault key" }) : ok(key);
+      const read = asWrappedKey(result.value);
+      return "key" in read ? ok(read.key) : err({ kind: "server", status: 200, message: read.problem });
     },
 
     listItems: async (connection: Connection): Promise<Result<readonly StoredItem[]>> =>

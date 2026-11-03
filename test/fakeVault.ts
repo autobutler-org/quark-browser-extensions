@@ -1,25 +1,25 @@
 import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { toBase64 } from "../src/shared/authKey";
-import { deriveKeys } from "../src/shared/deriveAuthKey";
+import { deriveKeys, standardCost } from "../src/shared/deriveAuthKey";
 import { openItem, sealItem, type SealedItem, type VaultItem } from "../src/shared/vaultCrypto";
 
 // The per-account vault as a test Quark serves it (autobutler-org/quark#3459): the vault key wrapped under the login
-// password, and every item as ciphertext the test seals with the real crypto. The Argon2id cost is the floor, so
-// unlocking takes milliseconds; the shipped cost is pinned in vaultCrypto.test.ts.
+// password, and every item as ciphertext the test seals with the real crypto. The wrap is at the standard cost,
+// the lowest the extension accepts (quark-project #233), over the login salt, so a sign-in's derive opens it.
 
 export const loginPassword = "correct horse";
 export const vaultKey = Uint8Array.from({ length: 32 }, (_, i) => i + 1);
-export const cheapCost = { opsLimit: 1, memLimit: 8192 };
+export const wrapCost = standardCost;
 const salt = Uint8Array.from({ length: 16 }, (_, i) => 100 + i);
 
-const wrapKey = (await deriveKeys(loginPassword, salt, cheapCost)).vaultWrapKey;
+const wrapKey = (await deriveKeys(loginPassword, salt, wrapCost)).vaultWrapKey;
 const nonce = Uint8Array.from({ length: 24 }, (_, i) => i);
 export const wrappedVaultKey = {
   wrappedByPassword: toBase64(Uint8Array.from([...nonce, ...xchacha20poly1305(wrapKey, nonce).encrypt(vaultKey)])),
   saltPw: toBase64(salt),
   wrappedByPhrase: toBase64(new Uint8Array(72)),
   saltRp: toBase64(salt),
-  kdfParams: { alg: "argon2id13+hkdf-sha256+recovery", ...cheapCost },
+  kdfParams: { alg: "argon2id13+hkdf-sha256+recovery", ...wrapCost },
 };
 
 // An entry as the extension used to get it from the Quark: the fields the app encrypts, plus its id.
