@@ -11,6 +11,7 @@ import {
   otpFields,
   passwordFields,
   standaloneUsernameField,
+  trustCanvasFieldsIn,
   usernameFieldFor,
 } from "../src/content/forms";
 
@@ -100,9 +101,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// Quark's own Flutter login is the one fixture served as the connected Quark's web app, where the worker lets its
+// canvas-drawn fields count as shown (#226); every other fixture is an ordinary site.
+const quarkPages: ReadonlySet<string> = new Set(["login-flutter-quark.html"]);
+
 const load = (name: string): Document => {
   document.body.innerHTML = readFileSync(join(fixtures, name), "utf8");
   attachShadowRoots(document.body);
+  trustCanvasFieldsIn(quarkPages.has(name) ? document : null);
   return document;
 };
 

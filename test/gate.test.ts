@@ -59,6 +59,7 @@ const requests: { [K in Request["type"]]: Extract<Request, { type: K }> } = {
   saveSettings: { type: "saveSettings", settings: defaultSettings },
   hello: { type: "hello" },
   fieldFocused: { type: "fieldFocused" },
+  quarkPage: { type: "quarkPage" },
   otpFromPage: { type: "otpFromPage", entryId: 1 },
   otp: { type: "otp", entryId: 1 },
   generateForPage: { type: "generateForPage", length: 20, classes: ["lower", "upper", "digit", "symbol"] },
@@ -93,6 +94,7 @@ const audience: Record<Request["type"], Audience> = {
   saveSettings: "pages",
   hello: "content",
   fieldFocused: "content",
+  quarkPage: "content",
   otpFromPage: "content",
   otp: "pages",
   generateForPage: "content",
@@ -148,6 +150,7 @@ const pageHandlerNames = [
 const contentHandlerNames = [
   "hello",
   "fieldFocused",
+  "quarkPage",
   "otpFromPage",
   "generateForPage",
   "captured",
