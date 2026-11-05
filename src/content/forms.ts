@@ -555,6 +555,14 @@ const findCanvases = (scope: ParentNode): readonly HTMLCanvasElement[] =>
     ...(element.shadowRoot === null ? [] : findCanvases(element.shadowRoot)),
   ]);
 
+// The document whose canvas-drawn fields count as shown: the connected Quark's web app, when the worker says this
+// top frame is it. Null everywhere else, so a transparent field there stays hidden.
+let canvasDocument: Document | null = null;
+
+export const trustCanvasFieldsIn = (doc: Document | null): void => {
+  canvasDocument = doc;
+};
+
 // The page's <canvas> elements, open shadow roots included, found once per pass.
 const canvases = (doc: Document): readonly HTMLCanvasElement[] => {
   const found = pass?.canvases.get(doc) ?? findCanvases(doc);
@@ -569,8 +577,12 @@ const canvases = (doc: Document): readonly HTMLCanvasElement[] => {
 // it, and a canvas the user can see lies under the whole of it. A decoy faded out over the page has nothing
 // painted under it, and one under something else that takes the clicks isn't where the user types. Without
 // layout (jsdom) there is nothing to test against, and a faded field stays hidden.
+//
+// Only on the connected Quark's own web app (quark-project #226): elsewhere, a page could lay transparent fields
+// over any canvas, blank or painted as another control, with markup alone, and get a fill into fields the user
+// can't see. The worker, from the browser-reported URL, says whether this document is that app.
 const overCanvas = (field: Element): boolean => {
-  if (!("checkVisibility" in field)) {
+  if (canvasDocument === null || field.ownerDocument !== canvasDocument || !("checkVisibility" in field)) {
     return false;
   }
   const hits = probeHits(field);

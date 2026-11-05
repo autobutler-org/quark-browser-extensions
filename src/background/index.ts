@@ -422,6 +422,17 @@ const onShortcut = async (tab: chrome.tabs.Tab | undefined): Promise<void> => {
   }
 };
 
+// Whether a top frame, by the URL the browser reports for it, is the connected Quark's own web app: the one page
+// whose transparent fields over a canvas the content script counts as shown (#226).
+const isQuarkPage = async (sender: Sender): Promise<boolean> => {
+  if (!isTopFrame(sender)) {
+    return false;
+  }
+  const connection = await loadConnection();
+  const page = originOf(sender.url ?? "");
+  return connection !== null && page !== "" && page !== "null" && page === originOf(connection.server);
+};
+
 const hello = async (sender: Sender): Promise<Hello> => {
   const settings = await loadSettings();
   const result = await matchesFor(sender.url ?? "");
@@ -493,6 +504,7 @@ const forExtensionPages: ExtensionPageHandlers = {
 const forContentScripts: ContentScriptHandlers = {
   hello: (sender) => hello(sender),
   fieldFocused: (sender) => rebuildMenu(sender.url ?? "").then(() => null),
+  quarkPage: (sender) => isQuarkPage(sender),
   otpFromPage: (request, sender) => otpFor(request.entryId, sender),
   generateForPage: (request) => generated(sanePlan(request.length, request.classes)),
   captured: (request, sender) => captured(sender, request.username, request.password),

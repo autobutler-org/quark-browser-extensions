@@ -50,6 +50,7 @@ export type ExtensionPageHandlers = Readonly<{
 export type ContentScriptHandlers = Readonly<{
   hello: (sender: Sender) => Promise<unknown>;
   fieldFocused: (sender: Sender) => Promise<unknown>;
+  quarkPage: (sender: Sender) => Promise<unknown>;
   otpFromPage: (request: Of<"otpFromPage">, sender: Sender) => Promise<unknown>;
   generateForPage: (request: Of<"generateForPage">) => Promise<unknown>;
   captured: (request: Of<"captured">, sender: Sender) => Promise<unknown>;
@@ -127,6 +128,8 @@ export const forContentScripts = (
       return handlers.hello(sender);
     case "fieldFocused":
       return handlers.fieldFocused(sender);
+    case "quarkPage":
+      return handlers.quarkPage(sender);
     case "otpFromPage":
       return handlers.otpFromPage(request, sender);
     case "generateForPage":
