@@ -58,6 +58,8 @@ const hit = (x: number, y: number): Element | null => {
 type Listener = (message: PageCommand, sender: { id: string }, reply: (value: unknown) => void) => boolean;
 let listener: Listener | undefined;
 const sent: Request[] = [];
+// What the worker answers quarkPage: whether this top frame is the connected Quark's web app (#226).
+let quarkPage = true;
 
 const settle = async (): Promise<void> => {
   for (let tick = 0; tick < 5; tick += 1) {
@@ -85,7 +87,11 @@ const start = async (prepare?: () => void): Promise<void> => {
       sendMessage: (request: Request) => {
         sent.push(request);
         return Promise.resolve(
-          request.type === "hello" ? { settings: { inlineButton: true }, matches: [entry], connected: true } : { ok: true, value: credentials },
+          request.type === "hello"
+            ? { settings: { inlineButton: true }, matches: [entry], connected: true }
+            : request.type === "quarkPage"
+              ? quarkPage
+              : { ok: true, value: credentials },
         );
       },
       onMessage: { addListener: (added: Listener) => (listener = added) },
@@ -111,6 +117,7 @@ beforeEach(() => {
   listener = undefined;
   over = undefined;
   canvasBox = undefined;
+  quarkPage = true;
   vi.stubGlobal("innerWidth", viewport.width);
   vi.stubGlobal("innerHeight", viewport.height);
   Object.defineProperty(Element.prototype, "checkVisibility", { value: () => true, configurable: true });
@@ -130,8 +137,9 @@ afterEach(() => {
 
 describe("Quark's own Flutter login (#159)", () => {
   it("counts both fields as login fields and draws the inline button on them", async () => {
-    const { passwordFields, usernameFieldFor } = await import("../src/content/forms");
+    const { passwordFields, trustCanvasFieldsIn, usernameFieldFor } = await import("../src/content/forms");
     load();
+    trustCanvasFieldsIn(document);
     expect(passwordFields(document)).toEqual([byTag("pw")]);
     expect(usernameFieldFor(byTag("pw"))).toBe(byTag("user"));
 
@@ -230,3 +238,4 @@ describe("transparent fields that nothing shows the user", () => {
     });
   });
 });
+

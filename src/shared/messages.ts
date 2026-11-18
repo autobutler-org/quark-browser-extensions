@@ -25,6 +25,8 @@ export type Request =
   | Readonly<{ type: "saveSettings"; settings: Settings }>
   | Readonly<{ type: "hello" }>
   | Readonly<{ type: "fieldFocused" }>
+  // Whether the asking top frame is the connected Quark's own web app, whose fields a canvas draws (#226).
+  | Readonly<{ type: "quarkPage" }>
   | Readonly<{ type: "otpFromPage"; entryId: number }>
   | Readonly<{ type: "otp"; entryId: number }>
   | Readonly<{ type: "generateForPage"; length: number; classes: readonly CharClass[] }>
@@ -59,6 +61,7 @@ export type Responses = {
   saveSettings: Settings;
   hello: Hello;
   fieldFocused: null;
+  quarkPage: boolean;
   otpFromPage: Result<OtpCode>;
   otp: Result<OtpCode>;
   generateForPage: Result<string>;

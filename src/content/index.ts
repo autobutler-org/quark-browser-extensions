@@ -22,6 +22,7 @@ import {
   otpFields,
   passwordFields,
   submit,
+  trustCanvasFieldsIn,
 } from "./forms";
 import { fillDecision, frameTopUrl } from "./frame";
 import { attachPicker, type PickerHandle } from "./picker";
@@ -170,6 +171,28 @@ const scan = async (): Promise<void> => {
 };
 
 const isTop = window === window.top;
+
+// Whether this top frame is the connected Quark's web app, whose canvas-drawn fields count as shown (#226). Asked
+// once at load, and again when the user focuses a field while the answer is still no: the extension may have
+// connected since. Subframes never ask, so a canvas there never shows a transparent field.
+let canvasTrusted = false;
+let asking: Promise<void> | null = null;
+const askCanvasTrust = (): Promise<void> => {
+  if (!isTop || canvasTrusted) {
+    return Promise.resolve();
+  }
+  asking ??= ask({ type: "quarkPage" })
+    .catch(() => false)
+    .then((quark) => {
+      asking = null;
+      if (quark === true) {
+        canvasTrusted = true;
+        trustCanvasFieldsIn(document);
+        void scan();
+      }
+    });
+  return asking;
+};
 
 const topUrl = (verifiedTopUrl: string | undefined): string =>
   frameTopUrl(isTop, location.href, location.ancestorOrigins, verifiedTopUrl);
@@ -397,6 +420,7 @@ export const main = (): void => {
     (event) => {
       if (event.target instanceof HTMLInputElement) {
         void ask({ type: "fieldFocused" }).catch(() => null);
+        void askCanvasTrust();
       }
     },
     true,
@@ -442,5 +466,6 @@ export const main = (): void => {
   });
   // A fade or slide runs in the stylesheet and ends without a DOM change, so its end is a change too (#150).
   ["transitionend", "animationend"].forEach((type) => document.addEventListener(type, scheduleScan, true));
+  void askCanvasTrust();
   void scan();
 };
