@@ -157,6 +157,9 @@ const corpus: Readonly<Record<string, Expected>> = {
   "login-signup-toggle.html": { passwords: ["pw"], usernames: { pw: "email" }, standalone: "email", otp: [], newPasswords: [] },
   "login-modal-fade.html": { passwords: [], usernames: {}, standalone: null, otp: [], newPasswords: [] },
   "login-flutter-quark.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
+  // Flutter's engine autofill form with nothing focused: the tabindex=-1 field is only shown while Flutter has it
+  // focused, and the 0×0 one never is (#192).
+  "login-flutter-quark-autofill.html": { passwords: [], usernames: {}, standalone: null, otp: [], newPasswords: [] },
   "login-covered-overlay.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "spa-formless-login.html": { passwords: ["pw"], usernames: { pw: "user" }, standalone: "user", otp: [], newPasswords: [] },
   "spa-formless-panels.html": {

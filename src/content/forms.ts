@@ -646,9 +646,27 @@ const isSearch = (input: HTMLInputElement): boolean =>
   input.closest('[role="search"]') !== null ||
   searchHint.test([input.name, input.id, input.placeholder, input.getAttribute("aria-label") ?? ""].join(" "));
 
-// Spam honeypots: kept out of reach of keyboard and screen readers, but not display:none.
+// The <form> Flutter's web engine builds for an AutofillGroup while one of its fields has focus (#192), when the
+// input sits in it: a form directly under the engine's <flt-text-editing-host>. Without the semantics tree these
+// are the only <input>s a Flutter page has. The focused one lies over the field the canvas paints, tabindex=-1;
+// the group's other fields are 0×0 beside it, and the engine forwards what is typed into them to their fields.
+// The submit button it adds is no field.
+const engineForm = (input: HTMLInputElement): HTMLFormElement | null => {
+  const form = input.form;
+  return form !== null && input.type !== "submit" && form.contains(input) && form.parentElement?.localName === "flt-text-editing-host"
+    ? form
+    : null;
+};
+
+// The field Flutter's engine has focused: the one it lays over the field the user clicked.
+const isEngineFocus = (input: HTMLInputElement): boolean =>
+  input === input.ownerDocument.activeElement && engineForm(input) !== null;
+
+// Spam honeypots: kept out of reach of keyboard and screen readers, but not display:none. Flutter's engine marks
+// the field it has focused tabindex=-1 too, though the user is typing in it.
 const isDecoy = (input: HTMLInputElement): boolean =>
-  input.tabIndex < 0 || !everyAncestor(input, (node) => node.getAttribute("aria-hidden") !== "true", pass?.exposed);
+  (input.tabIndex < 0 && !isEngineFocus(input)) ||
+  !everyAncestor(input, (node) => node.getAttribute("aria-hidden") !== "true", pass?.exposed);
 
 const newsletterHint = /newsletter|subscri/i;
 
@@ -716,10 +734,13 @@ const provablyShown = (field: HTMLInputElement): boolean => {
   return root.elementFromPoint?.(left + width / 2, top + height / 2) === field;
 };
 
+// A field whose type and autocomplete let it hold a username.
+const takesUsername = (input: HTMLInputElement): boolean =>
+  usernameTypes.has(input.type) && (!hasAutofill(input) || /^(username|email|nickname|tel.*)$/.test(autofill(input)));
+
 const isUsernameCandidate = perPass(
   (input) =>
-    usernameTypes.has(input.type) &&
-    (!hasAutofill(input) || /^(username|email|nickname|tel.*)$/.test(autofill(input))) &&
+    takesUsername(input) &&
     !isSearch(input) &&
     !isNewsletter(input) &&
     isLoginField(input),
@@ -801,9 +822,9 @@ export const identifierField = (doc: Document): HTMLInputElement | null => {
   return field === null || field.readOnly ? null : field;
 };
 
-const write = (input: HTMLInputElement, value: string): void => {
+// Sets a field's value and tells the page, without moving focus.
+const put = (input: HTMLInputElement, value: string): void => {
   const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input) as object, "value");
-  input.focus();
   if (descriptor?.set === undefined) {
     input.value = value;
   } else {
@@ -811,6 +832,11 @@ const write = (input: HTMLInputElement, value: string): void => {
   }
   input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
   input.dispatchEvent(new Event("change", { bubbles: true }));
+};
+
+const write = (input: HTMLInputElement, value: string): void => {
+  input.focus();
+  put(input, value);
   input.blur();
 };
 
@@ -834,6 +860,19 @@ const frames = (view: Window): Promise<void> =>
 let writes: Promise<boolean> = Promise.resolve(true);
 let queued = 0;
 
+// Runs `job` after the writes already queued, unless one of them failed.
+const enqueue = (job: () => Promise<boolean>): void => {
+  if (queued === 0) {
+    writes = Promise.resolve(true);
+  }
+  queued += 1;
+  writes = writes
+    .then((before) => (before ? job() : false))
+    .finally(() => {
+      queued -= 1;
+    });
+};
+
 // Puts a value in a field the way typing would. A canvas-drawn app (#159) keeps its own text state, and only
 // takes input into a field once its framework has focused it, a frame or two after the DOM focus: so such a field
 // is focused first and written once the app has had those frames. Every write after one of those waits its turn,
@@ -849,27 +888,73 @@ export const setValue = (input: HTMLInputElement, value: string): void => {
       return;
     }
   }
-  queued += 1;
-  writes = writes
-    .then(async (before) => {
-      if (!before) {
-        return false;
-      }
-      if (view !== null && drawnByCanvas(input)) {
-        input.focus();
-        await frames(view);
-      }
-      // The page had time to change: write nothing more once a field it was given no longer shows.
-      if (!isLoginField(input)) {
-        return false;
-      }
-      write(input, value);
-      return true;
-    })
-    .finally(() => {
-      queued -= 1;
-    });
+  enqueue(async () => {
+    if (view !== null && drawnByCanvas(input)) {
+      input.focus();
+      await frames(view);
+    }
+    // The page had time to change: write nothing more once a field it was given no longer shows.
+    if (!isLoginField(input)) {
+      return false;
+    }
+    write(input, value);
+    return true;
+  });
 };
+
+// An engine form's own fields, as they are now: the engine swaps in a new <input> each time a field takes focus.
+const engineFields = (form: HTMLFormElement): readonly HTMLInputElement[] =>
+  inputs(form).filter((input) => engineForm(input) === form);
+
+// Fills a login through Flutter's engine autofill form (#192). Opening the picker or the popup takes focus from
+// Flutter, which puts the form away off the page, so `field` is focused first: Flutter then focuses the field the
+// user last had, lays a new <input> over it, and listens to the group's other fields again. That field must then
+// pass every rule of isLoginField: it is the one the user sees, and it vouches for the rest of its group. The
+// others get their values without focus, which the engine forwards to the fields they stand for, the way it takes
+// the browser's own autofill; the focused one is written last, since leaving it would put the form away again.
+const fillEngine = (field: HTMLInputElement, credentials: Credentials): void => {
+  const view = field.ownerDocument.defaultView;
+  enqueue(async () => {
+    field.focus();
+    if (view !== null) {
+      await frames(view);
+    }
+    const active = field.ownerDocument.activeElement;
+    if (!(active instanceof HTMLInputElement)) {
+      return false;
+    }
+    const form = engineForm(active);
+    if (form === null || !isLoginField(active)) {
+      return false;
+    }
+    const fields = engineFields(form);
+    const password = fields.find((input) => input.type === "password" && autofill(input) !== "new-password");
+    const names = fields.filter(takesUsername);
+    const best = Math.max(0, ...names.map(usernameRank));
+    const username = credentials.username === "" ? undefined : names.find((input) => usernameRank(input) === best);
+    const values = [
+      ...(username === undefined ? [] : [[username, credentials.username] as const]),
+      ...(password === undefined ? [] : [[password, credentials.password] as const]),
+    ];
+    if (values.length === 0) {
+      return false;
+    }
+    [...values.filter(([input]) => input !== active), ...values.filter(([input]) => input === active)].forEach(([input, value]) =>
+      put(input, value),
+    );
+    return true;
+  });
+};
+
+// A field of an engine autofill form, which fills through fillEngine: shown or not, since the form is put away
+// whenever focus leaves Flutter, and fillEngine checks it once Flutter has it back.
+export const isEngineField = (input: HTMLInputElement): boolean => engineForm(input) !== null;
+
+// A field fillLogin may be given: a login field, or one of an engine autofill form.
+export const isFillTarget = (input: HTMLInputElement): boolean => isLoginField(input) || isEngineField(input);
+
+// The engine autofill form's field on a Flutter page whose login fields are not otherwise on it.
+export const engineFieldOn = (doc: Document): HTMLInputElement | null => inputs(doc).find(isEngineField) ?? null;
 
 // Resolves once the queued writes are done: true if every value went in, false if the page hid a field meanwhile.
 export const filling = (): Promise<boolean> => writes;
@@ -881,6 +966,10 @@ export const fillLogin = (
   credentials: Credentials,
   target: HTMLInputElement | null = null,
 ): FillOutcome => {
+  if (target !== null && isEngineField(target)) {
+    fillEngine(target, credentials);
+    return { filled: true, form: null };
+  }
   // The page may have hidden the field since it was chosen: the picker stays open while the user decides.
   if (target !== null && !isLoginField(target)) {
     return { filled: false, form: null };
@@ -898,8 +987,16 @@ export const fillLogin = (
     return { filled: true, form: target.form };
   }
   const password = paired ?? passwordFields(doc).find(provablyShown) ?? null;
+  // With no target, a Flutter page's fields may only be in its engine autofill form: fill through that.
+  if (password !== null && isEngineField(password)) {
+    return fillLogin(doc, credentials, password);
+  }
   if (password === null) {
     const username = standaloneUsernameField(doc);
+    const engine = username === null ? engineFieldOn(doc) : isEngineField(username) ? username : null;
+    if (engine !== null) {
+      return fillLogin(doc, credentials, engine);
+    }
     if (username === null || credentials.username === "" || !provablyShown(username)) {
       return { filled: false, form: null };
     }

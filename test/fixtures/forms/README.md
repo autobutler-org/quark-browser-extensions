@@ -21,7 +21,7 @@ A fixture with no matching row in the test fails the run. To add a fixture, writ
 
 ## Sources
 
-One fixture is saved rather than written: `login-flutter-quark.html` is the live DOM of Quark's own web login (#159), because what breaks there is the markup Flutter generates, and a hand-written copy would test a guess at it. Quark is MIT-0 like this repository.
+Two fixtures are saved rather than written: `login-flutter-quark.html` and `login-flutter-quark-autofill.html` are the live DOM of Quark's own web login with and without Flutter's semantics tree (#159, #192), because what breaks there is the markup Flutter generates, and a hand-written copy would test a guess at it. Quark is MIT-0 like this repository.
 
 Every other fixture here was written for this repository and falls under its MIT-0 licence. None is copied or derived from another project's files, so none needs attribution.
 
@@ -30,3 +30,4 @@ If you bring in a fixture based on an MPL-2.0 or MIT source, for example Firefox
 | Fixture | Upstream | Licence | Changes |
 | ------- | -------- | ------- | ------- |
 | `login-flutter-quark.html` | [autobutler-org/quark](https://github.com/autobutler-org/quark) 7ecf1021, `/login` as a Flutter 3.47.7 release build draws it | MIT-0 | Boot splash, scripts and Flutter's stylesheets left out; `data-fx` tags added |
+| `login-flutter-quark-autofill.html` | [autobutler-org/quark](https://github.com/autobutler-org/quark) e555de4, `/login` as a Flutter 3.50.1 release build draws it without semantics, after a click on Username | MIT-0 | Boot splash, scripts and Flutter's stylesheets left out; `data-fx` tags added |
