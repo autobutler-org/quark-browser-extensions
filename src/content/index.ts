@@ -14,7 +14,8 @@ import {
   frameShown,
   fieldRules,
   identifierField,
-  isLoginField,
+  engineFieldOn,
+  isFillTarget,
   isNewPasswordField,
   looksLikeSubmit,
   markOwn,
@@ -81,11 +82,12 @@ const fill = async (credentials: Credentials, autoSubmit: boolean, target: HTMLI
 };
 
 // The picker stays open while the user chooses, so the page may hide the field meanwhile (#129): check it before
-// asking for the login, and fillLogin checks it again once the login arrives.
+// asking for the login, and fillLogin checks it again once the login arrives. A field of Flutter's engine autofill
+// form is put away while the picker has focus, and is checked once Flutter has it back (#192).
 const pick =
   (field: HTMLInputElement) =>
   async (entry: EntrySummary): Promise<string | null> => {
-    if (!isLoginField(field)) {
+    if (!isFillTarget(field)) {
       return t("refuseNoFields");
     }
     const result = await ask({ type: "fillFromPage", entryId: entry.id });
@@ -175,7 +177,10 @@ const topUrl = (verifiedTopUrl: string | undefined): string =>
   frameTopUrl(isTop, location.href, location.ancestorOrigins, verifiedTopUrl);
 
 const hasLoginFields = (): boolean =>
-  passwordFields(document).length > 0 || otpFields(document).length > 0 || identifierField(document) !== null;
+  passwordFields(document).length > 0 ||
+  otpFields(document).length > 0 ||
+  identifierField(document) !== null ||
+  engineFieldOn(document) !== null;
 
 const openPicker = (): PageReply | null => {
   const active = document.activeElement;
