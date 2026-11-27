@@ -18,9 +18,11 @@ import {
   isNewPasswordField,
   looksLikeSubmit,
   markOwn,
+  needsQuarkPage,
   onePass,
   otpFields,
   passwordFields,
+  setQuarkPage,
   submit,
 } from "./forms";
 import { fillDecision, frameTopUrl } from "./frame";
@@ -123,12 +125,8 @@ const suggest = (field: HTMLInputElement) => async (): Promise<string | null> =>
   return isShort(result.value) ? t("pickerFilledShort", String(result.value.length)) : null;
 };
 
-// Every scan classifies the fields afresh, so a field the page changes after load gets the picker it now needs
-// (#152): a sign-up tab revealed beside the login, or a confirmation shown that makes a password a new one.
-const scan = async (): Promise<void> => {
-  forgetDetached();
-  awaitAnimations();
-  const wanted = onePass((): readonly (readonly [HTMLInputElement, Kind])[] => {
+const classify = (): readonly (readonly [HTMLInputElement, Kind])[] =>
+  onePass(() => {
     const passwords = passwordFields(document);
     const signups = passwords.filter(isNewPasswordField);
     const identifier = identifierField(document);
@@ -139,6 +137,29 @@ const scan = async (): Promise<void> => {
       ...(identifier === null ? [] : [[identifier, "login"] as const]),
     ];
   });
+
+// A field a canvas may draw counts only on the Quark's own page (#226). The first time a pass finds one, the
+// worker is asked which this is, and the fields are classified again with its answer. A failed ask leaves the
+// question open for the next scan.
+const classifyFields = async (): Promise<readonly (readonly [HTMLInputElement, Kind])[]> => {
+  const first = classify();
+  if (!needsQuarkPage()) {
+    return first;
+  }
+  const answer = await ask({ type: "quarkPage" }).catch(() => null);
+  if (typeof answer !== "boolean") {
+    return first;
+  }
+  setQuarkPage(answer);
+  return classify();
+};
+
+// Every scan classifies the fields afresh, so a field the page changes after load gets the picker it now needs
+// (#152): a sign-up tab revealed beside the login, or a confirmation shown that makes a password a new one.
+const scan = async (): Promise<void> => {
+  forgetDetached();
+  awaitAnimations();
+  const wanted = await classifyFields();
   const changed = wanted.filter(([field, kind]) => decorated.get(field)?.kind !== kind);
   if (changed.length === 0) {
     return;

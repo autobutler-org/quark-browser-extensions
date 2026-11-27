@@ -1,4 +1,4 @@
-import { hostOf, isFallback, isSecurePage, mayHaveOtp, normalizeServer, primaryMatches, searchEntries } from "../src/shared/host";
+import { hostOf, isFallback, isSecurePage, isServerPage, mayHaveOtp, normalizeServer, primaryMatches, searchEntries } from "../src/shared/host";
 import { frameMayFill, hostMatches, matchEntries, mayFill } from "../src/shared/hostMatch";
 import type { EntrySummary } from "../src/shared/types";
 
@@ -402,5 +402,21 @@ describe("public suffix list", () => {
     expect(frameMayFill("https://a.github.io/", "https://b.github.io/", "https://a.github.io", "a.github.io")).toBe(false);
     expect(matchEntries([entry(1, "Pages", "github.io")], "https://evil.github.io/")).toEqual([]);
     expect(matchEntries([entry(1, "Shop", "example.co.uk")], "https://www.example.co.uk/").map((e) => e.id)).toEqual([1]);
+  });
+});
+
+describe("isServerPage", () => {
+  it.each([
+    ["https://quark.local", "https://quark.local/login", true],
+    ["quark.local", "https://quark.local/login", true],
+    ["http://localhost:8080", "http://localhost:8080/login", true],
+    ["http://localhost:8080", "http://127.0.0.1:8080/login", false],
+    ["http://localhost:8080", "http://localhost:8081/login", false],
+    ["https://quark.local", "http://quark.local/login", false],
+    ["https://quark.local", "https://www.quark.local/login", false],
+    ["", "https://quark.local/login", false],
+    ["https://quark.local", "not a url", false],
+  ])("server %s, page %s → %s", (server, page, expected) => {
+    expect(isServerPage(server, page)).toBe(expected);
   });
 });

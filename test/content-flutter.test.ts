@@ -58,6 +58,8 @@ const hit = (x: number, y: number): Element | null => {
 type Listener = (message: PageCommand, sender: { id: string }, reply: (value: unknown) => void) => boolean;
 let listener: Listener | undefined;
 const sent: Request[] = [];
+// What the worker says to "quarkPage": whether the page is the connected Quark's own (#226). An Error rejects.
+let quarkPage: boolean | Error = true;
 
 const settle = async (): Promise<void> => {
   for (let tick = 0; tick < 5; tick += 1) {
@@ -84,6 +86,9 @@ const start = async (prepare?: () => void): Promise<void> => {
       id: "quark",
       sendMessage: (request: Request) => {
         sent.push(request);
+        if (request.type === "quarkPage") {
+          return quarkPage instanceof Error ? Promise.reject(quarkPage) : Promise.resolve(quarkPage);
+        }
         return Promise.resolve(
           request.type === "hello" ? { settings: { inlineButton: true }, matches: [entry], connected: true } : { ok: true, value: credentials },
         );
@@ -111,6 +116,7 @@ beforeEach(() => {
   listener = undefined;
   over = undefined;
   canvasBox = undefined;
+  quarkPage = true;
   vi.stubGlobal("innerWidth", viewport.width);
   vi.stubGlobal("innerHeight", viewport.height);
   Object.defineProperty(Element.prototype, "checkVisibility", { value: () => true, configurable: true });
@@ -130,13 +136,15 @@ afterEach(() => {
 
 describe("Quark's own Flutter login (#159)", () => {
   it("counts both fields as login fields and draws the inline button on them", async () => {
-    const { passwordFields, usernameFieldFor } = await import("../src/content/forms");
+    const { passwordFields, setQuarkPage, usernameFieldFor } = await import("../src/content/forms");
+    setQuarkPage(true);
     load();
     expect(passwordFields(document)).toEqual([byTag("pw")]);
     expect(usernameFieldFor(byTag("pw"))).toBe(byTag("user"));
 
     await start();
     expect(attached).toEqual(expect.arrayContaining([byTag("pw")]));
+    expect(sent.filter((request) => request.type === "quarkPage")).toHaveLength(1);
   });
 
   it("fills both fields once the user confirms Fill anyway in the popup (#157)", async () => {
@@ -205,28 +213,65 @@ describe("transparent fields that nothing shows the user", () => {
     expect(attached).toEqual([]);
   };
 
+  // Nothing lies over a canvas here, so the worker isn't even asked whether this is the Quark's page.
+  const refusedUnasked = async (prepare: () => void): Promise<void> => {
+    await refused(prepare);
+    expect(sent.filter((request) => request.type === "quarkPage")).toEqual([]);
+  };
+
   it("refuses them without the canvas under them", async () => {
-    await refused(() => canvas()?.remove());
+    await refusedUnasked(() => canvas()?.remove());
   });
 
   it("refuses them over a canvas that is itself transparent", async () => {
-    await refused(() => canvas()?.style.setProperty("opacity", "0"));
+    await refusedUnasked(() => canvas()?.style.setProperty("opacity", "0"));
   });
 
   it("refuses them over a canvas hidden with display: none", async () => {
-    await refused(() => canvas()?.style.setProperty("display", "none"));
+    await refusedUnasked(() => canvas()?.style.setProperty("display", "none"));
   });
 
   it("refuses them over a canvas that doesn't reach under the whole field", async () => {
     canvasBox = { left: 0, top: 0, width: 600, height: 800 };
-    await refused(() => undefined);
+    await refusedUnasked(() => undefined);
   });
 
   it("refuses them when a click on part of the field lands on something else", async () => {
-    await refused(() => {
+    await refusedUnasked(() => {
       const cover = document.createElement("div");
       document.body.append(cover);
       over = { element: cover, box: { left: 600, top: 0, width: 680, height: 800 } };
     });
+  });
+});
+
+// The canvas rule holds only on the connected Quark's own pages (#226). A page can lay transparent fields over a
+// blank canvas, or one painted as some other control, with markup alone, and what a canvas draws can't be read.
+describe("transparent fields over a canvas on a page that isn't the Quark's", () => {
+  const refusedOffQuark = async (): Promise<void> => {
+    await start();
+    const reply = await command(manualFillCommand(entry.id, location.href));
+    expect(reply).toBe("no reply");
+    expect(sent.filter((request) => request.type === "fillFromPage")).toEqual([]);
+    expect([byTag("user").value, byTag("pw").value]).toEqual(["", ""]);
+    expect(attached).toEqual([]);
+  };
+
+  it("refuses them when the worker says the page isn't the Quark's", async () => {
+    quarkPage = false;
+    await refusedOffQuark();
+    expect(sent.filter((request) => request.type === "quarkPage")).toHaveLength(1);
+  });
+
+  it("refuses them while the worker can't answer", async () => {
+    quarkPage = new Error("worker asleep");
+    await refusedOffQuark();
+  });
+
+  it("refuses them from the forms module before the worker has answered", async () => {
+    const { passwordFields, setQuarkPage } = await import("../src/content/forms");
+    load();
+    setQuarkPage(false);
+    expect(passwordFields(document)).toEqual([]);
   });
 });
