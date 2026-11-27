@@ -10,6 +10,7 @@ import {
   isNewPasswordField,
   otpFields,
   passwordFields,
+  setQuarkPage,
   standaloneUsernameField,
   usernameFieldFor,
 } from "../src/content/forms";
@@ -84,7 +85,10 @@ const roughHit = (x: number, y: number): Element | null =>
     return hittable && x >= box.left && x < box.right && y >= box.top && y < box.bottom;
   }) ?? null;
 
+// Every fixture is read as if it were the Quark's own page, the one place a canvas-drawn field counts (#226): the
+// decoys must still be refused there.
 beforeEach(() => {
+  setQuarkPage(true);
   Object.defineProperty(document, "elementFromPoint", { value: roughHit, configurable: true });
   vi.stubGlobal("chrome", { ...chrome, dom: { openOrClosedShadowRoot: (host: HTMLElement) => host.shadowRoot ?? closedRoots.get(host) ?? null } });
   Object.defineProperty(Element.prototype, "checkVisibility", { value: () => true, configurable: true });
@@ -367,6 +371,14 @@ describe("filling and capturing fixtures", () => {
     expect([field("user").value, field("pw").value]).toEqual(["", ""]);
     await filling();
     expect([field("user").value, field("pw").value]).toEqual(["alice@example.com", "hunter2!"]);
+  });
+
+  it("refuses the same fields on a page that isn't the Quark's own (#226)", () => {
+    const doc = load("login-flutter-quark.html");
+    setQuarkPage(false);
+    expect(passwordFields(doc)).toEqual([]);
+    expect(standaloneUsernameField(doc)).toBeNull();
+    expect(fillLogin(doc, credentials).filled).toBe(false);
   });
 
   it("reads the revealed sign-up tab as new passwords (#152)", () => {

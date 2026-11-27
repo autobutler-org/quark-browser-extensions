@@ -156,3 +156,26 @@ describe("matching logins to the page by origin", () => {
     });
   });
 });
+
+// A field a canvas draws counts only on the Quark's own pages (#226): the worker answers from the address it
+// connects to, by origin.
+describe("telling a page whether it is the Quark's own", () => {
+  it.each([
+    ["https://quark.local/login", 0, true],
+    ["https://quark.local/files?path=/", 2, true],
+    ["http://quark.local/login", 0, false],
+    ["https://quark.local:8443/login", 0, false],
+    ["https://evil.quark.local/login", 0, false],
+    ["https://quark.local.evil.test/login", 0, false],
+    ["about:blank", 1, false],
+  ])("%s (frame %i) → %s", async (url, frameId, expected) => {
+    await startWorker();
+    expect(await fake.send({ type: "quarkPage" }, page(url, frameId))).toBe(expected);
+  });
+
+  it("doesn't answer the popup or another extension", async () => {
+    await startWorker();
+    expect(await fake.send({ type: "quarkPage" }, popup)).toBeUndefined();
+    expect(await fake.send({ type: "quarkPage" }, { ...page("https://quark.local/login"), id: "someone-else" })).toBeUndefined();
+  });
+});

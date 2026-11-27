@@ -3,6 +3,7 @@ import { formatNumber, t } from "../shared/i18n";
 import {
   hostOf,
   insecureServerRefusal,
+  isServerPage,
   normalizeHost,
   normalizeServer,
   primaryMatches,
@@ -493,6 +494,7 @@ const forExtensionPages: ExtensionPageHandlers = {
 const forContentScripts: ContentScriptHandlers = {
   hello: (sender) => hello(sender),
   fieldFocused: (sender) => rebuildMenu(sender.url ?? "").then(() => null),
+  quarkPage: async (sender) => isServerPage(await loadServer(), sender.url ?? ""),
   otpFromPage: (request, sender) => otpFor(request.entryId, sender),
   generateForPage: (request) => generated(sanePlan(request.length, request.classes)),
   captured: (request, sender) => captured(sender, request.username, request.password),

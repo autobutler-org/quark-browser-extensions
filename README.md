@@ -19,7 +19,8 @@ It talks to the Quark's existing API. Nothing extra runs on the Quark.
 - **Fill**: on a page with a password field, a Quark button appears in the field when the vault has a login for that
   host. A login fills directly only on its saved scheme and port, on the exact host or a matching subdomain; another
   scheme or port is labelled as a fallback and needs **Fill anyway** in the popup. The toolbar icon counts direct
-  matches. This also works with the canvas-rendered fields on Quark's own Flutter `/login` page. From the keyboard,
+  matches. This also works with the canvas-rendered fields on Quark's own Flutter `/login` page, at the address you
+  connected to; such fields on any other site stay hidden. From the keyboard,
   Tab from the field reaches the button, and **Alt+↓** in the field opens the picker; Enter, Space, ↑ or ↓ on the
   button opens it. Arrow keys, Home, End, Page Up and Page Down move through the choices; Esc closes the picker and
   returns to the field.

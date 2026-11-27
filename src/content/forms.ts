@@ -555,6 +555,19 @@ const findCanvases = (scope: ParentNode): readonly HTMLCanvasElement[] =>
     ...(element.shadowRoot === null ? [] : findCanvases(element.shadowRoot)),
   ]);
 
+// Whether this page is the connected Quark's own, as the worker answered, or null until it has (#226). Only there
+// does a canvas under a transparent field make it a field: anywhere else, markup alone can lay transparent fields
+// over a blank canvas or one painted as another control. The worker is asked only once a field like that turns up.
+let quarkPage: boolean | null = null;
+let quarkPageWanted = false;
+
+export const setQuarkPage = (onQuark: boolean): void => {
+  quarkPage = onQuark;
+};
+
+// Whether a field lies over a canvas and the worker hasn't yet said whether this is the Quark's page.
+export const needsQuarkPage = (): boolean => quarkPage === null && quarkPageWanted;
+
 // The page's <canvas> elements, open shadow roots included, found once per pass.
 const canvases = (doc: Document): readonly HTMLCanvasElement[] => {
   const found = pass?.canvases.get(doc) ?? findCanvases(doc);
@@ -568,8 +581,17 @@ const canvases = (doc: Document): readonly HTMLCanvasElement[] => {
 // counts as shown when every probe of a hit test lands on the field itself, so a click anywhere on it reaches
 // it, and a canvas the user can see lies under the whole of it. A decoy faded out over the page has nothing
 // painted under it, and one under something else that takes the clicks isn't where the user types. Without
-// layout (jsdom) there is nothing to test against, and a faded field stays hidden.
+// layout (jsdom) there is nothing to test against, and a faded field stays hidden. It holds only on the Quark's own
+// pages (#226): what a canvas draws can't be read, so elsewhere a faded field stays hidden whatever lies under it.
 const overCanvas = (field: Element): boolean => {
+  if (quarkPage === false || !drawnOnCanvas(field)) {
+    return false;
+  }
+  quarkPageWanted = true;
+  return quarkPage === true;
+};
+
+const drawnOnCanvas = (field: Element): boolean => {
   if (!("checkVisibility" in field)) {
     return false;
   }

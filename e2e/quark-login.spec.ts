@@ -1,19 +1,19 @@
 import type { BrowserContext, Page, Worker } from "@playwright/test";
 import { expect, signInAndUnlock, test, type Quark } from "./fixtures.ts";
-import { env, ownerVault } from "./support/env.ts";
+import { ownerVault } from "./support/env.ts";
 
 // Quark's own web login, /login, as its Flutter web app draws it (#159). Flutter paints the fields into a canvas
 // and takes the typing in transparent <input>s laid over them; the extension has to see those as the fields they
 // are. This needs a Quark with the web app embedded: QUARK_WEB=1 scripts/build-quark.sh. On the mock, or on a
 // backend-only build, there is no /login to fill, and the tests skip.
 
-// The Quark's /login on localhost: the seeded "Local Test" is saved for localhost at the test site's port, so
-// here it is a Different port match, as in the issue.
-const loginUrl = () => `http://localhost:${new URL(env("E2E_QUARK_DIRECT")).port}/login`;
+// The Quark's /login at the address the extension connects to: a field Flutter draws counts only on the
+// connected Quark's own pages (#226).
+const loginUrl = (quark: Quark) => `${quark.server}/login`;
 
 test.beforeEach(async ({ popup, quark }) => {
   test.skip(quark.target === "mock", "the mock Quark has no web app");
-  const page = await fetch(loginUrl()).then((response) => response.text());
+  const page = await fetch(loginUrl(quark)).then((response) => response.text());
   test.skip(!page.includes("flutter_bootstrap.js"), "this Quark has no web app embedded: build it with QUARK_WEB=1 scripts/build-quark.sh");
   await signInAndUnlock(popup, quark);
 });
@@ -32,9 +32,9 @@ const tabIds = (worker: Worker) => worker.evaluate(async () => (await chrome.tab
 // Quark no longer turns Flutter's semantics tree on at startup (autobutler-org/quark#3769), and the fields are
 // <input>s only in that tree, so the page opts in through Flutter's own "Enable accessibility" button, as a
 // screen reader user does. An older Quark has the tree on already and shows no such button.
-const openLogin = async (context: BrowserContext): Promise<Page> => {
+const openLogin = async (context: BrowserContext, quark: Quark): Promise<Page> => {
   const page = await context.newPage();
-  await page.goto(loginUrl());
+  await page.goto(loginUrl(quark));
   const enable = page.getByRole("button", { name: "Enable accessibility" });
   const agree = page.getByRole("button", { name: "I Agree" });
   const username = page.getByRole("textbox", { name: "Username" });
@@ -80,32 +80,42 @@ const popupOver = async (context: BrowserContext, worker: Worker, extensionId: s
   return { page, popup };
 };
 
-// The issue's own steps: Local Test, saved for another port, offered on Quark's login; the user confirms, and
-// both fields fill. Before the fix nothing filled, and the popup said it couldn't find login fields.
-test("fills Quark's Flutter login after the Fill anyway confirmation (#159, #157)", async ({ context, extensionId, worker }) => {
-  const { page, popup } = await popupOver(context, worker, extensionId, () => openLogin(context));
-  const pageHost = new URL(page.url()).host;
-  await expect(popup.getByText("Different port")).toBeVisible();
-  await popup.locator(".match").getByRole("button", { name: "Fill anyway Local Test" }).click();
-  await popup.getByRole("button", { name: `Fill on ${pageHost}` }).click();
+// The issue's own steps: a login saved for another port, offered on Quark's login; the user confirms, and both
+// fields fill. Before the fix nothing filled, and the popup said it couldn't find login fields.
+test("fills Quark's Flutter login after the Fill anyway confirmation (#159, #157)", async ({ context, extensionId, popup: extensionPopup, quark, worker }) => {
+  const otherPort = new URL(loginUrl(quark));
+  otherPort.port = String(Number(otherPort.port) === 1 ? 2 : 1);
+  const vault = await ownerVault(quark);
+  const created = await vault.add({ kind: "entry", name: "Other port", url: otherPort.href, username: "alice", password: "s3cret" });
+  try {
+    await relock(extensionPopup, quark);
+    const { page, popup } = await popupOver(context, worker, extensionId, () => openLogin(context, quark));
+    const pageHost = new URL(page.url()).host;
+    await expect(popup.getByText("Different port")).toBeVisible();
+    await popup.locator(".match").getByRole("button", { name: "Fill anyway Other port" }).click();
+    await popup.getByRole("button", { name: `Fill on ${pageHost}` }).click();
 
-  await expect(page.getByRole("textbox", { name: "Username" })).toHaveValue("alice");
-  await expect(page.getByLabel("Password")).toHaveValue("s3cret");
-  // Flutter writes its own text back into a field it focuses: still there, the fill reached Flutter, not just the DOM.
-  await page.getByRole("textbox", { name: "Username" }).click();
-  await page.waitForTimeout(500);
-  await expect(page.getByRole("textbox", { name: "Username" })).toHaveValue("alice");
-  expect(await popup.evaluate(() => !!(window as { closedByPopup?: boolean }).closedByPopup), "the popup closes once it has filled").toBe(true);
+    await expect(page.getByRole("textbox", { name: "Username" })).toHaveValue("alice");
+    await expect(page.getByLabel("Password")).toHaveValue("s3cret");
+    // Flutter writes its own text back into a field it focuses: still there, the fill reached Flutter, not just the DOM.
+    await page.getByRole("textbox", { name: "Username" }).click();
+    await page.waitForTimeout(500);
+    await expect(page.getByRole("textbox", { name: "Username" })).toHaveValue("alice");
+    expect(await popup.evaluate(() => !!(window as { closedByPopup?: boolean }).closedByPopup), "the popup closes once it has filled").toBe(true);
+  } finally {
+    await relock(extensionPopup, quark);
+    await vault.remove(created);
+  }
 });
 
 // A login saved for the Quark itself: the inline button is on its fields, and what it fills reaches Flutter, so
 // Sign in signs the user in.
 test("signs in to Quark from the inline picker on its own login (#159)", async ({ context, popup, quark, worker }) => {
   const vault = await ownerVault(quark);
-  const created = await vault.add({ kind: "entry", name: "This Quark", url: loginUrl(), username: quark.seed.owner.username, password: quark.seed.owner.password });
+  const created = await vault.add({ kind: "entry", name: "This Quark", url: loginUrl(quark), username: quark.seed.owner.username, password: quark.seed.owner.password });
   try {
     await relock(popup, quark);
-    const page = await openLogin(context);
+    const page = await openLogin(context, quark);
     const password = page.getByLabel("Password");
     await expect
       .poll(async () => {

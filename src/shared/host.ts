@@ -72,6 +72,19 @@ export const normalizeServer = (input: string): string => {
   }
 };
 
+// Whether a page is served by the Quark itself: the same scheme, host and port as the server address (#226).
+export const isServerPage = (server: string, pageUrl: string): boolean => {
+  const origin = normalizeServer(server);
+  if (origin === "") {
+    return false;
+  }
+  try {
+    return new URL(pageUrl).origin === origin;
+  } catch {
+    return false;
+  }
+};
+
 // Loopback never leaves the machine, so plain http there is as private as https.
 export const isLoopbackHost = (hostname: string): boolean => {
   const host = hostname.toLowerCase().replace(/\.$/, "");
