@@ -260,10 +260,11 @@ describe("transparent fields that nothing shows the user", () => {
 // The canvas rule holds only on the connected Quark's own pages (#226). A page can lay transparent fields over a
 // blank canvas, or one painted as some other control, with markup alone, and what a canvas draws can't be read.
 describe("transparent fields over a canvas on a page that isn't the Quark's", () => {
-  const refusedOffQuark = async (): Promise<void> => {
+  // Silent once the worker has said no; a refusal when it still can't answer at the fill.
+  const refusedOffQuark = async (expected: unknown = "no reply"): Promise<void> => {
     await start();
     const reply = await command(manualFillCommand(entry.id, location.href));
-    expect(reply).toBe("no reply");
+    expect(reply).toEqual(expected);
     expect(sent.filter((request) => request.type === "fillFromPage")).toEqual([]);
     expect([byTag("user").value, byTag("pw").value]).toEqual(["", ""]);
     expect(attached).toEqual([]);
@@ -277,7 +278,18 @@ describe("transparent fields over a canvas on a page that isn't the Quark's", ()
 
   it("refuses them while the worker can't answer", async () => {
     quarkPage = new Error("worker asleep");
-    await refusedOffQuark();
+    await refusedOffQuark({ ok: false, error: { kind: "refused", reason: "Couldn't find the login fields on this page." } });
+  });
+
+  it("asks again when a fill comes before the worker has answered, and fills on the Quark's page", async () => {
+    quarkPage = new Error("worker asleep");
+    await start();
+    expect(attached).toEqual([]);
+    quarkPage = true;
+    const reply = await command(manualFillCommand(entry.id, location.href));
+    expect(reply).toEqual({ ok: true, value: null });
+    expect(sent.filter((request) => request.type === "quarkPage")).toHaveLength(2);
+    expect([byTag("user").value, byTag("pw").value]).toEqual(["admin", "correct horse battery"]);
   });
 
   it("refuses them from the forms module before the worker has answered", async () => {

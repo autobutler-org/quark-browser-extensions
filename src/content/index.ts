@@ -143,15 +143,17 @@ const classify = (): readonly (readonly [HTMLInputElement, Kind])[] =>
 // question open for the next scan.
 const classifyFields = async (): Promise<readonly (readonly [HTMLInputElement, Kind])[]> => {
   const first = classify();
-  if (!needsQuarkPage()) {
-    return first;
-  }
+  return needsQuarkPage() && (await learnQuarkPage()) ? classify() : first;
+};
+
+// Asks the worker whether this is the Quark's page and keeps the answer; false when it couldn't answer.
+const learnQuarkPage = async (): Promise<boolean> => {
   const answer = await ask({ type: "quarkPage" }).catch(() => null);
   if (typeof answer !== "boolean") {
-    return first;
+    return false;
   }
   setQuarkPage(answer);
-  return classify();
+  return true;
 };
 
 // Every scan classifies the fields afresh, so a field the page changes after load gets the picker it now needs
@@ -233,23 +235,31 @@ const fillFromWorker = async (entryId: number): Promise<PageReply> => {
     : err({ kind: "refused", reason: t("refuseNoFields") });
 };
 
-const handleFill = (command: FillCommand): PageReply | Promise<PageReply> | null => {
-  const decision = fillDecision(
-    isTop,
-    hasLoginFields(),
-    location.href,
-    topUrl(command.topUrl),
-    command.entryUrl,
-    command.entryHost,
-  );
+const decideFill = (command: FillCommand) =>
+  fillDecision(isTop, hasLoginFields(), location.href, topUrl(command.topUrl), command.entryUrl, command.entryHost);
+
+const actOn = (decision: ReturnType<typeof fillDecision>, entryId: number): PageReply | Promise<PageReply> | null => {
   switch (decision.kind) {
     case "silent":
       return null;
     case "refuse":
       return err({ kind: "refused", reason: decision.reason });
     case "ask":
-      return fillFromWorker(command.entryId);
+      return fillFromWorker(entryId);
   }
+};
+
+// A fill can arrive before any scan has asked whether this is the Quark's page (#226), right after the page drew
+// its fields. Then the top frame asks first, and decides again with the answer.
+const handleFill = (command: FillCommand): PageReply | Promise<PageReply> | null => {
+  const decision = decideFill(command);
+  if (decision.kind !== "silent" || !isTop || !needsQuarkPage()) {
+    return actOn(decision, command.entryId);
+  }
+  return learnQuarkPage().then(
+    (learned) =>
+      (learned ? actOn(decideFill(command), command.entryId) : null) ?? err({ kind: "refused", reason: t("refuseNoFields") }),
+  );
 };
 
 // The frame elements in this document, inside open shadow roots too.
