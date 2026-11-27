@@ -55,6 +55,16 @@ const hit = (x: number, y: number): Element | null => {
   return [byTag("user"), byTag("pw")].find((field) => contains(boxOf(field), x, y)) ?? document.body;
 };
 
+// Each test loads a fresh content script; the observers of earlier ones are disconnected, so a scan they would
+// run on this test's page can't draw pickers here.
+const observers: MutationObserver[] = [];
+class TrackedObserver extends MutationObserver {
+  constructor(callback: MutationCallback) {
+    super(callback);
+    observers.push(this);
+  }
+}
+
 type Listener = (message: PageCommand, sender: { id: string }, reply: (value: unknown) => void) => boolean;
 let listener: Listener | undefined;
 const sent: Request[] = [];
@@ -80,6 +90,7 @@ const load = (prepare: () => void = () => undefined): void => {
 
 const start = async (prepare?: () => void): Promise<void> => {
   load(prepare);
+  vi.stubGlobal("MutationObserver", TrackedObserver);
   vi.stubGlobal("chrome", {
     i18n: fakeI18n(),
     runtime: {
@@ -128,6 +139,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  observers.splice(0).forEach((observer) => observer.disconnect());
   delete (Element.prototype as Partial<Element>).checkVisibility;
   delete (document as Partial<Document>).elementFromPoint;
   vi.restoreAllMocks();
